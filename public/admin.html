@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Console – FileAccess</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <script src="js/protect.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="navbar">
+  <div class="nav-brand">
+    <svg width="28" height="28" viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#2563EB"/><path d="M10 10h10l6 6v10H10V10z" fill="white" opacity="0.9"/><circle cx="23" cy="13" r="4" fill="#BFDBFE" stroke="#2563EB" stroke-width="1.5"/><path d="M21.5 13l1 1 2-2" stroke="#2563EB" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>FileAccess</span>
+    <span class="badge badge-admin">Admin</span>
+  </div>
+  <div class="nav-right">
+    <a href="index.html" class="nav-link">My Files</a>
+    <a href="status.html" class="nav-link">Status</a>
+    <div class="nav-user">
+      <div class="avatar" id="userAvatar">A</div>
+      <span id="userName">Admin</span>
+      <button class="btn btn-ghost btn-sm" id="signOutBtn">Sign out</button>
+    </div>
+  </div>
+</nav>
+
+<!-- SIDEBAR + CONTENT -->
+<div class="admin-layout">
+
+  <!-- Sidebar -->
+  <aside class="admin-sidebar">
+    <nav class="sidebar-nav">
+      <a href="#section-upload" class="sidebar-item active" onclick="showSection('upload', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Upload Files
+      </a>
+      <a href="#section-files" class="sidebar-item" onclick="showSection('files', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+        All Files
+      </a>
+      <a href="#section-access" class="sidebar-item" onclick="showSection('access', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        Access Control
+      </a>
+      <a href="#section-users" class="sidebar-item" onclick="showSection('users', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        Users
+      </a>
+      <a href="#section-pricing" class="sidebar-item" onclick="showSection('pricing', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        Pricing
+      </a>
+      <a href="#section-log" class="sidebar-item" onclick="showSection('log', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+        Activity Log
+      </a>
+    </nav>
+  </aside>
+
+  <!-- Main Area -->
+  <div class="admin-main">
+
+    <!-- UPLOAD SECTION -->
+    <section id="section-upload" class="admin-section">
+      <div class="section-header">
+        <h2>Upload Files</h2>
+        <p class="text-muted">Supported: PDF, Images, HTML, STL, SVG, MP4, MP3, TXT, DOCX, XLSX, ZIP • Max 100MB per file</p>
+      </div>
+      <div id="uploadAlert" class="alert hidden"></div>
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" id="fileInput"
+          accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.svg,.html,.htm,.stl,.obj,.mp4,.webm,.mp3,.wav,.txt,.md,.docx,.xlsx,.csv,.zip,.rar"
+          multiple hidden/>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <p><strong>Click to choose</strong> or drag & drop</p>
+        <span class="text-muted text-sm">PDF · Images · HTML · STL · SVG · MP4 · MP3 · TXT · DOCX · XLSX · ZIP and more</span>
+      </div>
+      <div id="uploadQueue" class="upload-queue hidden">
+        <div class="queue-header">
+          <h4>Files to upload</h4>
+          <button class="btn btn-primary btn-sm" id="startUploadBtn" onclick="startUpload()">Upload All</button>
+        </div>
+        <div id="queueList"></div>
+      </div>
+    </section>
+
+    <!-- ALL FILES SECTION -->
+    <section id="section-files" class="admin-section hidden">
+      <div class="section-header">
+        <h2>All Files</h2>
+        <p class="text-muted" id="adminFileCount"></p>
+      </div>
+      <div id="adminFilesLoading" class="empty-state"><div class="spinner"></div><p>Loading…</p></div>
+      <div id="adminFilesEmpty" class="empty-state hidden">
+        <p>No files uploaded yet.</p>
+        <button class="btn btn-primary btn-sm" onclick="showSection('upload', document.querySelector('.sidebar-item'))">Upload your first file</button>
+      </div>
+      <table class="data-table hidden" id="adminFilesTable">
+        <thead><tr><th>Name</th><th>Type</th><th>Size</th><th>Uploaded</th><th>Actions</th></tr></thead>
+        <tbody id="adminFilesTbody"></tbody>
+      </table>
+    </section>
+
+    <!-- ACCESS CONTROL SECTION -->
+    <section id="section-access" class="admin-section hidden">
+      <div class="section-header">
+        <h2>Access Control</h2>
+        <p class="text-muted">Grant or revoke file access for users, and set expiry dates.</p>
+      </div>
+      <div id="accessAlert" class="alert hidden"></div>
+      <div class="card">
+        <h4>Grant Access</h4>
+        <div class="form-row">
+          <div class="form-group">
+            <label>User</label>
+            <select id="accessUser"><option value="">Select a user…</option></select>
+          </div>
+          <div class="form-group">
+            <label>File</label>
+            <select id="accessFile"><option value="">Select a file…</option></select>
+          </div>
+          <div class="form-group">
+            <label>Expires (optional)</label>
+            <input type="date" id="accessExpiry"/>
+          </div>
+          <div class="form-group form-group-btn">
+            <button class="btn btn-primary" onclick="grantAccess()">Grant Access</button>
+          </div>
+        </div>
+      </div>
+      <div class="card mt-4">
+        <h4>Current Access Grants</h4>
+        <div id="accessLoading" class="empty-state"><div class="spinner"></div><p>Loading…</p></div>
+        <div id="accessEmpty" class="empty-state hidden"><p>No access grants yet.</p></div>
+        <table class="data-table hidden" id="accessTable">
+          <thead><tr><th>User</th><th>File</th><th>Expires</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="accessTbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- USERS SECTION -->
+    <section id="section-users" class="admin-section hidden">
+      <div class="section-header">
+        <h2>Users</h2>
+        <p class="text-muted">All registered users in the system.</p>
+      </div>
+      <div id="usersLoading" class="empty-state"><div class="spinner"></div><p>Loading…</p></div>
+      <div id="usersEmpty" class="empty-state hidden"><p>No registered users yet.</p></div>
+      <table class="data-table hidden" id="usersTable">
+        <thead><tr><th>Name</th><th>Email</th><th>Joined</th><th>Role</th></tr></thead>
+        <tbody id="usersTbody"></tbody>
+      </table>
+    </section>
+
+    <!-- PRICING SECTION -->
+    <section id="section-pricing" class="admin-section hidden">
+      <div class="section-header">
+        <h2>定價與商品 Pricing &amp; Products</h2>
+        <p class="text-muted">設定綠界金流商品，讓使用者直接付款取得檔案存取權，無需管理員手動授權。</p>
+      </div>
+      <div id="pricingAlert" class="alert hidden"></div>
+
+      <!-- Server URL config reminder -->
+      <div class="alert alert-info" style="margin-bottom:1rem;background:#EFF6FF;border-color:#BFDBFE;color:#1E40AF;">
+        <strong>⚙️ 伺服器設定提醒：</strong>
+        請確認 <code>server/.env</code> 中的 <code>SERVER_URL</code> 已設為你在 Render.com 部署的伺服器網址（例如 <code>https://fileaccess-ecpay.onrender.com</code>）。
+        ECPay 付款回呼 (ReturnURL) 將指向該伺服器。
+      </div>
+
+      <!-- Create / Edit product form -->
+      <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card-header">
+          <h3 id="productFormTitle">新增商品 New Product</h3>
+        </div>
+        <div class="card-body" style="display:grid;gap:1rem;">
+          <input type="hidden" id="editProductKey"/>
+
+          <div class="form-group">
+            <label class="form-label">商品名稱 Product Name <span class="text-error">*</span></label>
+            <input type="text" id="productName" class="form-input" placeholder="e.g. 完整電子書 Full E-Book"/>
+          </div>
+
+          <div class="form-row" style="grid-template-columns:1fr 1fr;">
+            <div class="form-group">
+              <label class="form-label">價格（新台幣整數）NTD Price <span class="text-error">*</span></label>
+              <input type="number" id="productPriceNTD" class="form-input" placeholder="e.g. 299" min="1" style="max-width:180px;"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">顯示價格文字 Display Price</label>
+              <input type="text" id="productPrice" class="form-input" placeholder="e.g. NT$299" style="max-width:180px;"/>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">付款方式 Payment Method</label>
+            <select id="productPaymentMethod" class="form-input" style="max-width:240px;">
+              <option value="ALL">信用卡 + ATM（全部）</option>
+              <option value="Credit">信用卡 Credit Card only</option>
+              <option value="ATM">ATM 轉帳 only</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">ECPay 商店代號 Merchant ID <span class="text-error">*</span></label>
+            <input type="text" id="productMerchantId" class="form-input" placeholder="e.g. 2000132（測試用）" style="max-width:240px;"/>
+            <p class="text-muted text-sm" style="margin-top:0.3rem;">登入綠界後台 → 系統開發管理 → 廠商資料 → 廠商代號。測試用：<code>2000132</code></p>
+          </div>
+
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+              <input type="checkbox" id="productUseSandbox" style="cursor:pointer;"/>
+              <span class="form-label" style="margin:0;">使用測試環境 Use Sandbox (stage)</span>
+            </label>
+            <p class="text-muted text-sm">勾選後付款頁面會指向綠界測試環境，上線前記得取消勾選。</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">解鎖的檔案 Files unlocked <span class="text-error">*</span></label>
+            <div id="productFileCheckboxes" class="checkbox-list">
+              <p class="text-muted text-sm">Loading files…</p>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">存取期限 Access Duration</label>
+            <div style="display:flex;align-items:center;gap:0.75rem;">
+              <input type="number" id="productDuration" class="form-input" placeholder="空白 = 永久" min="1" style="max-width:180px;"/>
+              <span class="text-muted">天 days（空白 = 永久 permanent）</span>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:0.75rem;">
+            <button class="btn btn-primary" onclick="saveProduct()">儲存商品 Save</button>
+            <button class="btn btn-ghost" onclick="resetProductForm()">清除 Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Products list -->
+      <div class="card">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <h3>商品列表 Products</h3>
+          <span class="text-muted text-sm" id="productCount"></span>
+        </div>
+        <div id="productsLoading" class="empty-state" style="padding:2rem;"><div class="spinner"></div><p>Loading…</p></div>
+        <div id="productsEmpty" class="empty-state hidden" style="padding:2rem;"><p>尚無商品。請在上方新增。</p></div>
+        <table class="data-table hidden" id="productsTable">
+          <thead><tr><th>名稱</th><th>檔案</th><th>期限</th><th>價格</th><th>付款方式</th><th>環境</th><th>操作</th></tr></thead>
+          <tbody id="productsTableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Purchases sub-section -->
+      <div class="card" style="margin-top:1.5rem;">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <h3>購買記錄 Purchase History</h3>
+          <span class="text-muted text-sm" id="purchaseCount"></span>
+        </div>
+        <div id="purchasesLoading" class="empty-state" style="padding:2rem;"><div class="spinner"></div><p>Loading…</p></div>
+        <div id="purchasesEmpty" class="empty-state hidden" style="padding:2rem;"><p>尚無購買記錄。</p></div>
+        <table class="data-table hidden" id="purchasesTable">
+          <thead><tr><th>使用者 UID</th><th>商品</th><th>檔案</th><th>金額</th><th>付款方式</th><th>日期</th><th>到期</th></tr></thead>
+          <tbody id="purchasesTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ACTIVITY LOG SECTION -->
+    <section id="section-log" class="admin-section hidden">
+      <div class="section-header">
+        <h2>Activity Log</h2>
+        <p class="text-muted">All system events — logins, file views, uploads, access changes.</p>
+      </div>
+
+      <!-- Log Filters -->
+      <div class="log-filters card">
+        <div class="form-row" style="grid-template-columns:1fr 1fr 1fr auto;">
+          <div class="form-group">
+            <label>Filter by action</label>
+            <select id="logFilterAction" onchange="if(window.renderLog)window.renderLog()">
+              <option value="">All actions</option>
+              <option value="login">Login</option>
+              <option value="logout">Logout</option>
+              <option value="file_view">File viewed</option>
+              <option value="file_upload">File uploaded</option>
+              <option value="file_delete">File deleted</option>
+              <option value="access_grant">Access granted</option>
+              <option value="access_revoke">Access revoked</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Filter by user</label>
+            <select id="logFilterUser" onchange="if(window.renderLog)window.renderLog()">
+              <option value="">All users</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>From date</label>
+            <input type="date" id="logFilterDate" onchange="if(window.renderLog)window.renderLog()"/>
+          </div>
+          <div class="form-group form-group-btn">
+            <button class="btn btn-ghost btn-sm" onclick="clearLogFilters()">Clear filters</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+        <span class="text-muted text-sm" id="logCount"></span>
+        <button class="btn btn-danger-ghost btn-sm" onclick="confirmClearLog()">Clear all logs</button>
+      </div>
+
+      <div id="logLoading" class="empty-state"><div class="spinner"></div><p>Loading…</p></div>
+      <div id="logEmpty" class="empty-state hidden">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+        <p>No activity logged yet.</p>
+      </div>
+      <div id="logTable" class="log-table hidden"></div>
+      <div style="text-align:center; margin-top:1rem;" id="logLoadMore" class="hidden">
+        <button class="btn btn-ghost btn-sm" onclick="loadMoreLog()">Load more</button>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<!-- DELETE FILE CONFIRM MODAL -->
+<div id="deleteModal" class="modal hidden">
+  <div class="modal-overlay" onclick="closeDeleteModal()"></div>
+  <div class="modal-panel modal-sm">
+    <div class="modal-header">
+      <h3>Delete File</h3>
+      <button class="btn btn-ghost" onclick="closeDeleteModal()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div style="padding:1.5rem;">
+      <p>Are you sure you want to delete <strong id="deleteFileName"></strong>? This will also remove all user access to this file.</p>
+      <div style="display:flex;gap:0.75rem;margin-top:1.5rem;justify-content:flex-end;">
+        <button class="btn btn-ghost" onclick="closeDeleteModal()">Cancel</button>
+        <button class="btn btn-danger" onclick="confirmDelete()">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CLEAR LOG CONFIRM MODAL -->
+<div id="clearLogModal" class="modal hidden">
+  <div class="modal-overlay" onclick="document.getElementById('clearLogModal').classList.add('hidden')"></div>
+  <div class="modal-panel modal-sm">
+    <div class="modal-header">
+      <h3>Clear Activity Log</h3>
+      <button class="btn btn-ghost" onclick="document.getElementById('clearLogModal').classList.add('hidden')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div style="padding:1.5rem;">
+      <p>This will permanently delete <strong>all</strong> activity log entries. This cannot be undone.</p>
+      <div style="display:flex;gap:0.75rem;margin-top:1.5rem;justify-content:flex-end;">
+        <button class="btn btn-ghost" onclick="document.getElementById('clearLogModal').classList.add('hidden')">Cancel</button>
+        <button class="btn btn-danger" onclick="doClearLog()">Clear All Logs</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getDatabase, ref, get, set, remove, push, update, query, orderByChild, limitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { firebaseConfig, supabaseConfig } from "./js/config.js";
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db   = getDatabase(app);
+
+  let currentUser = null;
+  let allUsers    = {};
+  let allFiles    = {};
+  let allLogs     = [];
+  let pendingFiles = [];
+  let deleteTarget = null;
+  const LOG_PAGE_SIZE = 100;
+  let logDisplayCount = LOG_PAGE_SIZE;
+
+  // ── File type definitions ─────────────────────────────────────────────────
+  const FILE_TYPES = {
+    // Images
+    "image/png":  { label:"PNG",  icon:"🖼️", color:"#8B5CF6", viewer:"image" },
+    "image/jpeg": { label:"JPEG", icon:"🖼️", color:"#8B5CF6", viewer:"image" },
+    "image/gif":  { label:"GIF",  icon:"🖼️", color:"#8B5CF6", viewer:"image" },
+    "image/webp": { label:"WEBP", icon:"🖼️", color:"#8B5CF6", viewer:"image" },
+    "image/svg+xml": { label:"SVG", icon:"🎨", color:"#EC4899", viewer:"image" },
+    // Documents
+    "application/pdf": { label:"PDF", icon:"📄", color:"#EF4444", viewer:"pdf" },
+    "text/html":       { label:"HTML", icon:"🌐", color:"#F59E0B", viewer:"html" },
+    "text/plain":      { label:"TXT",  icon:"📝", color:"#64748B", viewer:"text" },
+    "text/markdown":   { label:"MD",   icon:"📝", color:"#64748B", viewer:"text" },
+    "text/csv":        { label:"CSV",  icon:"📊", color:"#10B981", viewer:"text" },
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": { label:"DOCX", icon:"📘", color:"#2563EB", viewer:"download" },
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":       { label:"XLSX", icon:"📗", color:"#16A34A", viewer:"download" },
+    // 3D / CAD
+    "model/stl":             { label:"STL", icon:"🧊", color:"#0EA5E9", viewer:"stl" },
+    "application/octet-stream": { label:"BIN", icon:"📦", color:"#94A3B8", viewer:"download" },
+    // Video
+    "video/mp4":  { label:"MP4",  icon:"🎬", color:"#EF4444", viewer:"video" },
+    "video/webm": { label:"WEBM", icon:"🎬", color:"#EF4444", viewer:"video" },
+    // Audio
+    "audio/mpeg": { label:"MP3",  icon:"🎵", color:"#A855F7", viewer:"audio" },
+    "audio/wav":  { label:"WAV",  icon:"🎵", color:"#A855F7", viewer:"audio" },
+    // Archive
+    "application/zip":      { label:"ZIP", icon:"🗜️", color:"#78716C", viewer:"download" },
+    "application/x-rar-compressed": { label:"RAR", icon:"🗜️", color:"#78716C", viewer:"download" },
+  };
+
+  const ALLOWED_EXTENSIONS = [
+    ".pdf",".png",".jpg",".jpeg",".gif",".webp",".svg",
+    ".html",".htm",".stl",".obj",
+    ".mp4",".webm",".mp3",".wav",
+    ".txt",".md",".docx",".xlsx",".csv",
+    ".zip",".rar"
+  ];
+
+  function getFileTypeDef(mimeType, filename) {
+    if (FILE_TYPES[mimeType]) return FILE_TYPES[mimeType];
+    // Fallback by extension
+    const ext = filename?.split(".").pop()?.toLowerCase();
+    if (ext === "stl" || ext === "obj") return { label: ext.toUpperCase(), icon:"🧊", color:"#0EA5E9", viewer:"stl" };
+    if (ext === "md")  return { label:"MD",  icon:"📝", color:"#64748B", viewer:"text" };
+    if (ext === "htm") return { label:"HTML", icon:"🌐", color:"#F59E0B", viewer:"html" };
+    return { label: (ext || "FILE").toUpperCase(), icon:"📁", color:"#94A3B8", viewer:"download" };
+  }
+
+  // ── Activity Log helpers ─────────────────────────────────────────────────
+  async function writeLog(action, details = {}) {
+    if (!currentUser) return;
+    try {
+      await push(ref(db, "logs"), {
+        action,
+        uid:       currentUser.uid,
+        email:     currentUser.email || "",
+        name:      currentUser.displayName || currentUser.email || "",
+        timestamp: Date.now(),
+        ...details
+      });
+    } catch (e) { console.warn("Log write failed:", e); }
+  }
+  window._writeLog = writeLog; // expose for use in index.html via import
+
+  // ── Auth Guard ────────────────────────────────────────────────────────────
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+    const adminSnap = await get(ref(db, `admins/${user.uid}`));
+    if (!adminSnap.exists()) { window.location.href = "index.html"; return; }
+    currentUser = user;
+    document.getElementById("userName").textContent = user.displayName || user.email;
+    document.getElementById("userAvatar").textContent = (user.displayName || user.email || "A")[0].toUpperCase();
+    initAdmin();
+  });
+
+  document.getElementById("signOutBtn").addEventListener("click", async () => {
+    writeLog("logout");
+    await signOut(auth);
+    window.location.href = "login.html";
+  });
+
+  async function initAdmin() {
+    await Promise.all([loadUsers(), loadFiles()]);
+    populateAccessSelects();
+    renderAccessTable();
+    renderUsersTable();
+  }
+
+  // ── Section Switching ─────────────────────────────────────────────────────
+  window.showSection = (name, el) => {
+    document.querySelectorAll(".admin-section").forEach(s => s.classList.add("hidden"));
+    document.querySelectorAll(".sidebar-item").forEach(s => s.classList.remove("active"));
+    document.getElementById(`section-${name}`).classList.remove("hidden");
+    el.classList.add("active");
+    if (name === "log") loadLog();
+    if (name === "pricing") loadPricing();
+  };
+
+  // ── Upload ────────────────────────────────────────────────────────────────
+  const uploadZone = document.getElementById("uploadZone");
+  const fileInput  = document.getElementById("fileInput");
+  uploadZone.addEventListener("click", () => fileInput.click());
+  uploadZone.addEventListener("dragover", e => { e.preventDefault(); uploadZone.classList.add("drag-over"); });
+  uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("drag-over"));
+  uploadZone.addEventListener("drop", e => { e.preventDefault(); uploadZone.classList.remove("drag-over"); addToQueue([...e.dataTransfer.files]); });
+  fileInput.addEventListener("change", () => addToQueue([...fileInput.files]));
+
+  function isAllowedFile(file) {
+    const ext = "." + file.name.split(".").pop().toLowerCase();
+    return ALLOWED_EXTENSIONS.includes(ext);
+  }
+
+  function addToQueue(files) {
+    const valid = files.filter(f => {
+      if (!isAllowedFile(f)) { showUploadAlert(`"${f.name}" — unsupported file type.`, "error"); return false; }
+      if (f.size > 100 * 1024 * 1024) { showUploadAlert(`"${f.name}" exceeds the 100 MB limit.`, "error"); return false; }
+      return true;
+    });
+    pendingFiles = [...pendingFiles, ...valid];
+    renderQueue();
+  }
+
+  function renderQueue() {
+    const queue = document.getElementById("uploadQueue");
+    const list  = document.getElementById("queueList");
+    if (pendingFiles.length === 0) { queue.classList.add("hidden"); return; }
+    queue.classList.remove("hidden");
+    list.innerHTML = pendingFiles.map((f, i) => {
+      const def = getFileTypeDef(f.type, f.name);
+      return `<div class="queue-item" id="qi-${i}">
+        <span style="font-size:1.1rem">${def.icon}</span>
+        <span class="queue-name">${escHtml(f.name)}</span>
+        <span class="badge badge-neutral">${def.label}</span>
+        <span class="text-muted text-sm">${formatSize(f.size)}</span>
+        <span class="queue-status" id="qstatus-${i}">Pending</span>
+        <button class="btn btn-ghost btn-xs" onclick="removeFromQueue(${i})">✕</button>
+      </div>`;
+    }).join("");
+  }
+
+  window.removeFromQueue = (i) => { pendingFiles.splice(i, 1); renderQueue(); };
+
+  window.startUpload = async () => {
+    if (pendingFiles.length === 0) return;
+    document.getElementById("startUploadBtn").disabled = true;
+    let successCount = 0;
+    for (let i = 0; i < pendingFiles.length; i++) {
+      const file = pendingFiles[i];
+      const statusEl = document.getElementById(`qstatus-${i}`);
+      statusEl.textContent = "Uploading…";
+      statusEl.className = "queue-status status-uploading";
+      try {
+        const url = await uploadToSupabase(file);
+        const fileRef = push(ref(db, "files"));
+        const fileData = { name: file.name, type: file.type || "application/octet-stream", size: file.size, url, uploadedBy: currentUser.uid, uploadedAt: Date.now() };
+        await set(fileRef, fileData);
+        writeLog("file_upload", { fileName: file.name, fileId: fileRef.key, fileSize: file.size });
+        statusEl.textContent = "Done ✓";
+        statusEl.className = "queue-status status-done";
+        successCount++;
+        allFiles[fileRef.key] = fileData;
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Failed ✗";
+        statusEl.className = "queue-status status-error";
+      }
+    }
+    document.getElementById("startUploadBtn").disabled = false;
+    if (successCount > 0) {
+      showUploadAlert(`${successCount} file(s) uploaded successfully.`, "success");
+      pendingFiles = pendingFiles.filter((_, i) => document.getElementById(`qstatus-${i}`)?.textContent !== "Done ✓");
+      setTimeout(() => { renderQueue(); populateAccessSelects(); renderFilesTable(); }, 1500);
+    }
+  };
+
+  async function uploadToSupabase(file) {
+    const { supabaseUrl, supabaseKey, bucketName } = supabaseConfig;
+    const ext = file.name.split(".").pop();
+    const filePath = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const uploadResp = await fetch(`${supabaseUrl}/storage/v1/object/${bucketName}/${filePath}`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${supabaseKey}`, "Content-Type": file.type || "application/octet-stream", "x-upsert": "false" },
+      body: file
+    });
+    if (!uploadResp.ok) { const e = await uploadResp.json().catch(() => ({})); throw new Error(e.message || "Upload failed"); }
+    return `${supabaseUrl}/storage/v1/object/public/${bucketName}/${filePath}`;
+  }
+
+  // ── Files Table ───────────────────────────────────────────────────────────
+  async function loadFiles() {
+    try { const snap = await get(ref(db, "files")); allFiles = snap.exists() ? snap.val() : {}; }
+    catch (err) { console.error("loadFiles:", err); allFiles = {}; }
+    renderFilesTable();
+  }
+
+  function renderFilesTable() {
+    const loading = document.getElementById("adminFilesLoading");
+    const empty   = document.getElementById("adminFilesEmpty");
+    const table   = document.getElementById("adminFilesTable");
+    const tbody   = document.getElementById("adminFilesTbody");
+    loading.classList.add("hidden");
+    const entries = Object.entries(allFiles);
+    document.getElementById("adminFileCount").textContent = `${entries.length} file${entries.length !== 1 ? "s" : ""}`;
+    if (entries.length === 0) { empty.classList.remove("hidden"); return; }
+    table.classList.remove("hidden");
+    tbody.innerHTML = entries.map(([id, f]) => {
+      const def = getFileTypeDef(f.type, f.name);
+      return `<tr>
+        <td class="file-name-cell">${def.icon} ${escHtml(f.name)}</td>
+        <td><span class="badge badge-neutral">${def.label}</span></td>
+        <td class="text-muted text-sm">${f.size ? formatSize(f.size) : "—"}</td>
+        <td class="text-muted text-sm">${formatDate(f.uploadedAt)}</td>
+        <td>
+          <button class="btn btn-ghost btn-xs" onclick="previewFile('${escHtml(f.url)}', '${escHtml(f.name)}', '${f.type}')">Preview</button>
+          <button class="btn btn-danger-ghost btn-xs" onclick="deleteFile('${id}', '${escHtml(f.name)}')">Delete</button>
+        </td>
+      </tr>`;
+    }).join("");
+  }
+
+  window.previewFile = (url, name, type) => { window.open(url, "_blank"); };
+
+  window.deleteFile = (id, name) => {
+    deleteTarget = id;
+    document.getElementById("deleteFileName").textContent = name;
+    document.getElementById("deleteModal").classList.remove("hidden");
+  };
+  window.closeDeleteModal = () => { document.getElementById("deleteModal").classList.add("hidden"); deleteTarget = null; };
+
+  window.confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const fname = allFiles[deleteTarget]?.name || deleteTarget;
+    await remove(ref(db, `files/${deleteTarget}`));
+    const accessSnap = await get(ref(db, "access"));
+    if (accessSnap.exists()) {
+      const updates = {};
+      Object.keys(accessSnap.val()).forEach(uid => { if (accessSnap.val()[uid][deleteTarget]) updates[`access/${uid}/${deleteTarget}`] = null; });
+      if (Object.keys(updates).length) await update(ref(db), updates);
+    }
+    writeLog("file_delete", { fileName: fname, fileId: deleteTarget });
+    delete allFiles[deleteTarget];
+    closeDeleteModal();
+    renderFilesTable();
+    populateAccessSelects();
+    renderAccessTable();
+  };
+
+  // ── Users ─────────────────────────────────────────────────────────────────
+  async function loadUsers() {
+    try {
+      const [usersSnap, adminsSnap] = await Promise.all([get(ref(db, "users")), get(ref(db, "admins"))]);
+      allUsers = usersSnap.exists() ? usersSnap.val() : {};
+      const admins = adminsSnap.exists() ? adminsSnap.val() : {};
+      if (currentUser && !allUsers[currentUser.uid]) {
+        allUsers[currentUser.uid] = { email: currentUser.email, displayName: currentUser.displayName || "", createdAt: Date.now() };
+        await set(ref(db, `users/${currentUser.uid}`), allUsers[currentUser.uid]);
+      }
+      Object.keys(allUsers).forEach(uid => { allUsers[uid].isAdmin = !!admins[uid]; });
+    } catch (err) { console.error("loadUsers:", err); allUsers = {}; }
+  }
+
+  function renderUsersTable() {
+    const loading = document.getElementById("usersLoading");
+    const empty   = document.getElementById("usersEmpty");
+    const table   = document.getElementById("usersTable");
+    const tbody   = document.getElementById("usersTbody");
+    loading.classList.add("hidden");
+    const entries = Object.entries(allUsers);
+    if (entries.length === 0) { empty.classList.remove("hidden"); empty.querySelector("p").textContent = "No registered users yet."; return; }
+    table.classList.remove("hidden");
+    tbody.innerHTML = entries.map(([uid, u]) => `<tr>
+      <td>${escHtml(u.displayName || "—")}</td>
+      <td class="text-muted">${escHtml(u.email || "—")}</td>
+      <td class="text-muted text-sm">${u.createdAt ? formatDate(u.createdAt) : "—"}</td>
+      <td>${u.isAdmin ? '<span class="badge badge-admin">Admin</span>' : '<span class="badge badge-neutral">User</span>'}</td>
+    </tr>`).join("");
+  }
+
+  // ── Access Control ────────────────────────────────────────────────────────
+  function populateAccessSelects() {
+    const userSel = document.getElementById("accessUser");
+    const fileSel = document.getElementById("accessFile");
+    const logUserSel = document.getElementById("logFilterUser");
+    const userOpts = Object.entries(allUsers).map(([uid, u]) => `<option value="${uid}">${escHtml(u.displayName || u.email || uid)}</option>`).join("");
+    userSel.innerHTML = `<option value="">Select a user…</option>${userOpts}`;
+    logUserSel.innerHTML = `<option value="">All users</option>${userOpts}`;
+    const fileOpts = Object.entries(allFiles).map(([id, f]) => `<option value="${id}">${escHtml(f.name)}</option>`).join("");
+    fileSel.innerHTML = `<option value="">Select a file…</option>${fileOpts}`;
+  }
+
+  window.grantAccess = async () => {
+    const uid    = document.getElementById("accessUser").value;
+    const fileId = document.getElementById("accessFile").value;
+    const expiry = document.getElementById("accessExpiry").value;
+    if (!uid || !fileId) { showAccessAlert("Please select both a user and a file.", "error"); return; }
+    const accessData = { granted: true, grantedAt: Date.now(), grantedBy: currentUser.uid };
+    if (expiry) accessData.expiresAt = new Date(expiry).getTime();
+    await set(ref(db, `access/${uid}/${fileId}`), accessData);
+    writeLog("access_grant", {
+      targetUid: uid,
+      targetEmail: allUsers[uid]?.email || "",
+      fileName: allFiles[fileId]?.name || fileId,
+      fileId,
+      expiresAt: accessData.expiresAt || null
+    });
+    showAccessAlert("Access granted successfully.", "success");
+    renderAccessTable();
+  };
+
+  async function renderAccessTable() {
+    const loading = document.getElementById("accessLoading");
+    const empty   = document.getElementById("accessEmpty");
+    const table   = document.getElementById("accessTable");
+    const tbody   = document.getElementById("accessTbody");
+    loading.classList.remove("hidden"); empty.classList.add("hidden"); table.classList.add("hidden");
+    try {
+      const accessSnap = await get(ref(db, "access"));
+      loading.classList.add("hidden");
+      if (!accessSnap.exists()) { empty.classList.remove("hidden"); return; }
+      const rows = [];
+      const now = Date.now();
+      Object.entries(accessSnap.val()).forEach(([uid, files]) => {
+        if (!files || typeof files !== "object") return;
+        Object.entries(files).forEach(([fileId, access]) => rows.push({ uid, fileId, ...access }));
+      });
+      if (rows.length === 0) { empty.classList.remove("hidden"); return; }
+      table.classList.remove("hidden");
+      tbody.innerHTML = rows.map(r => {
+        const userName = allUsers[r.uid]?.displayName || allUsers[r.uid]?.email || r.uid;
+        const fileName = allFiles[r.fileId]?.name || r.fileId;
+        const expired  = r.expiresAt && r.expiresAt < now;
+        const status   = expired ? `<span class="badge badge-error">Expired</span>` : `<span class="badge badge-success">Active</span>`;
+        return `<tr>
+          <td>${escHtml(userName)}</td>
+          <td>${escHtml(fileName)}</td>
+          <td class="text-sm">${r.expiresAt ? formatDate(r.expiresAt) : "Never"}</td>
+          <td>${status}</td>
+          <td><button class="btn btn-danger-ghost btn-xs" onclick="revokeAccess('${r.uid}','${r.fileId}')">Revoke</button></td>
+        </tr>`;
+      }).join("");
+    } catch (err) {
+      loading.classList.add("hidden"); empty.classList.remove("hidden");
+      empty.querySelector("p").textContent = "Failed to load. Check database rules.";
+    }
+  }
+
+  window.revokeAccess = async (uid, fileId) => {
+    await remove(ref(db, `access/${uid}/${fileId}`));
+    writeLog("access_revoke", { targetUid: uid, targetEmail: allUsers[uid]?.email || "", fileName: allFiles[fileId]?.name || fileId, fileId });
+    showAccessAlert("Access revoked.", "success");
+    renderAccessTable();
+  };
+
+  // ── Activity Log ──────────────────────────────────────────────────────────
+  async function loadLog() {
+    document.getElementById("logLoading").classList.remove("hidden");
+    document.getElementById("logEmpty").classList.add("hidden");
+    document.getElementById("logTable").classList.add("hidden");
+    document.getElementById("logLoadMore").classList.add("hidden");
+    try {
+      const snap = await get(query(ref(db, "logs"), orderByChild("timestamp"), limitToLast(500)));
+      if (!snap.exists()) { document.getElementById("logLoading").classList.add("hidden"); document.getElementById("logEmpty").classList.remove("hidden"); return; }
+      allLogs = Object.entries(snap.val()).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.timestamp - a.timestamp);
+      document.getElementById("logLoading").classList.add("hidden");
+      logDisplayCount = LOG_PAGE_SIZE;
+      renderLog();
+    } catch (err) {
+      document.getElementById("logLoading").classList.add("hidden");
+      document.getElementById("logEmpty").classList.remove("hidden");
+      document.getElementById("logEmpty").querySelector("p").textContent = "Failed to load logs.";
+    }
+  }
+
+  window.renderLog = () => {
+    const filterAction = document.getElementById("logFilterAction").value;
+    const filterUid    = document.getElementById("logFilterUser").value;
+    const filterDate   = document.getElementById("logFilterDate").value;
+
+    let filtered = allLogs.filter(l => {
+      if (filterAction && l.action !== filterAction) return false;
+      if (filterUid   && l.uid   !== filterUid)    return false;
+      if (filterDate) {
+        const d = new Date(filterDate); d.setHours(0,0,0,0);
+        if (l.timestamp < d.getTime()) return false;
+      }
+      return true;
+    });
+
+    document.getElementById("logCount").textContent = `${filtered.length} event${filtered.length !== 1 ? "s" : ""}`;
+
+    if (filtered.length === 0) {
+      document.getElementById("logEmpty").classList.remove("hidden");
+      document.getElementById("logTable").classList.add("hidden");
+      document.getElementById("logLoadMore").classList.add("hidden");
+      return;
+    }
+
+    document.getElementById("logEmpty").classList.add("hidden");
+    document.getElementById("logTable").classList.remove("hidden");
+
+    const slice = filtered.slice(0, logDisplayCount);
+    document.getElementById("logTable").innerHTML = slice.map(l => {
+      const { icon, label, color } = getLogMeta(l.action);
+      const details = getLogDetails(l);
+      return `<div class="log-entry">
+        <div class="log-icon" style="background:${color}18;color:${color}">${icon}</div>
+        <div class="log-body">
+          <div class="log-main">
+            <span class="log-action" style="color:${color}">${label}</span>
+            ${details ? `<span class="log-details">${details}</span>` : ""}
+          </div>
+          <div class="log-meta">
+            <span class="log-user">${escHtml(l.name || l.email || l.uid)}</span>
+            <span class="log-time">${formatDateTime(l.timestamp)}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+
+    if (filtered.length > logDisplayCount) {
+      document.getElementById("logLoadMore").classList.remove("hidden");
+    } else {
+      document.getElementById("logLoadMore").classList.add("hidden");
+    }
+  };
+
+  window.loadMoreLog = () => { logDisplayCount += LOG_PAGE_SIZE; renderLog(); };
+
+  window.clearLogFilters = () => {
+    document.getElementById("logFilterAction").value = "";
+    document.getElementById("logFilterUser").value   = "";
+    document.getElementById("logFilterDate").value   = "";
+    renderLog();
+  };
+
+  window.confirmClearLog = () => { document.getElementById("clearLogModal").classList.remove("hidden"); };
+  window.doClearLog = async () => {
+    await remove(ref(db, "logs"));
+    document.getElementById("clearLogModal").classList.add("hidden");
+    allLogs = [];
+    renderLog();
+  };
+
+  function getLogMeta(action) {
+    const map = {
+      login:         { icon:"🔑", label:"Login",            color:"#2563EB" },
+      logout:        { icon:"🚪", label:"Logout",           color:"#64748B" },
+      file_view:     { icon:"👁️",  label:"File Viewed",      color:"#8B5CF6" },
+      file_upload:   { icon:"⬆️",  label:"File Uploaded",    color:"#16A34A" },
+      file_delete:   { icon:"🗑️",  label:"File Deleted",     color:"#EF4444" },
+      access_grant:  { icon:"✅",  label:"Access Granted",   color:"#10B981" },
+      access_revoke: { icon:"🚫",  label:"Access Revoked",   color:"#F59E0B" },
+      purchase:      { icon:"💳",  label:"Purchase",         color:"#16A34A" },
+    };
+    return map[action] || { icon:"📋", label: action, color:"#64748B" };
+  }
+
+  function getLogDetails(l) {
+    switch (l.action) {
+      case "file_view":     return l.fileName ? `<span class="mono">${escHtml(l.fileName)}</span>` : "";
+      case "file_upload":   return l.fileName ? `<span class="mono">${escHtml(l.fileName)}</span>${l.fileSize ? ` (${formatSize(l.fileSize)})` : ""}` : "";
+      case "file_delete":   return l.fileName ? `<span class="mono">${escHtml(l.fileName)}</span>` : "";
+      case "access_grant":  return l.fileName ? `<span class="mono">${escHtml(l.fileName)}</span> → <em>${escHtml(l.targetEmail || l.targetUid)}</em>${l.expiresAt ? ` (expires ${formatDate(l.expiresAt)})` : ""}` : "";
+      case "access_revoke": return l.fileName ? `<span class="mono">${escHtml(l.fileName)}</span> from <em>${escHtml(l.targetEmail || l.targetUid)}</em>` : "";
+      case "purchase":      return l.productName ? `<strong>${escHtml(l.productName)}</strong>${l.fileIds?.length ? ` (${l.fileIds.length} file${l.fileIds.length !== 1?"s":""})` : ""}` : "";
+      default: return "";
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function showUploadAlert(msg, type) {
+    const el = document.getElementById("uploadAlert");
+    el.textContent = msg; el.className = `alert alert-${type}`; el.classList.remove("hidden");
+    setTimeout(() => el.classList.add("hidden"), 5000);
+  }
+  function showAccessAlert(msg, type) {
+    const el = document.getElementById("accessAlert");
+    el.textContent = msg; el.className = `alert alert-${type}`; el.classList.remove("hidden");
+    setTimeout(() => el.classList.add("hidden"), 5000);
+  }
+  function formatDate(ts) { return new Date(ts).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" }); }
+  function formatDateTime(ts) { return new Date(ts).toLocaleString("en-US", { month:"short", day:"numeric", hour:"2-digit", minute:"2-digit", second:"2-digit" }); }
+  function formatSize(b) {
+    if (b < 1024) return `${b} B`;
+    if (b < 1024*1024) return `${(b/1024).toFixed(1)} KB`;
+    return `${(b/1024/1024).toFixed(1)} MB`;
+  }
+  function escHtml(s) {
+    if (!s) return "";
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  document.addEventListener("keydown", e => { if (e.key === "Escape") { document.getElementById("deleteModal").classList.add("hidden"); document.getElementById("clearLogModal").classList.add("hidden"); } });
+
+  // ── PRICING (ECPay 綠界金流) ──────────────────────────────────────────────
+  let allProducts  = {};  // keyed by product key
+  let allPurchases = {};  // keyed by uid
+
+  async function loadPricing() {
+    try {
+      const snap = await get(ref(db, "products"));
+      allProducts = snap.exists() ? snap.val() : {};
+    } catch(e) { allProducts = {}; }
+    renderProducts();
+    populateProductFileCheckboxes();
+
+    try {
+      const snap = await get(ref(db, "purchases"));
+      allPurchases = snap.exists() ? snap.val() : {};
+    } catch(e) { allPurchases = {}; }
+    renderPurchases();
+  }
+
+  function populateProductFileCheckboxes() {
+    const container = document.getElementById("productFileCheckboxes");
+    const files = Object.entries(allFiles);
+    if (files.length === 0) {
+      container.innerHTML = `<p class="text-muted text-sm">尚無檔案，請先上傳檔案。</p>`;
+      return;
+    }
+    container.innerHTML = files.map(([id, f]) =>
+      `<label class="checkbox-item" style="display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;font-size:0.9rem;cursor:pointer;">
+        <input type="checkbox" class="product-file-cb" value="${id}" style="cursor:pointer;"/>
+        <span>${escHtml(f.name)}</span>
+      </label>`
+    ).join("");
+  }
+
+  function renderProducts() {
+    const entries = Object.entries(allProducts);
+    document.getElementById("productCount").textContent = `${entries.length} 個商品`;
+    document.getElementById("productsLoading").classList.add("hidden");
+
+    if (entries.length === 0) {
+      document.getElementById("productsEmpty").classList.remove("hidden");
+      document.getElementById("productsTable").classList.add("hidden");
+      return;
+    }
+    document.getElementById("productsEmpty").classList.add("hidden");
+    document.getElementById("productsTable").classList.remove("hidden");
+
+    document.getElementById("productsTableBody").innerHTML = entries.map(([key, p]) => {
+      const fileNames = (p.fileIds || []).map(id => allFiles[id]?.name || id).join(", ");
+      const duration  = p.durationDays ? `${p.durationDays} 天` : "永久";
+      const env       = p.useSandbox ? `<span class="badge badge-warning">測試</span>` : `<span class="badge badge-success">正式</span>`;
+      const method    = p.paymentMethod === "Credit" ? "信用卡" : p.paymentMethod === "ATM" ? "ATM" : "全部";
+      return `<tr>
+        <td><strong>${escHtml(p.name)}</strong></td>
+        <td class="text-sm">${escHtml(fileNames) || "—"}</td>
+        <td>${duration}</td>
+        <td>${escHtml(p.price || (p.priceNTD ? `NT$${p.priceNTD}` : "—"))}</td>
+        <td>${method}</td>
+        <td>${env}</td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="editProduct('${key}')">編輯</button>
+          <button class="btn btn-ghost btn-sm text-error" onclick="deleteProduct('${key}')">刪除</button>
+        </td>
+      </tr>`;
+    }).join("");
+  }
+
+  function renderPurchases() {
+    const rows = [];
+    for (const [uid, purchases] of Object.entries(allPurchases)) {
+      for (const [pKey, p] of Object.entries(purchases)) {
+        rows.push({ uid, pKey, ...p });
+      }
+    }
+    rows.sort((a, b) => (b.purchasedAt || 0) - (a.purchasedAt || 0));
+
+    document.getElementById("purchasesLoading").classList.add("hidden");
+    document.getElementById("purchaseCount").textContent = `${rows.length} 筆`;
+
+    if (rows.length === 0) {
+      document.getElementById("purchasesEmpty").classList.remove("hidden");
+      document.getElementById("purchasesTable").classList.add("hidden");
+      return;
+    }
+    document.getElementById("purchasesEmpty").classList.add("hidden");
+    document.getElementById("purchasesTable").classList.remove("hidden");
+
+    document.getElementById("purchasesTableBody").innerHTML = rows.map(p => {
+      const fileNames = (p.fileIds || []).map(id => allFiles[id]?.name || id).join(", ");
+      const amount    = p.amount ? `NT$${p.amount}` : "—";
+      const expires   = p.expiresAt ? formatDate(p.expiresAt) : "永久";
+      const method    = p.paymentType || "—";
+      return `<tr>
+        <td class="text-sm mono">${escHtml(p.uid)}</td>
+        <td>${escHtml(p.productName || "—")}</td>
+        <td class="text-sm">${escHtml(fileNames) || "—"}</td>
+        <td>${amount}</td>
+        <td class="text-sm">${escHtml(method)}</td>
+        <td class="text-sm">${p.purchasedAt ? formatDate(p.purchasedAt) : "—"}</td>
+        <td class="text-sm">${expires}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  window.saveProduct = async () => {
+    const name         = document.getElementById("productName").value.trim();
+    const priceNTD     = parseInt(document.getElementById("productPriceNTD").value.trim(), 10);
+    const price        = document.getElementById("productPrice").value.trim();
+    const payMethod    = document.getElementById("productPaymentMethod").value;
+    const merchantId   = document.getElementById("productMerchantId").value.trim();
+    const useSandbox   = document.getElementById("productUseSandbox").checked;
+    const durationRaw  = document.getElementById("productDuration").value.trim();
+    const editKey      = document.getElementById("editProductKey").value;
+    const fileIds      = [...document.querySelectorAll(".product-file-cb:checked")].map(cb => cb.value);
+
+    if (!name)              return showPricingAlert("商品名稱為必填。", "error");
+    if (!priceNTD || priceNTD < 1) return showPricingAlert("請輸入有效的新台幣金額。", "error");
+    if (!merchantId)        return showPricingAlert("請填入 ECPay 廠商代號。", "error");
+    if (fileIds.length === 0) return showPricingAlert("請選擇至少一個檔案。", "error");
+
+    const data = {
+      name,
+      priceNTD,
+      price:         price || `NT$${priceNTD}`,
+      paymentMethod: payMethod,
+      merchantId,
+      useSandbox,
+      fileIds,
+      durationDays:  durationRaw ? parseInt(durationRaw, 10) : null,
+      updatedAt:     Date.now()
+    };
+
+    try {
+      if (editKey) {
+        await set(ref(db, `products/${editKey}`), data);
+        showPricingAlert("商品已更新。", "success");
+      } else {
+        data.createdAt = Date.now();
+        await push(ref(db, "products"), data);
+        showPricingAlert("商品已建立。", "success");
+      }
+      resetProductForm();
+      await loadPricing();
+    } catch(e) {
+      showPricingAlert("儲存失敗：" + e.message, "error");
+    }
+  };
+
+  window.editProduct = (key) => {
+    const p = allProducts[key];
+    if (!p) return;
+    document.getElementById("editProductKey").value         = key;
+    document.getElementById("productName").value            = p.name || "";
+    document.getElementById("productPriceNTD").value        = p.priceNTD || "";
+    document.getElementById("productPrice").value           = p.price || "";
+    document.getElementById("productPaymentMethod").value   = p.paymentMethod || "ALL";
+    document.getElementById("productMerchantId").value      = p.merchantId || "";
+    document.getElementById("productUseSandbox").checked    = !!p.useSandbox;
+    document.getElementById("productDuration").value        = p.durationDays || "";
+    document.getElementById("productFormTitle").textContent = "編輯商品 Edit Product";
+    document.querySelectorAll(".product-file-cb").forEach(cb => {
+      cb.checked = (p.fileIds || []).includes(cb.value);
+    });
+    document.getElementById("productFormTitle").scrollIntoView({ behavior: "smooth" });
+  };
+
+  window.resetProductForm = () => {
+    document.getElementById("editProductKey").value        = "";
+    document.getElementById("productName").value           = "";
+    document.getElementById("productPriceNTD").value       = "";
+    document.getElementById("productPrice").value          = "";
+    document.getElementById("productPaymentMethod").value  = "ALL";
+    document.getElementById("productMerchantId").value     = "";
+    document.getElementById("productUseSandbox").checked   = false;
+    document.getElementById("productDuration").value       = "";
+    document.getElementById("productFormTitle").textContent = "新增商品 New Product";
+    document.querySelectorAll(".product-file-cb").forEach(cb => cb.checked = false);
+  };
+
+  window.deleteProduct = async (key) => {
+    if (!confirm(`確定刪除此商品？現有使用者的存取權不受影響。`)) return;
+    try {
+      await remove(ref(db, `products/${key}`));
+      showPricingAlert("商品已刪除。", "success");
+      await loadPricing();
+    } catch(e) { showPricingAlert("錯誤：" + e.message, "error"); }
+  };
+
+  function showPricingAlert(msg, type) {
+    const el = document.getElementById("pricingAlert");
+    el.textContent = msg; el.className = `alert alert-${type}`; el.classList.remove("hidden");
+    setTimeout(() => el.classList.add("hidden"), 5000);
+  }
+
+</script>
+</body>
+</html>

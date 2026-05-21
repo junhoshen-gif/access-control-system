@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My Files – FileAccess</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <script src="js/protect.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="navbar">
+  <div class="nav-brand">
+    <svg width="28" height="28" viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#2563EB"/><path d="M10 10h10l6 6v10H10V10z" fill="white" opacity="0.9"/><circle cx="23" cy="13" r="4" fill="#BFDBFE" stroke="#2563EB" stroke-width="1.5"/><path d="M21.5 13l1 1 2-2" stroke="#2563EB" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span>FileAccess</span>
+  </div>
+  <div class="nav-right">
+    <span id="adminLink" class="nav-link hidden"><a href="admin.html">Admin Console</a></span>
+    <span class="nav-link"><a href="status.html">Status</a></span>
+    <div class="nav-user" id="navUser">
+      <div class="avatar" id="userAvatar">?</div>
+      <span id="userName">Loading…</span>
+      <button class="btn btn-ghost btn-sm" id="signOutBtn">Sign out</button>
+    </div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<main class="main-content">
+  <div class="page-header">
+    <h2>My Files</h2>
+    <p class="text-muted" id="fileCount"></p>
+  </div>
+
+  <!-- Search / Filter -->
+  <div class="toolbar">
+    <div class="search-box">
+      <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="search" id="searchInput" placeholder="Search files…" oninput="filterFiles()"/>
+    </div>
+    <div class="filter-tabs">
+      <button class="filter-tab active" onclick="setFilter('all', this)">All</button>
+      <button class="filter-tab" onclick="setFilter('doc', this)">Docs</button>
+      <button class="filter-tab" onclick="setFilter('image', this)">Images</button>
+      <button class="filter-tab" onclick="setFilter('media', this)">Media</button>
+      <button class="filter-tab" onclick="setFilter('other', this)">Other</button>
+    </div>
+  </div>
+
+  <!-- File Grid -->
+  <div id="loadingState" class="empty-state">
+    <div class="spinner"></div>
+    <p>Loading your files…</p>
+  </div>
+  <div id="emptyState" class="empty-state hidden">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+    <p>No files available yet</p>
+    <span class="text-muted">Contact an admin to get access to files.</span>
+  </div>
+  <div id="fileGrid" class="file-grid hidden"></div>
+
+  <!-- STORE SECTION — available products the user hasn't bought yet -->
+  <div id="storeSection" class="hidden" style="margin-top:2.5rem;">
+    <div class="page-header" style="margin-bottom:1rem;">
+      <h2>購買存取權 Buy Access</h2>
+      <p class="text-muted">付款後系統將自動解鎖檔案，無需等待管理員審核。</p>
+    </div>
+    <div id="storeGrid" class="store-grid"></div>
+  </div>
+
+  <!-- Payment redirect notice -->
+  <div id="paymentDoneNotice" class="hidden" style="margin-top:1rem;">
+    <div class="alert alert-success">
+      🎉 付款成功！系統正在更新您的存取權限，請稍候幾秒後重新整理頁面。
+    </div>
+  </div>
+</main>
+
+<!-- FILE VIEWER MODAL -->
+<div id="viewerModal" class="modal hidden">
+  <div class="modal-overlay" onclick="closeViewer()"></div>
+  <div class="modal-panel">
+    <div class="modal-header">
+      <div>
+        <h3 id="viewerTitle">File Name</h3>
+        <span id="viewerMeta" class="text-muted text-sm"></span>
+      </div>
+      <button class="btn btn-ghost" onclick="closeViewer()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="viewerBody">
+      <!-- PDF or image renders here -->
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getDatabase, ref, get, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { firebaseConfig } from "./js/config.js";
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getDatabase(app);
+
+  let allFiles = [];        // files the user has access to
+  let allProducts = {};     // published products (for "Buy Access" section)
+  let grantedFileIds = new Set(); // file IDs the user currently has access to
+  let currentFilter = "all";
+  let currentUserEmail = "";
+  let currentUserObj = null;
+
+  // ── ECPay server URL — update this after deploying to Render ──────────────
+  // Replace with your actual Render URL e.g. https://fileaccess-ecpay.onrender.com
+  const ECPAY_SERVER_URL = "https://YOUR-RENDER-APP.onrender.com";
+
+  async function writeLog(action, details = {}) {
+    if (!currentUserObj) return;
+    try {
+      await push(ref(db, "logs"), {
+        action,
+        uid:       currentUserObj.uid,
+        email:     currentUserObj.email || "",
+        name:      currentUserObj.displayName || currentUserObj.email || "",
+        timestamp: Date.now(),
+        ...details
+      });
+    } catch(e) { /* silently ignore log failures */ }
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "login.html"; return; }
+
+    currentUserObj   = user;
+    currentUserEmail = user.email || user.displayName || "unknown";
+    document.getElementById("userName").textContent = user.displayName || user.email;
+    document.getElementById("userAvatar").textContent = (user.displayName || user.email || "?")[0].toUpperCase();
+
+    // Log login event (fire-and-forget — never block page load)
+    writeLog("login");
+
+    // Check admin
+    const adminSnap = await get(ref(db, `admins/${user.uid}`));
+    if (adminSnap.exists()) {
+      document.getElementById("adminLink").classList.remove("hidden");
+    }
+
+    // Load accessible files and products
+    await loadFiles(user.uid);
+    await loadProducts(user.uid);
+  });
+
+  document.getElementById("signOutBtn").addEventListener("click", async () => {
+    await signOut(auth);
+    window.location.href = "login.html";
+  });
+
+  async function loadFiles(uid) {
+    try {
+      const [accessSnap, filesSnap] = await Promise.all([
+        get(ref(db, `access/${uid}`)),
+        get(ref(db, "files"))
+      ]);
+
+      document.getElementById("loadingState").classList.add("hidden");
+
+      const accessData = accessSnap.exists() ? accessSnap.val() : {};
+      const filesData  = filesSnap.exists()  ? filesSnap.val()  : {};
+      const now = Date.now();
+
+      allFiles = Object.entries(accessData)
+        .filter(([fileId, access]) => {
+          if (!access.granted) return false;
+          if (access.expiresAt && access.expiresAt < now) return false;
+          return filesData[fileId];
+        })
+        .map(([fileId, access]) => ({
+          id: fileId,
+          ...filesData[fileId],
+          expiresAt: access.expiresAt || null
+        }));
+
+      // Track which file IDs user has access to (for store filtering)
+      grantedFileIds = new Set(allFiles.map(f => f.id));
+
+      if (allFiles.length > 0) {
+        document.getElementById("fileGrid").classList.remove("hidden");
+        renderFiles();
+      } else {
+        document.getElementById("emptyState").classList.remove("hidden");
+      }
+    } catch (err) {
+      console.error(err);
+      document.getElementById("loadingState").innerHTML = `<p class="text-error">Failed to load files. Please refresh.</p>`;
+    }
+  }
+
+  // ── Store: load products and show "Buy Access" for unpurchased ones ────────
+  async function loadProducts(uid) {
+    // Show payment done notice if redirected back from ECPay
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("payment") === "done") {
+      document.getElementById("paymentDoneNotice").classList.remove("hidden");
+      // Clean URL
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    try {
+      const snap = await get(ref(db, "products"));
+      if (!snap.exists()) return;
+      allProducts = snap.val();
+    } catch(e) { return; }
+
+    // Filter to products that contain at least one file the user doesn't have
+    const availableProducts = Object.entries(allProducts).filter(([, p]) => {
+      if (!p.fileIds || p.fileIds.length === 0) return false;
+      return p.fileIds.some(fid => !grantedFileIds.has(fid));
+    });
+
+    if (availableProducts.length === 0) return;
+
+    document.getElementById("storeSection").classList.remove("hidden");
+    document.getElementById("storeGrid").innerHTML = availableProducts.map(([key, p]) => {
+      const price = p.price || (p.priceNTD ? `NT$${p.priceNTD}` : "");
+      const method = p.paymentMethod === "Credit" ? "💳 信用卡" : p.paymentMethod === "ATM" ? "🏧 ATM" : "💳 信用卡 / 🏧 ATM";
+      const fileCount = (p.fileIds || []).length;
+      return `
+        <div class="store-card">
+          <div class="store-card-body">
+            <div class="store-icon">📦</div>
+            <div class="store-info">
+              <div class="store-name">${escHtml(p.name)}</div>
+              <div class="store-meta">${fileCount} 個檔案 · ${method}</div>
+              ${p.durationDays ? `<div class="store-meta">有效期限：${p.durationDays} 天</div>` : `<div class="store-meta">永久存取</div>`}
+            </div>
+          </div>
+          <div class="store-card-footer">
+            <span class="store-price">${escHtml(price)}</span>
+            <button class="btn btn-primary btn-sm" onclick="buyProduct('${key}', '${uid}')">
+              立即購買
+            </button>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  window.buyProduct = async (productKey, uid) => {
+    if (!ECPAY_SERVER_URL || ECPAY_SERVER_URL.includes("YOUR-RENDER")) {
+      alert("付款伺服器尚未設定。請聯絡管理員。\n(ECPAY_SERVER_URL not configured)");
+      return;
+    }
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = "跳轉中…";
+
+    try {
+      const resp = await fetch(`${ECPAY_SERVER_URL}/ecpay/create-order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productKey, uid })
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const html = await resp.text();
+      // Open in same window — server returns an auto-submit form
+      document.open(); document.write(html); document.close();
+    } catch(err) {
+      btn.disabled = false;
+      btn.textContent = "立即購買";
+      alert("無法建立訂單，請稍後再試。\n" + err.message);
+    }
+  };
+
+  window.filterFiles = filterFiles;
+  window.setFilter = setFilter;
+  window.openViewer = openViewer;
+  window.closeViewer = closeViewer;
+
+  function setFilter(type, el) {
+    currentFilter = type;
+    document.querySelectorAll(".filter-tab").forEach(t => t.classList.remove("active"));
+    el.classList.add("active");
+    filterFiles();
+  }
+
+  function filterFiles() {
+    const q = document.getElementById("searchInput").value.toLowerCase();
+    renderFiles(q);
+  }
+
+  // File type definitions (mirrors admin.html)
+  const FILE_TYPES = {
+    "application/pdf":   { label:"PDF",  icon:"📄", viewer:"pdf"      },
+    "image/png":         { label:"PNG",  icon:"🖼️", viewer:"image"    },
+    "image/jpeg":        { label:"JPEG", icon:"🖼️", viewer:"image"    },
+    "image/gif":         { label:"GIF",  icon:"🖼️", viewer:"image"    },
+    "image/webp":        { label:"WEBP", icon:"🖼️", viewer:"image"    },
+    "image/svg+xml":     { label:"SVG",  icon:"🎨", viewer:"image"    },
+    "text/html":         { label:"HTML", icon:"🌐", viewer:"html"     },
+    "text/plain":        { label:"TXT",  icon:"📝", viewer:"text"     },
+    "text/markdown":     { label:"MD",   icon:"📝", viewer:"text"     },
+    "text/csv":          { label:"CSV",  icon:"📊", viewer:"text"     },
+    "video/mp4":         { label:"MP4",  icon:"🎬", viewer:"video"    },
+    "video/webm":        { label:"WEBM", icon:"🎬", viewer:"video"    },
+    "audio/mpeg":        { label:"MP3",  icon:"🎵", viewer:"audio"    },
+    "audio/wav":         { label:"WAV",  icon:"🎵", viewer:"audio"    },
+    "model/stl":         { label:"STL",  icon:"🧊", viewer:"download" },
+  };
+
+  function getTypeDef(type, name) {
+    if (FILE_TYPES[type]) return FILE_TYPES[type];
+    const ext = name?.split(".").pop()?.toLowerCase();
+    if (ext === "stl" || ext === "obj") return { label: ext.toUpperCase(), icon:"🧊", viewer:"download" };
+    if (ext === "md")  return { label:"MD",   icon:"📝", viewer:"text" };
+    if (ext === "htm") return { label:"HTML",  icon:"🌐", viewer:"html" };
+    if (ext === "docx") return { label:"DOCX", icon:"📘", viewer:"download" };
+    if (ext === "xlsx") return { label:"XLSX", icon:"📗", viewer:"download" };
+    if (ext === "zip" || ext === "rar") return { label: ext.toUpperCase(), icon:"🗜️", viewer:"download" };
+    return { label: (ext || "FILE").toUpperCase(), icon:"📁", viewer:"download" };
+  }
+
+  function getFilterCategory(f) {
+    const def = getTypeDef(f.type, f.name);
+    if (def.viewer === "pdf" || def.viewer === "text" || f.type?.includes("document")) return "doc";
+    if (def.viewer === "image") return "image";
+    if (def.viewer === "video" || def.viewer === "audio") return "media";
+    return "other";
+  }
+
+  function renderFiles(q = "") {
+    const filtered = allFiles.filter(f => {
+      const matchSearch = f.name.toLowerCase().includes(q);
+      const cat = getFilterCategory(f);
+      const matchFilter =
+        currentFilter === "all" ||
+        currentFilter === cat;
+      return matchSearch && matchFilter;
+    });
+
+    document.getElementById("fileCount").textContent =
+      `${filtered.length} file${filtered.length !== 1 ? "s" : ""}`;
+
+    const grid = document.getElementById("fileGrid");
+    if (filtered.length === 0) {
+      grid.innerHTML = `<div class="no-results">No files match your search.</div>`;
+      return;
+    }
+
+    grid.innerHTML = filtered.map(f => {
+      const def    = getTypeDef(f.type, f.name);
+      const expiry = f.expiresAt
+        ? `<span class="badge badge-warning">Expires ${formatDate(f.expiresAt)}</span>`
+        : `<span class="badge badge-success">Permanent</span>`;
+      return `
+        <div class="file-card" onclick="openViewer('${f.id}', '${escHtml(f.name)}', '${f.type}', '${f.url}')">
+          <div class="file-icon" style="font-size:2rem;line-height:1">${def.icon}</div>
+          <div class="file-info">
+            <div class="file-name" title="${escHtml(f.name)}">${escHtml(f.name)}</div>
+            <div class="file-meta">
+              <span class="badge badge-neutral">${def.label}</span>
+              ${expiry}
+            </div>
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  async function openViewer(fileId, name, type, url) {
+    document.getElementById("viewerTitle").textContent = name;
+    const file = allFiles.find(f => f.id === fileId);
+    document.getElementById("viewerMeta").textContent =
+      file?.expiresAt ? `Access expires ${formatDate(file.expiresAt)}` : "";
+
+    // Log the file view (fire-and-forget)
+    writeLog("file_view", { fileName: name, fileId });
+
+    const body = document.getElementById("viewerBody");
+    const def  = getTypeDef(type, name);
+
+    let inner = "";
+    switch (def.viewer) {
+      case "pdf":
+        inner = `<iframe src="${url}#toolbar=0&navpanes=0" class="file-viewer-frame"></iframe>`;
+        break;
+      case "image":
+        inner = `<div class="image-viewer"><img src="${url}" alt="${escHtml(name)}" /></div>`;
+        break;
+      case "video":
+        inner = `<div class="media-viewer"><video controls controlsList="nodownload" src="${url}"></video></div>`;
+        break;
+      case "audio":
+        inner = `<div class="media-viewer audio-viewer"><div style="font-size:4rem">🎵</div><p style="margin:1rem 0 1.5rem;font-weight:500">${escHtml(name)}</p><audio controls controlsList="nodownload" src="${url}"></audio></div>`;
+        break;
+      case "html":
+        inner = `<iframe src="${url}" class="file-viewer-frame" sandbox="allow-scripts allow-same-origin"></iframe>`;
+        break;
+      case "text":
+        try {
+          const resp = await fetch(url);
+          const text = await resp.text();
+          inner = `<div class="text-viewer"><pre>${escHtml(text)}</pre></div>`;
+        } catch { inner = `<div class="image-viewer"><p>Could not load file content.</p></div>`; }
+        break;
+      case "download":
+      default:
+        inner = `<div class="image-viewer" style="flex-direction:column;gap:1.5rem;">
+          <div style="font-size:4rem">${def.icon}</div>
+          <p style="font-weight:500;font-size:1.1rem">${escHtml(name)}</p>
+          <p class="text-muted">Preview not available for ${def.label} files.</p>
+        </div>`;
+        break;
+    }
+
+    body.innerHTML = `<div class="viewer-wrap">${inner}</div>`;
+
+    // Apply watermark
+    const wrap = body.querySelector(".viewer-wrap");
+    if (wrap && window.applyViewerWatermark) {
+      wrap.style.position = "relative";
+      const canvas = window.applyViewerWatermark(currentUserEmail);
+      wrap.appendChild(canvas);
+    }
+
+    document.getElementById("viewerModal").classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeViewer() {
+    document.getElementById("viewerModal").classList.add("hidden");
+    document.getElementById("viewerBody").innerHTML = "";
+    document.body.style.overflow = "";
+  }
+
+  function formatDate(ts) {
+    return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function pdfIcon() {
+    return `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><text x="6" y="18" font-size="5" fill="#EF4444" stroke="none" font-weight="bold">PDF</text></svg>`;
+  }
+
+  function imageIcon() {
+    return `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>`;
+  }
+
+  // Close modal on Escape
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeViewer(); });
+</script>
+</body>
+</html>

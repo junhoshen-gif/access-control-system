@@ -1,0 +1,48 @@
+{
+  "rules": {
+    "users": {
+      ".read": "root.child('admins').child(auth.uid).exists()",
+      ".write": "root.child('admins').child(auth.uid).exists()",
+      "$uid": {
+        ".read": "$uid === auth.uid || root.child('admins').child(auth.uid).exists()",
+        ".write": "$uid === auth.uid || root.child('admins').child(auth.uid).exists()"
+      }
+    },
+    "admins": {
+      ".read": "auth != null",
+      ".write": false
+    },
+    "files": {
+      ".read": "root.child('admins').child(auth.uid).exists()",
+      ".write": "root.child('admins').child(auth.uid).exists()"
+    },
+    "access": {
+      ".read": "root.child('admins').child(auth.uid).exists()",
+      ".write": "root.child('admins').child(auth.uid).exists()",
+      "$uid": {
+        ".read": "$uid === auth.uid || root.child('admins').child(auth.uid).exists()",
+        ".write": "root.child('admins').child(auth.uid).exists()"
+      }
+    },
+    "products": {
+      ".read": "auth != null",
+      ".write": "root.child('admins').child(auth.uid).exists()"
+    },
+    "purchases": {
+      ".read": "root.child('admins').child(auth.uid).exists()",
+      ".write": "root.child('admins').child(auth.uid).exists()",
+      "$uid": {
+        ".read": "$uid === auth.uid || root.child('admins').child(auth.uid).exists()",
+        ".write": "root.child('admins').child(auth.uid).exists()"
+      }
+    },
+    "logs": {
+      ".read": "root.child('admins').child(auth.uid).exists()",
+      ".write": "auth != null",
+      "$logId": {
+        ".read": "root.child('admins').child(auth.uid).exists()",
+        ".write": "auth != null"
+      }
+    }
+  }
+}

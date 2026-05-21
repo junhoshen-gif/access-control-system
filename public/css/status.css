@@ -1,0 +1,224 @@
+/* ── Status Page Layout ───────────────────────────────────────────────────── */
+.status-main {
+  margin-top: var(--nav-h);
+  padding: 2rem 2.5rem;
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+.status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.status-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+}
+
+/* Overall badge */
+.status-overall {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: 99px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  border: 1.5px solid transparent;
+}
+.overall-ok    { background: #F0FDF4; color: #166534; border-color: #BBF7D0; }
+.overall-error { background: #FEF2F2; color: #991B1B; border-color: #FECACA; }
+
+/* Pulsing dot */
+.pulse-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.dot-green {
+  background: #16A34A;
+  box-shadow: 0 0 0 0 rgba(22,163,74,0.4);
+  animation: pulse-green 2s infinite;
+}
+.dot-red {
+  background: #EF4444;
+  box-shadow: 0 0 0 0 rgba(239,68,68,0.4);
+  animation: pulse-red 2s infinite;
+}
+@keyframes pulse-green {
+  0%   { box-shadow: 0 0 0 0 rgba(22,163,74,0.4); }
+  70%  { box-shadow: 0 0 0 8px rgba(22,163,74,0); }
+  100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); }
+}
+@keyframes pulse-red {
+  0%   { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+  70%  { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+  100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+}
+
+/* ── Service Cards Grid ───────────────────────────────────────────────────── */
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}
+
+.status-card {
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.status-card.card-ok    { border-color: #BBF7D0; }
+.status-card.card-error { border-color: #FECACA; }
+.status-card.card-unknown { border-color: var(--color-border); }
+
+.status-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.service-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.service-firebase { background: #FFF7ED; }
+.service-supabase { background: #ECFDF5; }
+
+.service-name { font-weight: 600; font-size: 0.9rem; }
+.service-desc { font-size: 0.78rem; color: var(--color-muted); }
+
+.service-status-badge {
+  margin-left: auto;
+  padding: 0.2rem 0.6rem;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.badge-ok      { background: #DCFCE7; color: #166534; }
+.badge-error   { background: #FEE2E2; color: #991B1B; }
+.badge-unknown { background: #F1F5F9; color: #64748B; }
+
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.85rem;
+}
+.metric-label { color: var(--color-muted); }
+.metric-value { font-weight: 500; }
+.metric-value.mono { font-family: "JetBrains Mono", monospace; }
+
+.latency-fast   { color: #16A34A; }
+.latency-medium { color: #D97706; }
+.latency-slow   { color: #EF4444; }
+
+/* ── Section Blocks ───────────────────────────────────────────────────────── */
+.section-block {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 1rem;
+}
+.section-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  background: #F8FAFC;
+}
+.section-block-header h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ── Info Table ───────────────────────────────────────────────────────────── */
+.info-table { }
+.info-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.85rem;
+}
+.info-row:last-child { border-bottom: none; }
+.info-label { color: var(--color-muted); flex-shrink: 0; min-width: 130px; }
+.info-value {
+  font-weight: 500;
+  text-align: right;
+  word-break: break-all;
+}
+.info-value.mono {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+}
+
+/* ── Info Grid (2-col on desktop) ─────────────────────────────────────────── */
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+/* ── Chart ────────────────────────────────────────────────────────────────── */
+.chart-wrap {
+  padding: 1rem 1.25rem 0.5rem;
+}
+#latencyChart {
+  display: block;
+  width: 100%;
+}
+.chart-legend {
+  display: flex;
+  gap: 1.25rem;
+  padding: 0.5rem 0 0.75rem;
+  justify-content: center;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+.legend-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* ── Mono utility ─────────────────────────────────────────────────────────── */
+.mono { font-family: "JetBrains Mono", monospace; }
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .status-main  { padding: 1.25rem; }
+  .info-grid    { grid-template-columns: 1fr; }
+  .status-grid  { grid-template-columns: 1fr; }
+  .info-label   { min-width: 110px; }
+}

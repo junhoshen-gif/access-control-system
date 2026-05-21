@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sign In – FileAccess</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="js/protect.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body class="auth-body">
+
+  <div class="auth-card">
+    <div class="auth-logo">
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="36" height="36" rx="8" fill="#2563EB"/>
+        <path d="M10 10h10l6 6v10H10V10z" fill="white" opacity="0.9"/>
+        <rect x="14" y="18" width="8" height="1.5" rx="0.75" fill="#2563EB"/>
+        <rect x="14" y="21" width="6" height="1.5" rx="0.75" fill="#2563EB"/>
+        <circle cx="23" cy="13" r="4" fill="#BFDBFE" stroke="#2563EB" stroke-width="1.5"/>
+        <path d="M21.5 13l1 1 2-2" stroke="#2563EB" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="auth-logo-text">FileAccess</span>
+    </div>
+
+    <h1 class="auth-title">Welcome back</h1>
+    <p class="auth-subtitle">Sign in to access your files</p>
+
+    <!-- Error / Info Banner -->
+    <div id="authError" class="alert alert-error hidden"></div>
+
+    <!-- Email / Password Form -->
+    <form id="emailForm" class="auth-form">
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="you@example.com" required autocomplete="email"/>
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <div class="password-wrap">
+          <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password"/>
+          <button type="button" class="pw-toggle" onclick="togglePw()">Show</button>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full" id="emailBtn">
+        <span class="btn-label">Sign in</span>
+        <span class="btn-spinner hidden"></span>
+      </button>
+    </form>
+
+    <div class="divider"><span>or continue with</span></div>
+
+    <!-- Social Providers -->
+    <div class="social-grid">
+      <button class="btn btn-social btn-full" id="googleBtn" onclick="signInGoogle()">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18"/>
+        Continue with Google
+      </button>
+    </div>
+
+    <p class="auth-footer">Don't have an account? <a href="register.html">Create one</a></p>
+  </div>
+
+  <!-- Firebase SDKs -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getAuth,
+      signInWithEmailAndPassword,
+      GoogleAuthProvider,
+      signInWithPopup
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { firebaseConfig } from "./js/config.js";
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    function showError(msg) {
+      const el = document.getElementById("authError");
+      el.textContent = msg;
+      el.classList.remove("hidden");
+    }
+    function clearError() {
+      document.getElementById("authError").classList.add("hidden");
+    }
+    function setLoading(btnId, loading) {
+      const btn = document.getElementById(btnId);
+      btn.querySelector(".btn-label")?.classList.toggle("hidden", loading);
+      btn.querySelector(".btn-spinner")?.classList.toggle("hidden", !loading);
+      btn.disabled = loading;
+    }
+
+    async function handleSignIn(credential) {
+      clearError();
+      window.location.href = "index.html";
+    }
+
+    // Email/Password
+    document.getElementById("emailForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      clearError();
+      setLoading("emailBtn", true);
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        window.location.href = "index.html";
+      } catch (err) {
+        showError(friendlyError(err.code));
+        setLoading("emailBtn", false);
+      }
+    });
+
+    // Google
+    window.signInGoogle = async () => {
+      clearError();
+      try {
+        await signInWithPopup(auth, new GoogleAuthProvider());
+        window.location.href = "index.html";
+      } catch (err) {
+        if (err.code !== "auth/popup-closed-by-user") showError(friendlyError(err.code));
+      }
+    };
+
+    window.togglePw = () => {
+      const pw = document.getElementById("password");
+      const btn = document.querySelector(".pw-toggle");
+      if (pw.type === "password") { pw.type = "text"; btn.textContent = "Hide"; }
+      else { pw.type = "password"; btn.textContent = "Show"; }
+    };
+
+    function friendlyError(code) {
+      const map = {
+        "auth/user-not-found": "No account found with this email.",
+        "auth/wrong-password": "Incorrect password. Please try again.",
+        "auth/invalid-email": "Please enter a valid email address.",
+        "auth/too-many-requests": "Too many attempts. Please try again later.",
+        "auth/account-exists-with-different-credential": "An account already exists with this email using a different sign-in method.",
+        "auth/invalid-credential": "Invalid credentials. Please check your email and password.",
+      };
+      return map[code] || "Sign-in failed. Please try again.";
+    }
+  </script>
+</body>
+</html>
