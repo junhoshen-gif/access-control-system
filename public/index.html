@@ -144,10 +144,18 @@
     // Log login event (fire-and-forget — never block page load)
     writeLog("login");
 
-    // Check admin
-    const adminSnap = await get(ref(db, `admins/${user.uid}`));
-    if (adminSnap.exists()) {
-      document.getElementById("adminLink").classList.remove("hidden");
+    // Check admin — with timeout so UI never hangs indefinitely
+    try {
+      const adminSnap = await Promise.race([
+        get(ref(db, `admins/${user.uid}`)),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 10000))
+      ]);
+      if (adminSnap.exists()) {
+        document.getElementById("adminLink").classList.remove("hidden");
+      }
+    } catch (err) {
+      console.warn("Admin check failed:", err.message);
+      // Don't block page — just skip showing the admin link
     }
 
     // Load accessible files and products
@@ -162,9 +170,12 @@
 
   async function loadFiles(uid) {
     try {
-      const [accessSnap, filesSnap] = await Promise.all([
-        get(ref(db, `access/${uid}`)),
-        get(ref(db, "files"))
+      const dbTimeout = new Promise((_, rej) =>
+        setTimeout(() => rej(new Error("資料庫連線逾時，請重新整理頁面。(Database timeout — please refresh)")), 15000)
+      );
+      const [accessSnap, filesSnap] = await Promise.race([
+        Promise.all([get(ref(db, `access/${uid}`)), get(ref(db, "files"))]),
+        dbTimeout
       ]);
 
       document.getElementById("loadingState").classList.add("hidden");

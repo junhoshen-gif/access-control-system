@@ -366,8 +366,13 @@
 
   async function pingRender() {
     const start = performance.now();
+    // Show "waking up" status while waiting
+    const statusEl = document.getElementById("status-render");
+    const badgeEl  = document.getElementById("badge-render");
+    if (statusEl) statusEl.textContent = "Waking up… (may take ~50s on free tier)";
+    if (badgeEl)  { badgeEl.textContent = "Starting…"; badgeEl.className = "service-status-badge badge-unknown"; }
     try {
-      const res = await fetch(`${ECPAY_SERVER_URL}/`, { signal: AbortSignal.timeout(15000) });
+      const res = await fetch(`${ECPAY_SERVER_URL}/`, { signal: AbortSignal.timeout(60000) });
       const ms = Math.round(performance.now() - start);
       const text = await res.text();
       const ok = res.ok && text.includes("running");
