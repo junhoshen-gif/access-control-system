@@ -111,25 +111,25 @@ app.post("/ecpay/callback", async (req, res) => {
     return res.send("1|OK"); // acknowledge receipt but don't grant access
   }
 
-  // ── 3. Parse MerchantTradeNo to get uid and productKey ───────────────────
-  // We encode as: {productKey}_{uid}_{timestamp}
-  // e.g. "-NxABC123_abc123uid_1716300000000"
+  // ── 3. Look up uid and productKey from tradeMap in Firebase ─────────────
+  // MerchantTradeNo is a 20-char alphanumeric key — we look up the full mapping
   const tradeNo = params.MerchantTradeNo || "";
-  const parts   = tradeNo.split("_");
 
-  if (parts.length < 2) {
-    console.error("Cannot parse MerchantTradeNo:", tradeNo);
-    return res.send("0|MerchantTradeNo parse error");
+  let uid, productKey;
+  try {
+    const mapSnap = await db.ref(`tradeMap/${tradeNo}`).once("value");
+    if (!mapSnap.exists()) {
+      console.error("tradeMap not found for:", tradeNo);
+      return res.send("0|Trade not found");
+    }
+    ({ uid, productKey } = mapSnap.val());
+  } catch (err) {
+    console.error("tradeMap read error:", err);
+    return res.send("0|DB read error");
   }
 
-  // productKey is everything before the last two underscore-segments
-  // uid is the second-to-last segment
-  // timestamp is the last segment
-  const uid        = parts[parts.length - 2];
-  const productKey = parts.slice(0, parts.length - 2).join("_");
-
   if (!uid || !productKey) {
-    console.error("Missing uid or productKey in MerchantTradeNo:", tradeNo);
+    console.error("Missing uid or productKey in tradeMap:", tradeNo);
     return res.send("0|Missing uid or productKey");
   }
 
@@ -225,12 +225,12 @@ app.post("/ecpay/create-order", async (req, res) => {
     return res.status(500).json({ error: "DB error" });
   }
 
-  // MerchantTradeNo: {productKey}_{uid}_{timestamp} — max 20 chars for ECPay
-  // We shorten it: use first 6 chars of productKey + first 8 of uid + timestamp mod 1e6
-  const ts      = Date.now() % 1000000;
-  const shortPK = productKey.replace(/[^A-Za-z0-9]/g, "").slice(0, 5);
-  const shortUID = uid.replace(/[^A-Za-z0-9]/g, "").slice(0, 8);
-  const merchantTradeNo = `${shortPK}_${shortUID}_${ts}`;
+  // MerchantTradeNo: max 20 chars, only alphanumeric (ECPay requirement)
+  // Format: {shortPK}{shortUID}{ts} — no underscores or special chars
+  const ts      = (Date.now() % 100000).toString().padStart(5, "0"); // 5 digits
+  const shortPK = productKey.replace(/[^A-Za-z0-9]/g, "").slice(0, 5).padEnd(5, "0"); // 5 chars
+  const shortUID = uid.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).padEnd(10, "0");     // 10 chars
+  const merchantTradeNo = `${shortPK}${shortUID}${ts}`; // exactly 20 chars, no underscores
 
   // Store the mapping so callback can resolve back to full uid + productKey
   try {
