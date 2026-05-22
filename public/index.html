@@ -392,39 +392,57 @@
     }).join("");
   }
 
-  async function openViewer(fileId, name, type, url) {
+  async function openViewer(fileId, name, type) {
     document.getElementById("viewerTitle").textContent = name;
     const file = allFiles.find(f => f.id === fileId);
     document.getElementById("viewerMeta").textContent =
       file?.expiresAt ? `Access expires ${formatDate(file.expiresAt)}` : "";
 
+    const body = document.getElementById("viewerBody");
+    body.innerHTML = `<div class="viewer-wrap"><div class="empty-state"><div class="spinner"></div><p>載入中…</p></div></div>`;
+    document.getElementById("viewerModal").classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+
+    // Get a fresh 15-minute signed URL from server (server verifies access)
+    let signedUrl;
+    try {
+      const idToken = await currentUserObj.getIdToken();
+      const resp = await fetch(
+        `${ECPAY_SERVER_URL}/files/signed-url?fileId=${encodeURIComponent(fileId)}`,
+        { headers: { "Authorization": `Bearer ${idToken}` } }
+      );
+      if (!resp.ok) throw new Error((await resp.json()).error || resp.statusText);
+      ({ signedUrl } = await resp.json());
+    } catch (err) {
+      body.innerHTML = `<div class="viewer-wrap"><div class="image-viewer"><p class="text-error">無法載入檔案：${escHtml(err.message)}</p></div></div>`;
+      return;
+    }
+
     // Log the file view (fire-and-forget)
     writeLog("file_view", { fileName: name, fileId });
 
-    const body = document.getElementById("viewerBody");
     const def  = getTypeDef(type, name);
-
     let inner = "";
     switch (def.viewer) {
       case "pdf":
-        inner = `<iframe src="${url}#toolbar=0&navpanes=0" class="file-viewer-frame"></iframe>`;
+        inner = `<iframe src="${signedUrl}#toolbar=0&navpanes=0" class="file-viewer-frame"></iframe>`;
         break;
       case "image":
-        inner = `<div class="image-viewer"><img src="${url}" alt="${escHtml(name)}" /></div>`;
+        inner = `<div class="image-viewer"><img src="${signedUrl}" alt="${escHtml(name)}" /></div>`;
         break;
       case "video":
-        inner = `<div class="media-viewer"><video controls controlsList="nodownload" src="${url}"></video></div>`;
+        inner = `<div class="media-viewer"><video controls controlsList="nodownload" src="${signedUrl}"></video></div>`;
         break;
       case "audio":
-        inner = `<div class="media-viewer audio-viewer"><div style="font-size:4rem">🎵</div><p style="margin:1rem 0 1.5rem;font-weight:500">${escHtml(name)}</p><audio controls controlsList="nodownload" src="${url}"></audio></div>`;
+        inner = `<div class="media-viewer audio-viewer"><div style="font-size:4rem">🎵</div><p style="margin:1rem 0 1.5rem;font-weight:500">${escHtml(name)}</p><audio controls controlsList="nodownload" src="${signedUrl}"></audio></div>`;
         break;
       case "html":
-        inner = `<iframe src="${url}" class="file-viewer-frame" sandbox="allow-scripts allow-same-origin"></iframe>`;
+        inner = `<iframe src="${signedUrl}" class="file-viewer-frame" sandbox="allow-scripts allow-same-origin"></iframe>`;
         break;
       case "text":
         try {
-          const resp = await fetch(url);
-          const text = await resp.text();
+          const r = await fetch(signedUrl);
+          const text = await r.text();
           inner = `<div class="text-viewer"><pre>${escHtml(text)}</pre></div>`;
         } catch { inner = `<div class="image-viewer"><p>Could not load file content.</p></div>`; }
         break;
@@ -433,15 +451,12 @@
         inner = `<div class="image-viewer" style="flex-direction:column;gap:1.5rem;">
           <div style="font-size:4rem">${def.icon}</div>
           <p style="font-weight:500;font-size:1.1rem">${escHtml(name)}</p>
-          <p class="text-muted">Preview not available for ${def.label} files.</p>
+          <a href="${signedUrl}" download="${escHtml(name)}" class="btn btn-primary btn-sm" style="margin-top:0.5rem;">⬇ 下載</a>
         </div>`;
         break;
     }
 
     body.innerHTML = `<div class="viewer-wrap">${inner}</div>`;
-
-    document.getElementById("viewerModal").classList.remove("hidden");
-    document.body.style.overflow = "hidden";
   }
 
   function closeViewer() {
@@ -472,7 +487,7 @@
     if (!card) return;
     const fileId = card.dataset.fileid;
     const f = allFiles.find(f => f.id === fileId);
-    if (f) openViewer(f.id, f.name, f.type, f.url);
+    if (f) openViewer(f.id, f.name, f.type);  // no URL — server provides signed URL
   });
 
   // Close modal on Escape

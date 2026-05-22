@@ -312,7 +312,10 @@
 
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
         <span class="text-muted text-sm" id="logCount"></span>
-        <button class="btn btn-danger-ghost btn-sm" onclick="confirmClearLog()">Clear all logs</button>
+        <div style="display:flex;gap:0.5rem;">
+          <button class="btn btn-ghost btn-sm" onclick="clearOldLogs()" title="刪除 90 天以前的記錄">🗑 清除 90 天前</button>
+          <button class="btn btn-danger-ghost btn-sm" onclick="confirmClearLog()">Clear all logs</button>
+        </div>
       </div>
 
       <div id="logLoading" class="empty-state"><div class="spinner"></div><p>Loading…</p></div>
@@ -391,7 +394,9 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import { getDatabase, ref, get, set, remove, push, update, query, orderByChild, limitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-  import { firebaseConfig, supabaseConfig } from "./js/config.js";
+  import { firebaseConfig } from "./js/config.js";
+
+  const RENDER_SERVER_URL = "https://fileaccess-ecpay.onrender.com";
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
@@ -479,6 +484,7 @@
     document.getElementById("userName").textContent = user.displayName || user.email;
     document.getElementById("userAvatar").textContent = (user.displayName || user.email || "A")[0].toUpperCase();
     initAdmin();
+    startSessionTimeout();
   });
 
   document.getElementById("signOutBtn").addEventListener("click", async () => {
@@ -486,6 +492,45 @@
     await signOut(auth);
     window.location.href = "login.html";
   });
+
+  // ── Admin session timeout (2 hours idle → force sign out) ─────────────────
+  const SESSION_IDLE_MS      = 2 * 60 * 60 * 1000; // 2 hours
+  const SESSION_WARNING_MS   = SESSION_IDLE_MS - 10 * 60 * 1000; // warn at 1h50m
+  let sessionWarningTimer = null;
+  let sessionLogoutTimer  = null;
+  let sessionToastEl      = null;
+
+  function resetSessionTimers() {
+    clearTimeout(sessionWarningTimer);
+    clearTimeout(sessionLogoutTimer);
+    if (sessionToastEl) { sessionToastEl.remove(); sessionToastEl = null; }
+
+    sessionWarningTimer = setTimeout(() => {
+      sessionToastEl = document.createElement("div");
+      sessionToastEl.style.cssText = `position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);
+        background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:8px;padding:1rem 1.5rem;
+        z-index:99999;display:flex;align-items:center;gap:1rem;box-shadow:0 4px 20px rgba(0,0,0,0.15);
+        font-size:0.875rem;font-family:Inter,sans-serif;`;
+      sessionToastEl.innerHTML = `⚠️ 您已閒置 1 小時 50 分鐘，10 分鐘後將自動登出。
+        <button onclick="resetSessionTimers()" style="background:#F59E0B;color:white;border:none;
+        border-radius:6px;padding:0.35rem 0.85rem;cursor:pointer;font-size:0.8rem;">繼續使用</button>`;
+      document.body.appendChild(sessionToastEl);
+    }, SESSION_WARNING_MS);
+
+    sessionLogoutTimer = setTimeout(async () => {
+      writeLog("session_timeout");
+      await signOut(auth);
+      window.location.href = "login.html?reason=timeout";
+    }, SESSION_IDLE_MS);
+  }
+
+  function startSessionTimeout() {
+    const ACTIVITY_EVENTS = ["mousemove", "keydown", "click", "scroll", "touchstart"];
+    ACTIVITY_EVENTS.forEach(evt => document.addEventListener(evt, resetSessionTimers, { passive: true }));
+    resetSessionTimers();
+  }
+
+  window.resetSessionTimers = resetSessionTimers;
 
   async function initAdmin() {
     await Promise.all([loadUsers(), loadFiles()]);
@@ -558,15 +603,13 @@
       statusEl.textContent = "Uploading…";
       statusEl.className = "queue-status status-uploading";
       try {
-        const url = await uploadToSupabase(file);
-        const fileRef = push(ref(db, "files"));
-        const fileData = { name: file.name, type: file.type || "application/octet-stream", size: file.size, url, uploadedBy: currentUser.uid, uploadedAt: Date.now() };
-        await set(fileRef, fileData);
-        writeLog("file_upload", { fileName: file.name, fileId: fileRef.key, fileSize: file.size });
+        // Upload via server proxy (server handles Supabase, returns fileId + url)
+        const result = await uploadViaServer(file);
+        const fileData = { name: file.name, type: file.type || "application/octet-stream", size: file.size, url: result.url, storagePath: result.storagePath, uploadedBy: currentUser.uid, uploadedAt: Date.now() };
         statusEl.textContent = "Done ✓";
         statusEl.className = "queue-status status-done";
         successCount++;
-        allFiles[fileRef.key] = fileData;
+        allFiles[result.fileId] = fileData;
       } catch (err) {
         console.error(err);
         statusEl.textContent = "Failed ✗";
@@ -581,17 +624,21 @@
     }
   };
 
-  async function uploadToSupabase(file) {
-    const { supabaseUrl, supabaseKey, bucketName } = supabaseConfig;
-    const ext = file.name.split(".").pop();
-    const filePath = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const uploadResp = await fetch(`${supabaseUrl}/storage/v1/object/${bucketName}/${filePath}`, {
+  // Upload via server proxy (server verifies admin token + handles Supabase upload)
+  async function uploadViaServer(file) {
+    const idToken = await currentUser.getIdToken(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    const resp = await fetch(`${RENDER_SERVER_URL}/files/upload`, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${supabaseKey}`, "Content-Type": file.type || "application/octet-stream", "x-upsert": "false" },
-      body: file
+      headers: { "Authorization": `Bearer ${idToken}` },
+      body: formData
     });
-    if (!uploadResp.ok) { const e = await uploadResp.json().catch(() => ({})); throw new Error(e.message || "Upload failed"); }
-    return `${supabaseUrl}/storage/v1/object/public/${bucketName}/${filePath}`;
+    if (!resp.ok) {
+      const e = await resp.json().catch(() => ({}));
+      throw new Error(e.error || "Upload failed");
+    }
+    return await resp.json(); // { fileId, url, storagePath }
   }
 
   // ── Files Table ───────────────────────────────────────────────────────────
@@ -867,6 +914,27 @@
     document.getElementById("clearLogModal").classList.add("hidden");
     allLogs = [];
     renderLog();
+  };
+
+  // 清除 90 天以前的 log 記錄
+  window.clearOldLogs = async () => {
+    const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+    const oldLogs = allLogs.filter(l => l.timestamp < cutoff);
+    if (oldLogs.length === 0) {
+      alert("沒有 90 天以前的記錄。");
+      return;
+    }
+    if (!confirm(`確定要刪除 ${oldLogs.length} 筆 90 天以前的記錄嗎？此操作無法還原。`)) return;
+    const updates = {};
+    oldLogs.forEach(l => { updates[`logs/${l.key}`] = null; });
+    try {
+      await update(ref(db), updates);
+      allLogs = allLogs.filter(l => l.timestamp >= cutoff);
+      renderLog();
+      alert(`✓ 已刪除 ${oldLogs.length} 筆舊記錄。`);
+    } catch (err) {
+      alert("刪除失敗：" + err.message);
+    }
   };
 
   function getLogMeta(action) {
