@@ -5,15 +5,19 @@
  * Required environment variables (set in Render dashboard):
  *   ECPAY_HASH_KEY        – from ECPay merchant backend → API介接 → HashKey
  *   ECPAY_HASH_IV         – from ECPay merchant backend → API介接 → HashIV
+ *   ECPAY_MERCHANT_ID     – your ECPay MerchantID
  *   FIREBASE_DATABASE_URL – e.g. https://your-project-default-rtdb.firebaseio.com
  *   FIREBASE_SERVICE_ACCOUNT – full JSON string of your Firebase service account key
+ *   SITE_URL              – your Firebase Hosting URL, e.g. https://your-project.web.app
+ *   SERVER_URL            – this server's URL, e.g. https://fileaccess-ecpay.onrender.com
  *   PORT                  – set automatically by Render (default 10000)
  */
 
-const express  = require("express");
-const cors     = require("cors");
-const crypto   = require("crypto");
-const admin    = require("firebase-admin");
+const express     = require("express");
+const cors        = require("cors");
+const crypto      = require("crypto");
+const admin       = require("firebase-admin");
+const rateLimit   = require("express-rate-limit");
 
 // ── Firebase init ──────────────────────────────────────────────────────────
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
@@ -27,10 +31,23 @@ const db = admin.database();
 const app  = express();
 const PORT = process.env.PORT || 10000;
 
-// ECPay POSTs as application/x-www-form-urlencoded
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
-app.use(cors());
+// ── CORS: only allow requests from our Firebase Hosting domain ─────────────
+const allowedOrigin = process.env.SITE_URL || "https://access-control-system-335f5.web.app";
+app.use(cors({ origin: allowedOrigin }));
+
+// ── Body parsing with size limits ──────────────────────────────────────────
+app.use(express.urlencoded({ extended: true, limit: "10kb" }));
+app.use(express.json({ limit: "10kb" }));
+
+// ── Rate limiting ──────────────────────────────────────────────────────────
+const ecpayLimiter = rateLimit({
+  windowMs: 60 * 1000,   // 1 minute
+  max: 30,               // max 30 requests per IP per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." }
+});
+app.use("/ecpay/", ecpayLimiter);
 
 // ── Health check (Render pings this to keep the instance alive) ────────────
 app.get("/", (req, res) => res.send("FileAccess ECPay server is running ✓"));
@@ -55,7 +72,6 @@ function verifyCheckMacValue(params) {
   const received = params.CheckMacValue;
   if (!received) return false;
 
-  // Build sorted string without CheckMacValue
   const sorted = Object.keys(params)
     .filter(k => k !== "CheckMacValue")
     .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
@@ -64,7 +80,6 @@ function verifyCheckMacValue(params) {
 
   const raw = `HashKey=${hashKey}&${sorted}&HashIV=${hashIV}`;
 
-  // ECPay-style URL encode: lowercase, specific character replacements
   const encoded = encodeURIComponent(raw)
     .toLowerCase()
     .replace(/%20/g, "+")
@@ -78,9 +93,8 @@ function verifyCheckMacValue(params) {
   return hash === received;
 }
 
-// ── Main ECPay return URL endpoint ─────────────────────────────────────────
+// ── ECPay callback endpoint ────────────────────────────────────────────────
 // Set this URL in ECPay merchant backend → ReturnURL
-// and also in each product's ECPay order as ReturnURL
 app.post("/ecpay/callback", async (req, res) => {
   const params = req.body;
 
@@ -91,9 +105,6 @@ app.post("/ecpay/callback", async (req, res) => {
     PaymentType:     params.PaymentType,
   });
 
-  // ECPay requires the response string "1|OK" on success, else "0|error"
-  // We must respond quickly or ECPay will retry
-
   // ── 1. Verify signature ──────────────────────────────────────────────────
   if (!verifyCheckMacValue(params)) {
     console.error("CheckMacValue verification failed");
@@ -101,18 +112,15 @@ app.post("/ecpay/callback", async (req, res) => {
   }
 
   // ── 2. Check payment success ─────────────────────────────────────────────
-  // RtnCode=1 means success for credit card and CVS
-  // For ATM, RtnCode=2 means transfer confirmed
-  const rtnCode = parseInt(params.RtnCode, 10);
+  const rtnCode  = parseInt(params.RtnCode, 10);
   const isSuccess = rtnCode === 1 || rtnCode === 2;
 
   if (!isSuccess) {
     console.log(`Payment not successful: RtnCode=${rtnCode}, RtnMsg=${params.RtnMsg}`);
-    return res.send("1|OK"); // acknowledge receipt but don't grant access
+    return res.send("1|OK");
   }
 
   // ── 3. Look up uid and productKey from tradeMap in Firebase ─────────────
-  // MerchantTradeNo is a 20-char alphanumeric key — we look up the full mapping
   const tradeNo = params.MerchantTradeNo || "";
 
   let uid, productKey;
@@ -148,10 +156,10 @@ app.post("/ecpay/callback", async (req, res) => {
   }
 
   // ── 5. Grant access to each file ─────────────────────────────────────────
-  const fileIds    = product.fileIds || [];
+  const fileIds      = product.fileIds || [];
   const durationDays = product.durationDays || null;
-  const now        = Date.now();
-  const expiresAt  = durationDays ? now + durationDays * 24 * 60 * 60 * 1000 : null;
+  const now          = Date.now();
+  const expiresAt    = durationDays ? now + durationDays * 24 * 60 * 60 * 1000 : null;
 
   const updates = {};
   for (const fileId of fileIds) {
@@ -165,21 +173,21 @@ app.post("/ecpay/callback", async (req, res) => {
   updates[`purchases/${uid}/${purchaseKey}`] = {
     merchantTradeNo: tradeNo,
     productKey,
-    productName:   product.name || "",
+    productName:  product.name || "",
     fileIds,
-    amount:        params.TradeAmt || 0,
-    paymentType:   params.PaymentType || "",
-    paymentDate:   params.PaymentDate || "",
-    purchasedAt:   now,
-    expiresAt:     expiresAt || null
+    amount:       params.TradeAmt || 0,
+    paymentType:  params.PaymentType || "",
+    paymentDate:  params.PaymentDate || "",
+    purchasedAt:  now,
+    expiresAt:    expiresAt || null
   };
 
-  // Activity log
+  // Activity log (written by server — not by client)
   const logKey = db.ref("logs").push().key;
   updates[`logs/${logKey}`] = {
     action:      "purchase",
     uid,
-    email:       "",   // ECPay doesn't expose email in callback
+    email:       "",
     name:        "",
     timestamp:   now,
     productName: product.name || "",
@@ -196,17 +204,27 @@ app.post("/ecpay/callback", async (req, res) => {
     return res.send("0|DB write error");
   }
 
-  // ECPay requires exactly this response string on success
   return res.send("1|OK");
 });
 
 // ── ECPay order creation endpoint ──────────────────────────────────────────
-// Called by the browser (via fetch) to generate the ECPay checkout form
+// Accepts: { productKey, idToken }
+// Returns: JSON { ecpayUrl, params } so the browser builds and submits the form
 app.post("/ecpay/create-order", async (req, res) => {
-  const { productKey, uid } = req.body;
+  const { productKey, idToken } = req.body;
 
-  if (!productKey || !uid) {
-    return res.status(400).json({ error: "Missing productKey or uid" });
+  if (!productKey || !idToken) {
+    return res.status(400).json({ error: "Missing productKey or idToken" });
+  }
+
+  // ── Verify Firebase ID Token to get uid ───────────────────────────────────
+  let uid;
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    uid = decoded.uid;
+  } catch (err) {
+    console.error("ID token verification failed:", err.message);
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
   const hashKey = process.env.ECPAY_HASH_KEY;
@@ -225,28 +243,25 @@ app.post("/ecpay/create-order", async (req, res) => {
     return res.status(500).json({ error: "DB error" });
   }
 
-  // MerchantTradeNo: max 20 chars, only alphanumeric (ECPay requirement)
-  // Format: {shortPK}{shortUID}{ts} — no underscores or special chars
-  const ts      = (Date.now() % 100000).toString().padStart(5, "0"); // 5 digits
-  const shortPK = productKey.replace(/[^A-Za-z0-9]/g, "").slice(0, 5).padEnd(5, "0"); // 5 chars
-  const shortUID = uid.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).padEnd(10, "0");     // 10 chars
-  const merchantTradeNo = `${shortPK}${shortUID}${ts}`; // exactly 20 chars, no underscores
+  // MerchantTradeNo: max 20 chars, only alphanumeric
+  const ts       = (Date.now() % 100000).toString().padStart(5, "0");
+  const shortPK  = productKey.replace(/[^A-Za-z0-9]/g, "").slice(0, 5).padEnd(5, "0");
+  const shortUID = uid.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).padEnd(10, "0");
+  const merchantTradeNo = `${shortPK}${shortUID}${ts}`;
 
-  // Store the mapping so callback can resolve back to full uid + productKey
+  // Store mapping so callback can resolve uid + productKey
   try {
     await db.ref(`tradeMap/${merchantTradeNo}`).set({ uid, productKey, createdAt: Date.now() });
   } catch(e) { /* non-fatal */ }
 
   const serverUrl = process.env.SERVER_URL || `https://${req.headers.host}`;
-  const siteUrl   = process.env.SITE_URL || "https://your-firebase-project.web.app";
+  const siteUrl   = process.env.SITE_URL   || allowedOrigin;
 
-  // Build ECPay params — MerchantTradeDate must be "yyyy/MM/dd HH:mm:ss" in Taipei time
-  const now_tw = new Date(Date.now() + 8 * 60 * 60 * 1000); // UTC+8
+  // MerchantTradeDate in Taipei time (UTC+8), format: "yyyy/MM/dd HH:mm:ss"
+  const now_tw = new Date(Date.now() + 8 * 60 * 60 * 1000);
   const pad = n => String(n).padStart(2, "0");
   const tradeDate = `${now_tw.getUTCFullYear()}/${pad(now_tw.getUTCMonth()+1)}/${pad(now_tw.getUTCDate())} ${pad(now_tw.getUTCHours())}:${pad(now_tw.getUTCMinutes())}:${pad(now_tw.getUTCSeconds())}`;
 
-  // TradeDesc and ItemName must NOT be URL-encoded — ECPay handles encoding itself
-  // Also strip any characters that could break ECPay parsing
   const safeName = (product.name || "File Access").replace(/[#%&+]/g, "").slice(0, 200);
 
   const params = {
@@ -279,74 +294,12 @@ app.post("/ecpay/create-order", async (req, res) => {
     .replace(/%2a/g, "*");
   params.CheckMacValue = crypto.createHash("sha256").update(encoded).digest("hex").toUpperCase();
 
-  // Debug log — remove after confirming production works
-  console.log("=== ECPay create-order debug ===");
-  console.log("HashKey length:", hashKey.length, "| HashIV length:", hashIV.length);
-  console.log("MerchantID:", params.MerchantID);
-  console.log("MerchantTradeNo:", params.MerchantTradeNo);
-  console.log("MerchantTradeDate:", params.MerchantTradeDate);
-  console.log("TotalAmount:", params.TotalAmount);
-  console.log("useSandbox:", product.useSandbox);
-  console.log("Raw string:", raw);
-  console.log("Encoded:", encoded);
-  console.log("CheckMacValue:", params.CheckMacValue);
-
-  // Return as HTML form that auto-submits to ECPay
   const ecpayUrl = product.useSandbox
     ? "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5"
     : "https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5";
 
-  const formHtml = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Redirecting to ECPay...</title></head>
-<body>
-<p style="font-family:sans-serif;text-align:center;padding:3rem;">正在跳轉至綠界金流付款頁面，請稍候…<br>Redirecting to ECPay payment page…</p>
-<form id="ecpayForm" action="${ecpayUrl}" method="POST">
-${Object.entries(params).map(([k,v]) => `  <input type="hidden" name="${k}" value="${v}"/>`).join("\n")}
-</form>
-<script>document.getElementById("ecpayForm").submit();</script>
-</body></html>`;
-
-  res.send(formHtml);
-});
-
-// ── Use tradeMap for callback (alternative lookup) ─────────────────────────
-// Updated callback that also checks tradeMap for the full uid/productKey
-app.post("/ecpay/callback-v2", async (req, res) => {
-  const params = req.body;
-
-  if (!verifyCheckMacValue(params)) {
-    return res.send("0|CheckMacValue error");
-  }
-
-  const rtnCode  = parseInt(params.RtnCode, 10);
-  const isSuccess = rtnCode === 1 || rtnCode === 2;
-  if (!isSuccess) return res.send("1|OK");
-
-  const tradeNo = params.MerchantTradeNo || "";
-
-  // Look up in tradeMap
-  let uid, productKey;
-  try {
-    const snap = await db.ref(`tradeMap/${tradeNo}`).once("value");
-    if (snap.exists()) {
-      ({ uid, productKey } = snap.val());
-    }
-  } catch(e) {}
-
-  // Fallback: parse from tradeNo itself
-  if (!uid || !productKey) {
-    const parts = tradeNo.split("_");
-    if (parts.length >= 2) {
-      uid        = parts[parts.length - 2];
-      productKey = parts.slice(0, parts.length - 2).join("_");
-    }
-  }
-
-  if (!uid || !productKey) return res.send("0|Cannot resolve uid/productKey");
-
-  // (rest is same as /ecpay/callback — reuse by redirecting internally)
-  req.body.MerchantTradeNo = `${productKey}_${uid}_${Date.now() % 1000000}`;
-  return res.send("1|OK"); // simplified — in production merge the two handlers
+  // Return JSON — browser will build and submit the form
+  return res.json({ ecpayUrl, params });
 });
 
 app.listen(PORT, () => console.log(`ECPay server listening on port ${PORT}`));

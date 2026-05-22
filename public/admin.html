@@ -265,7 +265,7 @@
         <div id="purchasesLoading" class="empty-state" style="padding:2rem;"><div class="spinner"></div><p>Loading…</p></div>
         <div id="purchasesEmpty" class="empty-state hidden" style="padding:2rem;"><p>尚無購買記錄。</p></div>
         <table class="data-table hidden" id="purchasesTable">
-          <thead><tr><th>使用者 UID</th><th>商品</th><th>檔案</th><th>金額</th><th>付款方式</th><th>日期</th><th>到期</th></tr></thead>
+          <thead><tr><th>使用者 UID</th><th>商品</th><th>檔案</th><th>金額</th><th>付款方式</th><th>日期</th><th>到期</th><th>操作</th></tr></thead>
           <tbody id="purchasesTableBody"></tbody>
         </table>
       </div>
@@ -330,6 +330,24 @@
 </div>
 
 <!-- DELETE FILE CONFIRM MODAL -->
+<!-- Purchase Detail Modal -->
+<div id="purchaseDetailModal" class="modal hidden">
+  <div class="modal-overlay" onclick="closePurchaseDetail()"></div>
+  <div class="modal-panel" style="max-width:520px;width:90%;">
+    <div class="modal-header">
+      <h3>購買詳情 Purchase Detail</h3>
+      <button class="btn btn-ghost" onclick="closePurchaseDetail()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div style="padding:1.5rem;" id="purchaseDetailBody"></div>
+    <div style="padding:0 1.5rem 1.5rem;display:flex;justify-content:flex-end;gap:0.75rem;">
+      <button class="btn btn-ghost" onclick="closePurchaseDetail()">關閉</button>
+      <button class="btn btn-sm" id="purchaseDetailRefundBtn" style="background:#FEE2E2;color:#DC2626;border:1px solid #FECACA;"></button>
+    </div>
+  </div>
+</div>
+
 <div id="deleteModal" class="modal hidden">
   <div class="modal-overlay" onclick="closeDeleteModal()"></div>
   <div class="modal-panel modal-sm">
@@ -619,16 +637,36 @@
 
   window.confirmDelete = async () => {
     if (!deleteTarget) return;
-    const fname = allFiles[deleteTarget]?.name || deleteTarget;
-    await remove(ref(db, `files/${deleteTarget}`));
+    const fileId = deleteTarget;
+    const fname  = allFiles[fileId]?.name || fileId;
+
+    const updates = {};
+
+    // Remove from /files
+    updates[`files/${fileId}`] = null;
+
+    // Remove from all users' /access
     const accessSnap = await get(ref(db, "access"));
     if (accessSnap.exists()) {
-      const updates = {};
-      Object.keys(accessSnap.val()).forEach(uid => { if (accessSnap.val()[uid][deleteTarget]) updates[`access/${uid}/${deleteTarget}`] = null; });
-      if (Object.keys(updates).length) await update(ref(db), updates);
+      Object.keys(accessSnap.val()).forEach(uid => {
+        if (accessSnap.val()[uid][fileId]) updates[`access/${uid}/${fileId}`] = null;
+      });
     }
-    writeLog("file_delete", { fileName: fname, fileId: deleteTarget });
-    delete allFiles[deleteTarget];
+
+    // Remove fileId from all products' fileIds arrays
+    const productsSnap = await get(ref(db, "products"));
+    if (productsSnap.exists()) {
+      Object.entries(productsSnap.val()).forEach(([productKey, product]) => {
+        if (Array.isArray(product.fileIds) && product.fileIds.includes(fileId)) {
+          updates[`products/${productKey}/fileIds`] = product.fileIds.filter(id => id !== fileId);
+        }
+      });
+    }
+
+    await update(ref(db), updates);
+
+    writeLog("file_delete", { fileName: fname, fileId });
+    delete allFiles[fileId];
     closeDeleteModal();
     renderFilesTable();
     populateAccessSelects();
@@ -969,12 +1007,19 @@
     document.getElementById("purchasesEmpty").classList.add("hidden");
     document.getElementById("purchasesTable").classList.remove("hidden");
 
+    // Use data-* attributes instead of inline onclick to avoid string-injection XSS
     document.getElementById("purchasesTableBody").innerHTML = rows.map(p => {
-      const fileNames = (p.fileIds || []).map(id => allFiles[id]?.name || id).join(", ");
-      const amount    = p.amount ? `NT$${p.amount}` : "—";
-      const expires   = p.expiresAt ? formatDate(p.expiresAt) : "永久";
-      const method    = p.paymentType || "—";
-      return `<tr>
+      const fileNames  = (p.fileIds || []).map(id => allFiles[id]?.name || id).join(", ");
+      const amount     = p.amount ? `NT$${p.amount}` : "—";
+      const expires    = p.expiresAt ? formatDate(p.expiresAt) : "永久";
+      const method     = p.paymentType || "—";
+      const isRefunded = p.refunded === true;
+      const actionCell = isRefunded
+        ? `<span style="color:#6B7280;font-size:0.8rem;">已退款</span>`
+        : `<button class="btn btn-sm purchase-refund-btn" data-uid="${escHtml(p.uid)}" data-pkey="${escHtml(p.pKey)}"
+             style="background:#FEE2E2;color:#DC2626;border:1px solid #FECACA;">退款</button>`;
+      return `<tr class="purchase-row" data-uid="${escHtml(p.uid)}" data-pkey="${escHtml(p.pKey)}"
+                  style="${isRefunded ? 'opacity:0.5;' : ''}cursor:pointer;" title="點擊查看詳情">
         <td class="text-sm mono">${escHtml(p.uid)}</td>
         <td>${escHtml(p.productName || "—")}</td>
         <td class="text-sm">${escHtml(fileNames) || "—"}</td>
@@ -982,9 +1027,133 @@
         <td class="text-sm">${escHtml(method)}</td>
         <td class="text-sm">${p.purchasedAt ? formatDate(p.purchasedAt) : "—"}</td>
         <td class="text-sm">${expires}</td>
+        <td>${actionCell}</td>
       </tr>`;
     }).join("");
   }
+
+  window.viewPurchaseDetail = (uid, pKey) => {
+    const p = allPurchases[uid]?.[pKey];
+    if (!p) return;
+
+    const fileNames = (p.fileIds || []).map(id => allFiles[id]?.name || id);
+    const isRefunded = p.refunded === true;
+
+    const rows = [
+      ["購買編號 Purchase Key", pKey, true],
+      ["使用者 UID", uid, true],
+      ["商品名稱", p.productName || "—", false],
+      ["解鎖檔案", fileNames.length ? fileNames.join("、") : "—", false],
+      ["金額", p.amount ? `NT$${p.amount}` : "—", false],
+      ["付款方式", p.paymentType || "—", false],
+      ["綠界交易編號", p.merchantTradeNo || "—", true],
+      ["付款日期", p.paymentDate || "—", false],
+      ["購買時間", p.purchasedAt ? new Date(p.purchasedAt).toLocaleString("zh-TW") : "—", false],
+      ["到期時間", p.expiresAt ? new Date(p.expiresAt).toLocaleString("zh-TW") : "永久", false],
+      ["狀態", isRefunded ? `<span style="color:#DC2626;font-weight:600;">已退款 (${p.refundedAt ? new Date(p.refundedAt).toLocaleString("zh-TW") : "—"})</span>` : `<span style="color:#16A34A;font-weight:600;">有效</span>`, false],
+    ];
+
+    document.getElementById("purchaseDetailBody").innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:0.6rem;">
+        ${rows.map(([label, value, mono]) => `
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;padding:0.5rem 0;border-bottom:1px solid var(--color-border);">
+            <span style="color:var(--color-text-muted);font-size:0.82rem;white-space:nowrap;min-width:120px;">${label}</span>
+            <span style="font-size:0.88rem;text-align:right;word-break:break-all;${mono ? 'font-family:monospace;' : ''}">${value}</span>
+          </div>`).join("")}
+      </div>`;
+
+    // Set up refund button
+    const refundBtn = document.getElementById("purchaseDetailRefundBtn");
+    if (isRefunded) {
+      refundBtn.style.display = "none";
+    } else {
+      refundBtn.style.display = "";
+      refundBtn.textContent = "退款並撤銷存取";
+      refundBtn.onclick = () => {
+        closePurchaseDetail();
+        // Find the matching row button via data attributes and trigger refund
+        const tableBtn = document.querySelector(
+          `#purchasesTableBody .purchase-refund-btn[data-uid="${uid}"][data-pkey="${pKey}"]`
+        );
+        refundPurchase(uid, pKey, p.fileIds || [], tableBtn || refundBtn);
+      };
+    }
+
+    document.getElementById("purchaseDetailModal").classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  };
+
+  window.closePurchaseDetail = () => {
+    document.getElementById("purchaseDetailModal").classList.add("hidden");
+    document.body.style.overflow = "";
+  };
+
+  // Delegated event listener for purchase table rows (avoids inline onclick XSS)
+  document.getElementById("purchasesTableBody").addEventListener("click", (e) => {
+    const refundBtn = e.target.closest(".purchase-refund-btn");
+    if (refundBtn) {
+      e.stopPropagation();
+      const uid  = refundBtn.dataset.uid;
+      const pKey = refundBtn.dataset.pkey;
+      const p    = allPurchases[uid]?.[pKey];
+      if (p) refundPurchase(uid, pKey, p.fileIds || [], refundBtn);
+      return;
+    }
+    const row = e.target.closest(".purchase-row");
+    if (row) {
+      viewPurchaseDetail(row.dataset.uid, row.dataset.pkey);
+    }
+  });
+
+  window.refundPurchase = async (uid, pKey, fileIds, btn) => {
+    if (!confirm(`確定要退款並撤銷此用戶的存取權嗎？\n\n注意：綠界金流的實際退款請另行在綠界後台操作，此處僅撤銷系統存取權。`)) return;
+
+    btn.disabled = true;
+    btn.textContent = "處理中…";
+
+    try {
+      const updates = {};
+      // Mark purchase as refunded
+      updates[`purchases/${uid}/${pKey}/refunded`] = true;
+      updates[`purchases/${uid}/${pKey}/refundedAt`] = Date.now();
+
+      // Revoke access for each file
+      for (const fileId of fileIds) {
+        updates[`access/${uid}/${fileId}`] = null;
+      }
+
+      // Write activity log
+      const logKey = push(ref(db, "logs")).key;
+      updates[`logs/${logKey}`] = {
+        action:    "refund",
+        uid,
+        adminUid:  currentUser.uid,
+        email:     currentUser.email || "",
+        name:      currentUser.displayName || currentUser.email || "",
+        timestamp: Date.now(),
+        note:      `退款撤銷：purchaseKey=${pKey}，共 ${fileIds.length} 個檔案`
+      };
+
+      await update(ref(db), updates);
+
+      // Update UI
+      btn.closest("tr").style.opacity = "0.5";
+      btn.replaceWith(Object.assign(document.createElement("span"), {
+        style: "color:#6B7280;font-size:0.8rem;",
+        textContent: "已退款"
+      }));
+
+      // Update local data
+      if (allPurchases[uid]?.[pKey]) {
+        allPurchases[uid][pKey].refunded = true;
+      }
+    } catch (err) {
+      console.error(err);
+      btn.disabled = false;
+      btn.textContent = "退款";
+      alert("退款失敗：" + err.message);
+    }
+  };
 
   window.saveProduct = async () => {
     const name         = document.getElementById("productName").value.trim();

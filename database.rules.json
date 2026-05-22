@@ -13,7 +13,7 @@
       ".write": false
     },
     "files": {
-      ".read": "root.child('admins').child(auth.uid).exists()",
+      ".read": "auth != null",
       ".write": "root.child('admins').child(auth.uid).exists()"
     },
     "access": {
@@ -36,13 +36,22 @@
         ".write": "root.child('admins').child(auth.uid).exists()"
       }
     },
+    "settings": {
+      ".read": "auth != null",
+      ".write": "root.child('admins').child(auth.uid).exists()"
+    },
     "logs": {
       ".read": "root.child('admins').child(auth.uid).exists()",
-      ".write": "auth != null",
+      ".write": "root.child('admins').child(auth.uid).exists()",
+      ".indexOn": ["timestamp"],
       "$logId": {
         ".read": "root.child('admins').child(auth.uid).exists()",
-        ".write": "auth != null"
+        ".write": "root.child('admins').child(auth.uid).exists()"
       }
+    },
+    "tradeMap": {
+      ".read": false,
+      ".write": false
     }
   }
 }

@@ -117,7 +117,7 @@
 
   // ── ECPay server URL — update this after deploying to Render ──────────────
   // Replace with your actual Render URL e.g. https://fileaccess-ecpay.onrender.com
-  const ECPAY_SERVER_URL = "https://fileaccess-ecpay.onrender.com"//YOUR-RENDER-APP.onrender.com"";
+  const ECPAY_SERVER_URL = "https://fileaccess-ecpay.onrender.com";
 
   async function writeLog(action, details = {}) {
     if (!currentUserObj) return;
@@ -241,7 +241,7 @@
           </div>
           <div class="store-card-footer">
             <span class="store-price">${escHtml(price)}</span>
-            <button class="btn btn-primary btn-sm" onclick="buyProduct('${key}', '${uid}')">
+            <button class="btn btn-primary btn-sm" onclick="buyProduct('${key}', this)">
               立即購買
             </button>
           </div>
@@ -249,25 +249,47 @@
     }).join("");
   }
 
-  window.buyProduct = async (productKey, uid) => {
-    if (!ECPAY_SERVER_URL || ECPAY_SERVER_URL.includes("YOUR-RENDER")) {
-      alert("付款伺服器尚未設定。請聯絡管理員。\n(ECPAY_SERVER_URL not configured)");
+  window.buyProduct = async (productKey, btn) => {
+    if (!ECPAY_SERVER_URL) {
+      alert("付款伺服器尚未設定。請聯絡管理員。");
       return;
     }
-    const btn = event.target;
+    if (!currentUserObj) {
+      alert("請先登入再購買。");
+      return;
+    }
     btn.disabled = true;
     btn.textContent = "跳轉中…";
 
     try {
+      // Get a fresh Firebase ID Token — server will verify it to get the uid
+      const idToken = await currentUserObj.getIdToken(/* forceRefresh */ true);
+
       const resp = await fetch(`${ECPAY_SERVER_URL}/ecpay/create-order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productKey, uid })
+        body: JSON.stringify({ productKey, idToken })
       });
-      if (!resp.ok) throw new Error(await resp.text());
-      const html = await resp.text();
-      // Open in same window — server returns an auto-submit form
-      document.open(); document.write(html); document.close();
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }));
+        throw new Error(err.error || resp.statusText);
+      }
+      const { ecpayUrl, params } = await resp.json();
+
+      // Build and auto-submit the ECPay form entirely in the browser
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = ecpayUrl;
+      form.style.display = "none";
+      for (const [k, v] of Object.entries(params)) {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = k;
+        input.value = v;
+        form.appendChild(input);
+      }
+      document.body.appendChild(form);
+      form.submit();
     } catch(err) {
       btn.disabled = false;
       btn.textContent = "立即購買";
@@ -355,8 +377,9 @@
       const expiry = f.expiresAt
         ? `<span class="badge badge-warning">Expires ${formatDate(f.expiresAt)}</span>`
         : `<span class="badge badge-success">Permanent</span>`;
+      // Use data-* attributes instead of inline onclick to avoid URL-injection XSS
       return `
-        <div class="file-card" onclick="openViewer('${f.id}', '${escHtml(f.name)}', '${f.type}', '${f.url}')">
+        <div class="file-card" data-fileid="${escHtml(f.id)}" style="cursor:pointer;">
           <div class="file-icon" style="font-size:2rem;line-height:1">${def.icon}</div>
           <div class="file-info">
             <div class="file-name" title="${escHtml(f.name)}">${escHtml(f.name)}</div>
@@ -417,14 +440,6 @@
 
     body.innerHTML = `<div class="viewer-wrap">${inner}</div>`;
 
-    // Apply watermark
-    const wrap = body.querySelector(".viewer-wrap");
-    if (wrap && window.applyViewerWatermark) {
-      wrap.style.position = "relative";
-      const canvas = window.applyViewerWatermark(currentUserEmail);
-      wrap.appendChild(canvas);
-    }
-
     document.getElementById("viewerModal").classList.remove("hidden");
     document.body.style.overflow = "hidden";
   }
@@ -450,6 +465,15 @@
   function imageIcon() {
     return `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>`;
   }
+
+  // Delegated click handler for file cards (avoids URL injection via inline onclick)
+  document.getElementById("fileGrid").addEventListener("click", (e) => {
+    const card = e.target.closest(".file-card[data-fileid]");
+    if (!card) return;
+    const fileId = card.dataset.fileid;
+    const f = allFiles.find(f => f.id === fileId);
+    if (f) openViewer(f.id, f.name, f.type, f.url);
+  });
 
   // Close modal on Escape
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeViewer(); });

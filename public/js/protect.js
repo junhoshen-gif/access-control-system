@@ -86,7 +86,7 @@
     const ctrl = e.ctrlKey || e.metaKey;
 
     const blocked = [
-      { match: ctrl && e.key === "s",                          msg: "Saving is not allowed." },
+      { match: ctrl && (e.key === "s" || e.key === "S"),       msg: "Saving is not allowed." },
       { match: ctrl && e.key === "c",                          msg: "Copying is not allowed." },
       { match: ctrl && e.key === "u",                          msg: "Viewing source is not allowed." },
       { match: ctrl && e.key === "p",                          msg: "Printing is not allowed." },
@@ -95,7 +95,6 @@
       { match: ctrl && e.shiftKey && e.key === "j",            msg: "Developer tools are disabled." },
       { match: ctrl && e.shiftKey && e.key === "c",            msg: "Developer tools are disabled." },
       { match: e.key === "F12",                                msg: "Developer tools are disabled." },
-      { match: ctrl && e.key === "S",                          msg: "Saving is not allowed." },
     ];
 
     for (const b of blocked) {
