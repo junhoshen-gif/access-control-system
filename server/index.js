@@ -279,6 +279,18 @@ app.post("/ecpay/create-order", async (req, res) => {
     .replace(/%2a/g, "*");
   params.CheckMacValue = crypto.createHash("sha256").update(encoded).digest("hex").toUpperCase();
 
+  // Debug log — remove after confirming production works
+  console.log("=== ECPay create-order debug ===");
+  console.log("HashKey length:", hashKey.length, "| HashIV length:", hashIV.length);
+  console.log("MerchantID:", params.MerchantID);
+  console.log("MerchantTradeNo:", params.MerchantTradeNo);
+  console.log("MerchantTradeDate:", params.MerchantTradeDate);
+  console.log("TotalAmount:", params.TotalAmount);
+  console.log("useSandbox:", product.useSandbox);
+  console.log("Raw string:", raw);
+  console.log("Encoded:", encoded);
+  console.log("CheckMacValue:", params.CheckMacValue);
+
   // Return as HTML form that auto-submits to ECPay
   const ecpayUrl = product.useSandbox
     ? "https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5"
