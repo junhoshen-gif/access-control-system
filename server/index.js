@@ -240,13 +240,14 @@ app.post("/ecpay/create-order", async (req, res) => {
   const serverUrl = process.env.SERVER_URL || `https://${req.headers.host}`;
   const siteUrl   = process.env.SITE_URL || "https://your-firebase-project.web.app";
 
-  // Build ECPay params
-  const tradeDate = new Date().toLocaleString("zh-TW", {
-    timeZone: "Asia/Taipei",
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-    hour12: false
-  }).replace(/\//g, "/");
+  // Build ECPay params — MerchantTradeDate must be "yyyy/MM/dd HH:mm:ss" in Taipei time
+  const now_tw = new Date(Date.now() + 8 * 60 * 60 * 1000); // UTC+8
+  const pad = n => String(n).padStart(2, "0");
+  const tradeDate = `${now_tw.getUTCFullYear()}/${pad(now_tw.getUTCMonth()+1)}/${pad(now_tw.getUTCDate())} ${pad(now_tw.getUTCHours())}:${pad(now_tw.getUTCMinutes())}:${pad(now_tw.getUTCSeconds())}`;
+
+  // TradeDesc and ItemName must NOT be URL-encoded — ECPay handles encoding itself
+  // Also strip any characters that could break ECPay parsing
+  const safeName = (product.name || "File Access").replace(/[#%&+]/g, "").slice(0, 200);
 
   const params = {
     MerchantID:        product.merchantId || process.env.ECPAY_MERCHANT_ID || "",
@@ -254,11 +255,11 @@ app.post("/ecpay/create-order", async (req, res) => {
     MerchantTradeDate: tradeDate,
     PaymentType:       "aio",
     TotalAmount:       String(Math.round(product.priceNTD || 0)),
-    TradeDesc:         encodeURIComponent(product.name || "File Access"),
-    ItemName:          product.name || "File Access",
+    TradeDesc:         safeName,
+    ItemName:          safeName,
     ReturnURL:         `${serverUrl}/ecpay/callback`,
     OrderResultURL:    `${siteUrl}/index.html?payment=done`,
-    ChoosePayment:     product.paymentMethod || "ALL",
+    ChoosePayment:     product.paymentMethod || "Credit",
     EncryptType:       "1",
   };
 
