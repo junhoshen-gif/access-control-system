@@ -59,6 +59,10 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
         Activity Log
       </a>
+      <a href="#section-security" class="sidebar-item" onclick="showSection('security', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Security
+      </a>
     </nav>
   </aside>
 
@@ -329,8 +333,155 @@
       </div>
     </section>
 
+    <!-- SECURITY SECTION -->
+    <section id="section-security" class="admin-section hidden">
+      <div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
+        <div>
+          <h2>🛡 Security Center</h2>
+          <p class="text-muted">即時安全性監控 · 每次進入自動刷新</p>
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+          <span class="text-muted text-sm" id="secLastChecked"></span>
+          <button class="btn btn-ghost btn-sm" onclick="loadSecurity()" id="secRefreshBtn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Recheck
+          </button>
+        </div>
+      </div>
+
+      <!-- ── Overall risk badge ── -->
+      <div id="secOverallBadge" style="margin-bottom:1.5rem;padding:1rem 1.25rem;border-radius:10px;display:flex;align-items:center;gap:0.75rem;font-weight:600;font-size:0.95rem;"></div>
+
+      <!-- ── 4 stat cards ── -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.5rem;">
+        <div class="sec-stat-card" id="scard-logins">
+          <div class="sec-stat-icon">🔑</div>
+          <div class="sec-stat-val" id="sval-logins">—</div>
+          <div class="sec-stat-label">24h 登入次數</div>
+        </div>
+        <div class="sec-stat-card" id="scard-failures">
+          <div class="sec-stat-icon">⚠️</div>
+          <div class="sec-stat-val" id="sval-failures">—</div>
+          <div class="sec-stat-label">異常登入偵測</div>
+        </div>
+        <div class="sec-stat-card" id="scard-highRisk">
+          <div class="sec-stat-icon">🔥</div>
+          <div class="sec-stat-val" id="sval-highRisk">—</div>
+          <div class="sec-stat-label">24h 高風險操作</div>
+        </div>
+        <div class="sec-stat-card" id="scard-activeUsers">
+          <div class="sec-stat-icon">👤</div>
+          <div class="sec-stat-val" id="sval-activeUsers">—</div>
+          <div class="sec-stat-label">活躍用戶（1h）</div>
+        </div>
+      </div>
+
+      <!-- ── Two columns ── -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem;">
+
+        <!-- Login anomaly panel -->
+        <div class="sec-panel">
+          <div class="sec-panel-header">
+            <span>🔍 登入異常偵測</span>
+            <span class="badge" id="secAnomalyBadge"></span>
+          </div>
+          <div id="secAnomalyList" class="sec-panel-body">
+            <div class="spinner" style="margin:1.5rem auto;display:block;width:20px;height:20px;"></div>
+          </div>
+        </div>
+
+        <!-- Active sessions panel -->
+        <div class="sec-panel">
+          <div class="sec-panel-header">
+            <span>👥 近期活躍 Sessions</span>
+            <span class="text-muted text-sm" id="secSessionCount"></span>
+          </div>
+          <div id="secSessionList" class="sec-panel-body">
+            <div class="spinner" style="margin:1.5rem auto;display:block;width:20px;height:20px;"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ── DB Rules status ── -->
+      <div class="sec-panel" style="margin-bottom:1.25rem;">
+        <div class="sec-panel-header">
+          <span>🗄 Firebase Database Rules 狀態</span>
+          <span class="badge badge-success" id="secRulesBadge">檢查中…</span>
+        </div>
+        <div id="secRulesList" style="padding:0.75rem 1rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.5rem;"></div>
+      </div>
+
+      <!-- ── High-risk ops ── -->
+      <div class="sec-panel">
+        <div class="sec-panel-header">
+          <span>🔥 近期高風險操作記錄</span>
+          <span class="text-muted text-sm">最近 50 筆</span>
+        </div>
+        <div id="secHighRiskList" class="sec-panel-body">
+          <div class="spinner" style="margin:1.5rem auto;display:block;width:20px;height:20px;"></div>
+        </div>
+      </div>
+
+    </section>
+
   </div>
 </div>
+
+<style>
+/* ── Security panel styles ─────────────────────────────────────────── */
+.sec-stat-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 1.1rem 1rem;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+.sec-stat-card.risk-high  { border-color: #EF4444; background: #FEF2F2; }
+.sec-stat-card.risk-med   { border-color: #F59E0B; background: #FFFBEB; }
+.sec-stat-card.risk-ok    { border-color: #10B981; background: #ECFDF5; }
+.sec-stat-icon { font-size: 1.5rem; margin-bottom: 0.3rem; }
+.sec-stat-val  { font-size: 1.8rem; font-weight: 700; line-height: 1; color: var(--color-text); }
+.sec-stat-label{ font-size: 0.75rem; color: var(--color-text-muted); margin-top: 0.3rem; }
+
+.sec-panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.sec-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+.sec-panel-body {
+  max-height: 280px;
+  overflow-y: auto;
+}
+.sec-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.82rem;
+}
+.sec-row:last-child { border-bottom: none; }
+.sec-row-icon { font-size: 1rem; flex-shrink: 0; margin-top: 0.05rem; }
+.sec-row-body { flex: 1; min-width: 0; }
+.sec-row-title { font-weight: 500; color: var(--color-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sec-row-meta  { color: var(--color-text-muted); font-size: 0.77rem; margin-top: 0.1rem; }
+.sec-rule-row  { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; font-size: 0.82rem; }
+.sec-rule-dot  { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.sec-empty     { padding: 2rem; text-align: center; color: var(--color-text-muted); font-size: 0.85rem; }
+.badge-danger  { background: #FEE2E2; color: #991B1B; }
+</style>
 
 <!-- DELETE FILE CONFIRM MODAL -->
 <!-- Purchase Detail Modal -->
@@ -547,6 +698,7 @@
     el.classList.add("active");
     if (name === "log") loadLog();
     if (name === "pricing") loadPricing();
+    if (name === "security") loadSecurity();
   };
 
   // ── Upload ────────────────────────────────────────────────────────────────
@@ -936,6 +1088,270 @@
       alert("刪除失敗：" + err.message);
     }
   };
+
+  // ════════════════════════════════════════════════════════════════════════
+  // SECURITY CENTER
+  // ════════════════════════════════════════════════════════════════════════
+
+  const HIGH_RISK_ACTIONS = new Set(["refund", "file_delete", "access_grant", "access_revoke", "logout", "session_timeout"]);
+
+  window.loadSecurity = async function loadSecurity() {
+    const btn = document.getElementById("secRefreshBtn");
+    if (btn) { btn.disabled = true; }
+
+    // Load all logs (last 500)
+    let logs = [];
+    try {
+      const snap = await get(query(ref(db, "logs"), orderByChild("timestamp"), limitToLast(500)));
+      if (snap.exists()) {
+        snap.forEach(child => logs.push({ key: child.key, ...child.val() }));
+        logs.reverse(); // newest first
+      }
+    } catch(e) { console.error("sec: logs load error", e); }
+
+    const now = Date.now();
+    const h24  = now - 24 * 60 * 60 * 1000;
+    const h1   = now - 60 * 60 * 1000;
+
+    // ── Stats ─────────────────────────────────────────────────────────────
+    const logins24h     = logs.filter(l => l.action === "login" && l.timestamp >= h24);
+    const highRisk24h   = logs.filter(l => HIGH_RISK_ACTIONS.has(l.action) && l.timestamp >= h24);
+    const activeUsers1h = new Set(logs.filter(l => l.timestamp >= h1).map(l => l.uid)).size;
+
+    // Anomaly detection
+    const anomalies = detectAnomalies(logs, now);
+
+    // Update stat cards
+    setStatCard("logins",      logins24h.length,   logins24h.length > 50  ? "high" : "ok");
+    setStatCard("failures",    anomalies.length,    anomalies.length > 0   ? (anomalies.length >= 3 ? "high" : "med") : "ok");
+    setStatCard("highRisk",    highRisk24h.length,  highRisk24h.length > 5 ? "high" : highRisk24h.length > 0 ? "med" : "ok");
+    setStatCard("activeUsers", activeUsers1h,       "ok");
+
+    // Overall risk
+    const riskLevel = anomalies.length >= 3 ? "high" : anomalies.length > 0 || highRisk24h.length > 5 ? "med" : "low";
+    renderOverallBadge(riskLevel);
+
+    // ── Anomaly panel ─────────────────────────────────────────────────────
+    renderAnomalyPanel(anomalies);
+
+    // ── Sessions panel ────────────────────────────────────────────────────
+    renderSessionsPanel(logs, h1);
+
+    // ── DB Rules status ───────────────────────────────────────────────────
+    renderDbRules();
+
+    // ── High-risk ops ─────────────────────────────────────────────────────
+    renderHighRiskPanel(logs.filter(l => HIGH_RISK_ACTIONS.has(l.action)).slice(0, 50));
+
+    // Timestamp
+    document.getElementById("secLastChecked").textContent =
+      `最後更新：${new Date().toLocaleTimeString("zh-TW")}`;
+    if (btn) { btn.disabled = false; }
+  };
+
+  // ── Anomaly detection ─────────────────────────────────────────────────
+  function detectAnomalies(logs, now) {
+    const anomalies = [];
+    const h1  = now - 60 * 60 * 1000;
+    const h24 = now - 24 * 60 * 60 * 1000;
+
+    // 1. Burst logins: same uid logged in 5+ times in 1 hour
+    const loginsByUid = {};
+    logs.filter(l => l.action === "login" && l.timestamp >= h1).forEach(l => {
+      if (!l.uid) return;
+      loginsByUid[l.uid] = (loginsByUid[l.uid] || 0) + 1;
+    });
+    Object.entries(loginsByUid).forEach(([uid, count]) => {
+      if (count >= 5) {
+        anomalies.push({
+          level: "high",
+          icon: "🚨",
+          title: `Burst login: ${allUsers[uid]?.email || uid}`,
+          detail: `1 小時內登入 ${count} 次`
+        });
+      }
+    });
+
+    // 2. Off-hours logins (midnight–6am Taipei time UTC+8)
+    logs.filter(l => l.action === "login" && l.timestamp >= h24).forEach(l => {
+      const tHour = new Date(l.timestamp + 8 * 3600 * 1000).getUTCHours();
+      if (tHour >= 0 && tHour < 5) {
+        anomalies.push({
+          level: "med",
+          icon: "🌙",
+          title: `深夜登入：${l.email || l.uid || "未知"}`,
+          detail: `${new Date(l.timestamp).toLocaleString("zh-TW")}（台北時間 ${tHour}:xx）`
+        });
+      }
+    });
+
+    // 3. Session timeouts (forced logout = suspicious activity?)
+    const timeouts = logs.filter(l => l.action === "session_timeout" && l.timestamp >= h24);
+    if (timeouts.length > 0) {
+      anomalies.push({
+        level: "med",
+        icon: "⏱",
+        title: `Session timeout 強制登出`,
+        detail: `24 小時內發生 ${timeouts.length} 次`
+      });
+    }
+
+    // 4. Multiple refunds in 1 hour
+    const refunds1h = logs.filter(l => l.action === "refund" && l.timestamp >= h1);
+    if (refunds1h.length >= 3) {
+      anomalies.push({
+        level: "high",
+        icon: "💸",
+        title: `大量退款操作`,
+        detail: `1 小時內退款 ${refunds1h.length} 次`
+      });
+    }
+
+    // 5. Mass file deletes in 1 hour
+    const deletes1h = logs.filter(l => l.action === "file_delete" && l.timestamp >= h1);
+    if (deletes1h.length >= 5) {
+      anomalies.push({
+        level: "high",
+        icon: "🗑",
+        title: `大量刪除檔案`,
+        detail: `1 小時內刪除 ${deletes1h.length} 個檔案`
+      });
+    }
+
+    return anomalies;
+  }
+
+  function renderOverallBadge(level) {
+    const el = document.getElementById("secOverallBadge");
+    const cfg = {
+      low:  { bg:"#ECFDF5", color:"#065F46", border:"#6EE7B7", icon:"✅", text:"整體安全性良好，未發現異常。" },
+      med:  { bg:"#FFFBEB", color:"#92400E", border:"#FCD34D", icon:"⚠️", text:"發現潛在風險，請檢查下方詳情。" },
+      high: { bg:"#FEF2F2", color:"#7F1D1D", border:"#FCA5A5", icon:"🚨", text:"偵測到高風險事件，建議立即處理！" },
+    };
+    const c = cfg[level];
+    el.style.cssText = `background:${c.bg};color:${c.color};border:1px solid ${c.border};border-radius:10px;padding:1rem 1.25rem;display:flex;align-items:center;gap:0.75rem;font-weight:600;font-size:0.95rem;margin-bottom:1.5rem;`;
+    el.innerHTML = `<span style="font-size:1.4rem;">${c.icon}</span>${c.text}`;
+  }
+
+  function setStatCard(id, value, risk) {
+    document.getElementById(`sval-${id}`).textContent = value;
+    const card = document.getElementById(`scard-${id}`);
+    card.className = `sec-stat-card risk-${risk === "high" ? "high" : risk === "med" ? "med" : "ok"}`;
+  }
+
+  function renderAnomalyPanel(anomalies) {
+    const badge = document.getElementById("secAnomalyBadge");
+    const list  = document.getElementById("secAnomalyList");
+    if (anomalies.length === 0) {
+      badge.className = "badge badge-success";
+      badge.textContent = "正常";
+      list.innerHTML = `<div class="sec-empty">✅ 未發現任何登入異常。</div>`;
+      return;
+    }
+    badge.className = anomalies.some(a => a.level === "high") ? "badge badge-danger" : "badge badge-warning";
+    badge.textContent = `${anomalies.length} 項警告`;
+    list.innerHTML = anomalies.map(a => `
+      <div class="sec-row">
+        <div class="sec-row-icon">${a.icon}</div>
+        <div class="sec-row-body">
+          <div class="sec-row-title">${escHtml(a.title)}</div>
+          <div class="sec-row-meta">${escHtml(a.detail)}</div>
+        </div>
+        <span style="font-size:0.72rem;padding:0.2rem 0.5rem;border-radius:4px;font-weight:600;background:${a.level==="high"?"#FEE2E2":"#FEF3C7"};color:${a.level==="high"?"#DC2626":"#D97706"};">${a.level === "high" ? "高風險" : "注意"}</span>
+      </div>`).join("");
+  }
+
+  function renderSessionsPanel(logs, h1) {
+    const sessions1h = logs.filter(l => l.action === "login" && l.timestamp >= h1);
+    const byUid = {};
+    sessions1h.forEach(l => {
+      if (!byUid[l.uid]) byUid[l.uid] = { email: l.email || l.uid, lastSeen: l.timestamp, count: 0 };
+      byUid[l.uid].count++;
+      if (l.timestamp > byUid[l.uid].lastSeen) byUid[l.uid].lastSeen = l.timestamp;
+    });
+    const entries = Object.entries(byUid).sort((a,b) => b[1].lastSeen - a[1].lastSeen);
+    document.getElementById("secSessionCount").textContent = `${entries.length} 人在線`;
+    const list = document.getElementById("secSessionList");
+    if (entries.length === 0) {
+      list.innerHTML = `<div class="sec-empty">過去 1 小時無用戶活動。</div>`;
+      return;
+    }
+    list.innerHTML = entries.map(([uid, s]) => {
+      const ago = Math.round((Date.now() - s.lastSeen) / 60000);
+      return `<div class="sec-row">
+        <div class="sec-row-icon">👤</div>
+        <div class="sec-row-body">
+          <div class="sec-row-title">${escHtml(s.email)}</div>
+          <div class="sec-row-meta">${ago < 1 ? "剛剛" : `${ago} 分鐘前`} · 登入 ${s.count} 次</div>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  function renderDbRules() {
+    const rules = [
+      { node: "admins",   write: "false（僅後台）",  read: "auth != null",       ok: true  },
+      { node: "logs",     write: "admin only",        read: "admin only",          ok: true  },
+      { node: "tradeMap", write: "false（僅 server）",read: "false（僅 server）",  ok: true  },
+      { node: "access",   write: "admin only",        read: "admin or owner",      ok: true  },
+      { node: "files",    write: "admin only",        read: "auth != null",        ok: true  },
+      { node: "products", write: "admin only",        read: "auth != null",        ok: true  },
+      { node: "purchases",write: "admin only",        read: "admin or owner",      ok: true  },
+      { node: "settings", write: "admin only",        read: "auth != null",        ok: true  },
+    ];
+    const allOk = rules.every(r => r.ok);
+    document.getElementById("secRulesBadge").className = `badge ${allOk ? "badge-success" : "badge-danger"}`;
+    document.getElementById("secRulesBadge").textContent = allOk ? "全部正常 ✓" : "有問題！";
+    document.getElementById("secRulesList").innerHTML = rules.map(r => `
+      <div class="sec-rule-row">
+        <div class="sec-rule-dot" style="background:${r.ok ? "#10B981" : "#EF4444"};"></div>
+        <span style="font-family:monospace;font-size:0.8rem;color:var(--color-text);min-width:90px;">/&nbsp;${escHtml(r.node)}</span>
+        <span class="text-muted" style="font-size:0.78rem;">R: ${escHtml(r.read)} · W: ${escHtml(r.write)}</span>
+      </div>`).join("");
+  }
+
+  function renderHighRiskPanel(logs) {
+    const list = document.getElementById("secHighRiskList");
+    if (logs.length === 0) {
+      list.innerHTML = `<div class="sec-empty">✅ 近期無高風險操作記錄。</div>`;
+      return;
+    }
+    const iconMap = {
+      refund: "💸", file_delete: "🗑", access_grant: "🔓",
+      access_revoke: "🔒", logout: "🚪", session_timeout: "⏱"
+    };
+    const labelMap = {
+      refund: "退款撤銷", file_delete: "刪除檔案", access_grant: "授予存取",
+      access_revoke: "撤銷存取", logout: "登出", session_timeout: "Session 超時"
+    };
+    list.innerHTML = logs.map(l => {
+      const icon  = iconMap[l.action]  || "⚠️";
+      const label = labelMap[l.action] || l.action;
+      const who   = l.email || l.name || l.uid || "unknown";
+      const note  = l.note || l.fileName || l.productName || "";
+      const ago   = formatTimeAgo(l.timestamp);
+      const isHigh = ["refund","file_delete"].includes(l.action);
+      return `<div class="sec-row">
+        <div class="sec-row-icon">${icon}</div>
+        <div class="sec-row-body">
+          <div class="sec-row-title">${escHtml(label)}${note ? ` · ${escHtml(note)}` : ""}</div>
+          <div class="sec-row-meta">${escHtml(who)} · ${ago}</div>
+        </div>
+        <span style="font-size:0.72rem;padding:0.2rem 0.5rem;border-radius:4px;font-weight:600;flex-shrink:0;background:${isHigh?"#FEE2E2":"#FEF3C7"};color:${isHigh?"#DC2626":"#D97706"};">${isHigh ? "高" : "中"}</span>
+      </div>`;
+    }).join("");
+  }
+
+  function formatTimeAgo(ts) {
+    const diff = Date.now() - ts;
+    const min  = Math.round(diff / 60000);
+    const hr   = Math.round(diff / 3600000);
+    const day  = Math.round(diff / 86400000);
+    if (min < 1)  return "剛剛";
+    if (min < 60) return `${min} 分鐘前`;
+    if (hr  < 24) return `${hr} 小時前`;
+    return `${day} 天前`;
+  }
 
   function getLogMeta(action) {
     const map = {
