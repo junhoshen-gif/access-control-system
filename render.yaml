@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: fileaccess-ecpay
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: ECPAY_HASH_KEY
+        sync: false
+      - key: ECPAY_HASH_IV
+        sync: false
+      - key: ECPAY_MERCHANT_ID
+        sync: false
+      - key: FIREBASE_DATABASE_URL
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        sync: false
+      - key: SITE_URL
+        sync: false
+      - key: SERVER_URL
+        sync: false
