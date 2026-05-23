@@ -107,7 +107,7 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   // Use initializeDatabase with long-polling to work around Safari WebSocket issues
-  const db = initializeDatabase(app, rtdbOptions);
+  const db = initializeDatabase(app, firebaseConfig.databaseURL, rtdbOptions);
 
   let allFiles = [];        // files the user has access to
   let allProducts = {};     // published products (for "Buy Access" section)

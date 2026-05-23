@@ -551,7 +551,7 @@
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db   = initializeDatabase(app, rtdbOptions);
+  const db   = initializeDatabase(app, firebaseConfig.databaseURL, rtdbOptions);
 
   let currentUser = null;
   let allUsers    = {};

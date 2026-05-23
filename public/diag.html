@@ -87,7 +87,7 @@
   const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
   const auth = getAuth(app);
   // initializeDatabase with long-polling to bypass Safari WebSocket auth block
-  const db   = (() => { try { return initializeDatabase(app, rtdbOptions); } catch { return getDatabase(app); } })();
+  const db   = (() => { try { return initializeDatabase(app, firebaseConfig.databaseURL, rtdbOptions); } catch { return getDatabase(app); } })();
 
   document.getElementById("r-ua").textContent = navigator.userAgent;
 

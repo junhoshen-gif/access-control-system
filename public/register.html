@@ -86,7 +86,7 @@
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
-    const db = initializeDatabase(app, rtdbOptions);
+    const db = initializeDatabase(app, firebaseConfig.databaseURL, rtdbOptions);
 
     // Force local persistence — critical for Safari ITP compatibility
     await setPersistence(auth, browserLocalPersistence);
