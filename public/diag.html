@@ -4,190 +4,227 @@
   <meta charset="UTF-8"/>
   <title>Firebase Diagnostics</title>
   <style>
-    body { font-family: monospace; background: #0f172a; color: #e2e8f0; padding: 2rem; }
-    h1 { color: #60a5fa; margin-bottom: 1.5rem; }
+    body { font-family: monospace; background: #0f172a; color: #e2e8f0; padding: 2rem; margin:0; }
+    h1 { color: #60a5fa; margin-bottom: 0.5rem; }
+    .subtitle { color:#94a3b8; font-size:0.85rem; margin-bottom:1.5rem; }
     .test { background: #1e293b; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 0.75rem; display:flex; align-items:flex-start; gap:1rem; }
     .icon { font-size: 1.3rem; flex-shrink:0; margin-top:2px; }
     .label { font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.25rem; }
     .result { font-size: 0.95rem; word-break: break-all; }
     .ok   { color: #34d399; }
     .err  { color: #f87171; }
-    .wait { color: #fbbf24; }
+    .warn { color: #fbbf24; }
+    .wait { color: #64748b; }
     .info { color: #93c5fd; }
-    pre { background:#0f172a; padding:0.5rem; border-radius:4px; font-size:0.78rem; white-space:pre-wrap; margin-top:0.5rem; color:#cbd5e1; }
-    button { background:#2563eb; color:white; border:none; border-radius:6px; padding:0.5rem 1.2rem; cursor:pointer; font-size:0.9rem; margin-bottom:1.5rem; }
+    pre { background:#0f172a; padding:0.5rem; border-radius:4px; font-size:0.78rem; white-space:pre-wrap; margin-top:0.5rem; color:#cbd5e1; border:1px solid #334155; }
+    .btn-row { display:flex; gap:0.75rem; margin-bottom:1.5rem; flex-wrap:wrap; }
+    button { background:#2563eb; color:white; border:none; border-radius:6px; padding:0.5rem 1.2rem; cursor:pointer; font-size:0.9rem; }
     button:hover { background:#1d4ed8; }
+    button.secondary { background:#475569; }
+    button.secondary:hover { background:#334155; }
     .section-title { color:#94a3b8; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.1em; margin:1.5rem 0 0.5rem; }
+    .login-box { background:#1e293b; border-radius:8px; padding:1.25rem; margin-bottom:1rem; display:none; }
+    .login-box input { background:#0f172a; border:1px solid #334155; border-radius:6px; padding:0.5rem 0.75rem; color:#e2e8f0; font-size:0.9rem; width:200px; margin-right:0.5rem; }
+    .login-box label { color:#94a3b8; font-size:0.8rem; display:block; margin-bottom:0.3rem; }
+    .login-group { display:inline-block; margin-right:0.75rem; }
+    #loginError { color:#f87171; font-size:0.85rem; margin-top:0.5rem; display:none; }
   </style>
 </head>
 <body>
 <h1>🔍 Firebase Connection Diagnostics</h1>
-<button onclick="runAll()">▶ Run All Tests</button>
+<p class="subtitle">Tests run in the same auth session as index.html / admin.html</p>
 
-<div class="section-title">① Firebase SDK Initialisation</div>
-<div class="test"><span class="icon">📦</span><div><div class="label">Firebase App Init</div><div class="result wait" id="r-init">Pending…</div></div></div>
-<div class="test"><span class="icon">🔑</span><div><div class="label">Firebase Auth — onAuthStateChanged</div><div class="result wait" id="r-auth">Pending…</div></div></div>
+<div class="btn-row">
+  <button onclick="runAll()">▶ Run All Tests</button>
+  <button class="secondary" onclick="toggleLogin()">🔑 Sign In Here</button>
+  <button class="secondary" onclick="doSignOut()">Sign Out</button>
+</div>
 
-<div class="section-title">② Realtime Database</div>
-<div class="test"><span class="icon">🌐</span><div><div class="label">DB REST ping (no auth)</div><div class="result wait" id="r-rest">Pending…</div></div></div>
-<div class="test"><span class="icon">👤</span><div><div class="label">DB read: admins/{uid} (requires auth)</div><div class="result wait" id="r-admins">Pending…</div></div></div>
-<div class="test"><span class="icon">📁</span><div><div class="label">DB read: files (requires auth)</div><div class="result wait" id="r-files">Pending…</div></div></div>
+<!-- Inline login for testing -->
+<div class="login-box" id="loginBox">
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;">
+    <div class="login-group">
+      <label>Email</label>
+      <input type="email" id="diagEmail" placeholder="you@example.com"/>
+    </div>
+    <div class="login-group">
+      <label>Password</label>
+      <input type="password" id="diagPassword" placeholder="••••••••"/>
+    </div>
+    <button onclick="doLogin()" style="height:36px;">Sign In</button>
+  </div>
+  <div id="loginError"></div>
+</div>
 
-<div class="section-title">③ Network / CSP</div>
-<div class="test"><span class="icon">🔌</span><div><div class="label">WebSocket to Firebase RTDB</div><div class="result wait" id="r-ws">Pending…</div></div></div>
-<div class="test"><span class="icon">🌍</span><div><div class="label">Supabase reachable</div><div class="result wait" id="r-supa">Pending…</div></div></div>
+<div class="section-title">① Auth State</div>
+<div class="test"><span class="icon">🔑</span><div><div class="label">Current Auth State</div><div class="result wait" id="r-auth">Click "Run All Tests"…</div></div></div>
 
-<div class="section-title">④ Environment</div>
-<div class="test"><span class="icon">ℹ️</span><div><div class="label">Browser / User Agent</div><div class="result info" id="r-ua"></div></div></div>
-<div class="test"><span class="icon">🕐</span><div><div class="label">Timestamp</div><div class="result info" id="r-ts"></div></div></div>
+<div class="section-title">② Realtime Database reads</div>
+<div class="test"><span class="icon">👤</span><div><div class="label">DB read: admins/{uid}</div><div class="result wait" id="r-admins">—</div></div></div>
+<div class="test"><span class="icon">📁</span><div><div class="label">DB read: files</div><div class="result wait" id="r-files">—</div></div></div>
+<div class="test"><span class="icon">🌐</span><div><div class="label">DB REST ping (unauthenticated)</div><div class="result wait" id="r-rest">—</div></div></div>
+
+<div class="section-title">③ Network</div>
+<div class="test"><span class="icon">🔌</span><div><div class="label">WebSocket to Firebase RTDB</div><div class="result wait" id="r-ws">—</div></div></div>
+
+<div class="section-title">④ Session Persistence Check</div>
+<div class="test"><span class="icon">💾</span><div><div class="label">localStorage Firebase key</div><div class="result wait" id="r-ls">—</div></div></div>
+<div class="test"><span class="icon">🍪</span><div><div class="label">IndexedDB firebase:authUser key</div><div class="result wait" id="r-idb">—</div></div></div>
+
+<div class="section-title">⑤ Environment</div>
+<div class="test"><span class="icon">ℹ️</span><div><div class="label">Browser</div><div class="result info" id="r-ua"></div></div></div>
 
 <script type="module">
-  import { initializeApp }           from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getDatabase, ref, get }   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-  import { firebaseConfig, supabaseConfig } from "./js/config.js";
+  import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import {
+    getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut,
+    browserLocalPersistence, setPersistence
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getDatabase, initializeDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { firebaseConfig, rtdbOptions } from "./js/config.js";
 
-  function set(id, cls, text, extra) {
+  // Use the SAME default app so we share auth session with index.html/admin.html
+  const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  // initializeDatabase with long-polling to bypass Safari WebSocket auth block
+  const db   = (() => { try { return initializeDatabase(app, rtdbOptions); } catch { return getDatabase(app); } })();
+
+  document.getElementById("r-ua").textContent = navigator.userAgent;
+
+  function setResult(id, cls, text, detail) {
     const el = document.getElementById(id);
     el.className = "result " + cls;
     el.textContent = text;
-    if (extra) {
+    // Remove old pre
+    const old = el.parentElement.querySelector("pre");
+    if (old) old.remove();
+    if (detail) {
       const pre = document.createElement("pre");
-      pre.textContent = extra;
+      pre.textContent = detail;
       el.parentElement.appendChild(pre);
     }
   }
 
-  // Fill static info immediately
-  document.getElementById("r-ua").textContent = navigator.userAgent;
-  document.getElementById("r-ts").textContent = new Date().toISOString();
+  window.toggleLogin = () => {
+    const box = document.getElementById("loginBox");
+    box.style.display = box.style.display === "none" || box.style.display === "" ? "block" : "none";
+  };
 
-  let app, auth, db, currentUser = null;
+  window.doLogin = async () => {
+    const email = document.getElementById("diagEmail").value;
+    const pw = document.getElementById("diagPassword").value;
+    const errEl = document.getElementById("loginError");
+    errEl.style.display = "none";
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+      await signInWithEmailAndPassword(auth, email, pw);
+      document.getElementById("loginBox").style.display = "none";
+      errEl.style.display = "none";
+      runAll();
+    } catch(e) {
+      errEl.textContent = "Login failed: " + e.message;
+      errEl.style.display = "block";
+    }
+  };
+
+  window.doSignOut = async () => {
+    await signOut(auth);
+    setResult("r-auth", "warn", "⚠️ Signed out");
+    runAll();
+  };
 
   window.runAll = async () => {
-    // Clear previous pre tags
-    document.querySelectorAll("pre").forEach(p => p.remove());
-    document.querySelectorAll(".result").forEach(el => {
-      el.className = "result wait";
-      el.textContent = "Running…";
-    });
-    document.getElementById("r-ua").textContent = navigator.userAgent;
-    document.getElementById("r-ts").textContent = new Date().toISOString();
-
-    // ① Init
-    try {
-      app  = initializeApp(firebaseConfig, "diag-" + Date.now());
-      auth = getAuth(app);
-      db   = getDatabase(app);
-      set("r-init", "ok", "✅ Firebase app initialised OK", JSON.stringify({
-        projectId: firebaseConfig.projectId,
-        databaseURL: firebaseConfig.databaseURL,
-        authDomain: firebaseConfig.authDomain
-      }, null, 2));
-    } catch(e) {
-      set("r-init", "err", "❌ Init failed: " + e.message);
-      return;
-    }
-
     // ① Auth state
-    set("r-auth", "wait", "⏳ Waiting for auth state…");
-    const authResult = await new Promise(resolve => {
-      const unsub = onAuthStateChanged(auth, user => {
-        unsub();
-        currentUser = user;
-        if (user) {
-          resolve({ ok: true, msg: `✅ Signed in as: ${user.email || user.uid}`, detail: `uid: ${user.uid}\nemail: ${user.email}\nprovider: ${user.providerData?.[0]?.providerId}` });
-        } else {
-          resolve({ ok: false, msg: "⚠️ Not signed in — sign in to test DB reads", detail: "Go to index.html and sign in, then come back to this page." });
-        }
-      });
-      setTimeout(() => { unsub(); resolve({ ok: false, msg: "❌ Auth state timeout (>10s)" }); }, 10000);
+    setResult("r-auth", "wait", "⏳ Checking…");
+    const user = await new Promise(resolve => {
+      const unsub = onAuthStateChanged(auth, u => { unsub(); resolve(u); });
+      setTimeout(() => resolve(null), 8000);
     });
-    set("r-auth", authResult.ok ? "ok" : "err", authResult.msg, authResult.detail);
 
-    // ② REST ping
-    try {
-      const t0 = performance.now();
-      const r = await fetch(`${firebaseConfig.databaseURL}/.json?shallow=true`, { signal: AbortSignal.timeout(8000) });
-      const ms = Math.round(performance.now() - t0);
-      set("r-rest", "ok", `✅ DB REST reachable — HTTP ${r.status} in ${ms}ms`, `URL: ${firebaseConfig.databaseURL}/.json?shallow=true\nStatus: ${r.status} (401 = rules blocked = normal without auth)`);
-    } catch(e) {
-      set("r-rest", "err", "❌ DB REST unreachable: " + e.message);
-    }
+    if (user) {
+      setResult("r-auth", "ok",
+        `✅ Signed in as: ${user.email || user.uid}`,
+        `uid: ${user.uid}\nemail: ${user.email}\nprovider: ${user.providerData?.[0]?.providerId || "unknown"}\nemailVerified: ${user.emailVerified}`
+      );
 
-    // ② DB reads (only if authed)
-    if (currentUser) {
-      // admins read
+      // ② DB: admins
+      setResult("r-admins", "wait", "⏳ Reading…");
       try {
         const t0 = performance.now();
         const snap = await Promise.race([
-          get(ref(db, `admins/${currentUser.uid}`)),
-          new Promise((_, r) => setTimeout(() => r(new Error("Timeout after 10s")), 10000))
+          get(ref(db, `admins/${user.uid}`)),
+          new Promise((_, r) => setTimeout(() => r(new Error("Timeout 10s — DB connection hung")), 10000))
         ]);
         const ms = Math.round(performance.now() - t0);
         const isAdmin = snap.exists();
-        set("r-admins", "ok", `✅ admins read OK in ${ms}ms — isAdmin: ${isAdmin}`, `Path: admins/${currentUser.uid}\nValue: ${JSON.stringify(snap.val())}`);
+        setResult("r-admins", isAdmin ? "ok" : "warn",
+          isAdmin ? `✅ isAdmin = TRUE (${ms}ms) — Admin Console button SHOULD appear` : `⚠️ isAdmin = FALSE (${ms}ms) — Your UID is not in the admins node!`,
+          `Path: admins/${user.uid}\nValue: ${JSON.stringify(snap.val())}\n\n${!isAdmin ? "ACTION NEEDED: Add your UID to admins node in Firebase Console" : ""}`
+        );
       } catch(e) {
-        set("r-admins", "err", "❌ admins read failed: " + e.message, "This is likely why Admin Console button is missing!");
+        setResult("r-admins", "err", "❌ " + e.message, "DB read failed — this is why Admin Console button is missing");
       }
 
-      // files read
+      // ② DB: files
+      setResult("r-files", "wait", "⏳ Reading…");
       try {
         const t0 = performance.now();
         const snap = await Promise.race([
           get(ref(db, "files")),
-          new Promise((_, r) => setTimeout(() => r(new Error("Timeout after 10s")), 10000))
+          new Promise((_, r) => setTimeout(() => r(new Error("Timeout 10s — DB connection hung")), 10000))
         ]);
         const ms = Math.round(performance.now() - t0);
         const count = snap.exists() ? Object.keys(snap.val()).length : 0;
-        set("r-files", "ok", `✅ files read OK in ${ms}ms — ${count} file(s) found`);
+        setResult("r-files", "ok", `✅ files read OK (${ms}ms) — ${count} file(s) in DB`);
       } catch(e) {
-        set("r-files", "err", "❌ files read failed: " + e.message, "This is likely why files page is stuck loading!");
+        setResult("r-files", "err", "❌ " + e.message);
       }
+
     } else {
-      set("r-admins", "err", "⚠️ Skipped — not signed in");
-      set("r-files",  "err", "⚠️ Skipped — not signed in");
+      setResult("r-auth", "err", "❌ Not signed in — use the Sign In button above to sign in on this page");
+      setResult("r-admins", "warn", "⚠️ Skipped — not signed in");
+      setResult("r-files",  "warn", "⚠️ Skipped — not signed in");
+    }
+
+    // ② DB REST ping
+    try {
+      const t0 = performance.now();
+      const r = await fetch(`${firebaseConfig.databaseURL}/.json?shallow=true`, { signal: AbortSignal.timeout(8000) });
+      const ms = Math.round(performance.now() - t0);
+      setResult("r-rest", "ok", `✅ HTTP ${r.status} in ${ms}ms`);
+    } catch(e) {
+      setResult("r-rest", "err", "❌ " + e.message);
     }
 
     // ③ WebSocket
-    set("r-ws", "wait", "⏳ Testing WebSocket…");
+    setResult("r-ws", "wait", "⏳ Testing…");
     await new Promise(resolve => {
       const wsUrl = firebaseConfig.databaseURL.replace("https://", "wss://") + "/.ws?v=5";
       try {
         const ws = new WebSocket(wsUrl);
-        const timer = setTimeout(() => {
-          ws.close();
-          set("r-ws", "err", "❌ WebSocket timed out after 8s — CSP may be blocking it", `URL tried: ${wsUrl}`);
-          resolve();
-        }, 8000);
-        ws.onopen = () => {
-          clearTimeout(timer);
-          ws.close();
-          set("r-ws", "ok", "✅ WebSocket connected OK", `URL: ${wsUrl}`);
-          resolve();
-        };
-        ws.onerror = (e) => {
-          clearTimeout(timer);
-          set("r-ws", "err", "❌ WebSocket error — possibly CSP blocked", `URL: ${wsUrl}\nCheck browser console for CSP error details.`);
-          resolve();
-        };
-      } catch(e) {
-        set("r-ws", "err", "❌ WebSocket exception: " + e.message);
-        resolve();
-      }
+        const t = setTimeout(() => { ws.close(); setResult("r-ws", "err", "❌ Timeout 8s — CSP blocking WebSocket"); resolve(); }, 8000);
+        ws.onopen = () => { clearTimeout(t); ws.close(); setResult("r-ws", "ok", "✅ WebSocket OK"); resolve(); };
+        ws.onerror = () => { clearTimeout(t); setResult("r-ws", "err", "❌ WebSocket error"); resolve(); };
+      } catch(e) { setResult("r-ws", "err", "❌ " + e.message); resolve(); }
     });
 
-    // ③ Supabase
+    // ④ localStorage check
+    const lsKeys = Object.keys(localStorage).filter(k => k.includes("firebase") || k.includes("firebaseLocalStorage"));
+    setResult("r-ls", lsKeys.length > 0 ? "ok" : "warn",
+      lsKeys.length > 0 ? `✅ Found ${lsKeys.length} Firebase key(s) in localStorage` : "⚠️ No Firebase keys in localStorage — session not persisting!",
+      lsKeys.length > 0 ? lsKeys.join("\n") : "This means Safari is blocking localStorage writes. Try: Safari → Settings → Privacy → uncheck 'Prevent cross-site tracking'"
+    );
+
+    // ④ IndexedDB check
     try {
-      const t0 = performance.now();
-      const r = await fetch(`${supabaseConfig.supabaseUrl}/storage/v1/bucket`, {
-        headers: { "Authorization": `Bearer ${supabaseConfig.supabaseKey}` },
-        signal: AbortSignal.timeout(8000)
-      });
-      const ms = Math.round(performance.now() - t0);
-      set("r-supa", "ok", `✅ Supabase reachable — HTTP ${r.status} in ${ms}ms`);
+      const dbs = await indexedDB.databases();
+      const fbDbs = dbs.filter(d => d.name?.includes("firebase") || d.name?.includes("firebaseLocalStorage"));
+      setResult("r-idb", fbDbs.length > 0 ? "ok" : "warn",
+        fbDbs.length > 0 ? `✅ Found ${fbDbs.length} Firebase IndexedDB database(s)` : "⚠️ No Firebase IndexedDB found",
+        fbDbs.map(d => `${d.name} (v${d.version})`).join("\n") || "Auth session may not be persisting between page loads"
+      );
     } catch(e) {
-      set("r-supa", "err", "❌ Supabase unreachable: " + e.message);
+      setResult("r-idb", "warn", "⚠️ Cannot check IndexedDB: " + e.message);
     }
   };
 

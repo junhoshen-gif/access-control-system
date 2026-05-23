@@ -14,6 +14,15 @@ export const firebaseConfig = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Firebase RTDB options — force long-polling so Safari ITP doesn't block
+// authenticated WebSocket connections (which causes all get() to hang)
+// ─────────────────────────────────────────────────────────────────────────────
+export const rtdbOptions = {
+  experimentalForceLongPolling: true,
+  useFetchStreams: false
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Supabase Configuration
 // Find these in: Supabase Dashboard → Project Settings → API
 //   supabaseUrl   → "Project URL"

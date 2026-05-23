@@ -81,12 +81,12 @@
       browserLocalPersistence,
       setPersistence
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-    import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-    import { firebaseConfig } from "./js/config.js";
+    import { getDatabase, initializeDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { firebaseConfig, rtdbOptions } from "./js/config.js";
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
-    const db = getDatabase(app);
+    const db = initializeDatabase(app, rtdbOptions);
 
     // Force local persistence — critical for Safari ITP compatibility
     await setPersistence(auth, browserLocalPersistence);

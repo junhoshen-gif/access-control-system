@@ -101,12 +101,13 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getDatabase, ref, get, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-  import { firebaseConfig } from "./js/config.js";
+  import { getDatabase, initializeDatabase, ref, get, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { firebaseConfig, rtdbOptions } from "./js/config.js";
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db = getDatabase(app);
+  // Use initializeDatabase with long-polling to work around Safari WebSocket issues
+  const db = initializeDatabase(app, rtdbOptions);
 
   let allFiles = [];        // files the user has access to
   let allProducts = {};     // published products (for "Buy Access" section)

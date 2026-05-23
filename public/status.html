@@ -265,12 +265,12 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getDatabase, ref, get, serverTimestamp, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-  import { firebaseConfig, supabaseConfig } from "./js/config.js";
+  import { getDatabase, initializeDatabase, ref, get, serverTimestamp, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { firebaseConfig, supabaseConfig, rtdbOptions } from "./js/config.js";
 
   const app  = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db   = getDatabase(app);
+  const db   = initializeDatabase(app, rtdbOptions);
 
   let currentUser = null;
   let isAdmin = false;
