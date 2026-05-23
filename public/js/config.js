@@ -20,7 +20,6 @@ export const firebaseConfig = {
 // ─────────────────────────────────────────────────────────────────────────────
 export async function dbGet(auth, path) {
   const DB_URL = "https://access-control-system-335f5-default-rtdb.firebaseio.com";
-  // Get current ID token (null if not signed in → unauthenticated request)
   let token = null;
   try {
     const user = auth.currentUser;
@@ -31,6 +30,26 @@ export async function dbGet(auth, path) {
   const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error(`DB REST ${res.status}: ${await res.text()}`);
   return await res.json(); // null if node doesn't exist
+}
+
+// REST PUT — bypasses SDK WebSocket for writes too
+export async function dbSet(auth, path, value) {
+  const DB_URL = "https://access-control-system-335f5-default-rtdb.firebaseio.com";
+  let token = null;
+  try {
+    const user = auth.currentUser;
+    if (user) token = await user.getIdToken();
+  } catch (_) {}
+
+  const url = `${DB_URL}/${path}.json${token ? `?auth=${token}` : ""}`;
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(value),
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!res.ok) throw new Error(`DB REST PUT ${res.status}: ${await res.text()}`);
+  return await res.json();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
