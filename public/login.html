@@ -69,12 +69,19 @@
       getAuth,
       signInWithEmailAndPassword,
       GoogleAuthProvider,
-      signInWithPopup
+      signInWithPopup,
+      signInWithRedirect,
+      getRedirectResult,
+      browserLocalPersistence,
+      setPersistence
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
     import { firebaseConfig } from "./js/config.js";
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
+
+    // Force local persistence — critical for Safari ITP compatibility
+    await setPersistence(auth, browserLocalPersistence);
 
     function showError(msg) {
       const el = document.getElementById("authError");
@@ -91,9 +98,14 @@
       btn.disabled = loading;
     }
 
-    async function handleSignIn(credential) {
-      clearError();
-      window.location.href = "index.html";
+    // Handle Google redirect result on page load (Safari uses redirect instead of popup)
+    try {
+      const result = await getRedirectResult(auth);
+      if (result?.user) {
+        window.location.href = "index.html";
+      }
+    } catch (err) {
+      if (err.code !== "auth/popup-closed-by-user") showError(friendlyError(err.code));
     }
 
     // Email/Password
@@ -112,14 +124,30 @@
       }
     });
 
-    // Google
+    // Google — use popup first, fall back to redirect for Safari
     window.signInGoogle = async () => {
       clearError();
+      const provider = new GoogleAuthProvider();
+      // Safari blocks popups from non-user-gesture contexts; try popup first,
+      // then silently fall back to redirect flow
       try {
-        await signInWithPopup(auth, new GoogleAuthProvider());
+        await signInWithPopup(auth, provider);
         window.location.href = "index.html";
       } catch (err) {
-        if (err.code !== "auth/popup-closed-by-user") showError(friendlyError(err.code));
+        if (err.code === "auth/popup-blocked" ||
+            err.code === "auth/popup-closed-by-user" ||
+            err.code === "auth/cancelled-popup-request") {
+          // Redirect flow (Safari-safe)
+          try {
+            await signInWithRedirect(auth, provider);
+            // Page will redirect to Google, then back to login.html
+            // getRedirectResult() at top of script handles the return
+          } catch (e) {
+            showError(friendlyError(e.code));
+          }
+        } else {
+          showError(friendlyError(err.code));
+        }
       }
     };
 

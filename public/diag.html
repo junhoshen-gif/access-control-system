@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Firebase Diagnostics</title>
+  <style>
+    body { font-family: monospace; background: #0f172a; color: #e2e8f0; padding: 2rem; }
+    h1 { color: #60a5fa; margin-bottom: 1.5rem; }
+    .test { background: #1e293b; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 0.75rem; display:flex; align-items:flex-start; gap:1rem; }
+    .icon { font-size: 1.3rem; flex-shrink:0; margin-top:2px; }
+    .label { font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.25rem; }
+    .result { font-size: 0.95rem; word-break: break-all; }
+    .ok   { color: #34d399; }
+    .err  { color: #f87171; }
+    .wait { color: #fbbf24; }
+    .info { color: #93c5fd; }
+    pre { background:#0f172a; padding:0.5rem; border-radius:4px; font-size:0.78rem; white-space:pre-wrap; margin-top:0.5rem; color:#cbd5e1; }
+    button { background:#2563eb; color:white; border:none; border-radius:6px; padding:0.5rem 1.2rem; cursor:pointer; font-size:0.9rem; margin-bottom:1.5rem; }
+    button:hover { background:#1d4ed8; }
+    .section-title { color:#94a3b8; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.1em; margin:1.5rem 0 0.5rem; }
+  </style>
+</head>
+<body>
+<h1>🔍 Firebase Connection Diagnostics</h1>
+<button onclick="runAll()">▶ Run All Tests</button>
+
+<div class="section-title">① Firebase SDK Initialisation</div>
+<div class="test"><span class="icon">📦</span><div><div class="label">Firebase App Init</div><div class="result wait" id="r-init">Pending…</div></div></div>
+<div class="test"><span class="icon">🔑</span><div><div class="label">Firebase Auth — onAuthStateChanged</div><div class="result wait" id="r-auth">Pending…</div></div></div>
+
+<div class="section-title">② Realtime Database</div>
+<div class="test"><span class="icon">🌐</span><div><div class="label">DB REST ping (no auth)</div><div class="result wait" id="r-rest">Pending…</div></div></div>
+<div class="test"><span class="icon">👤</span><div><div class="label">DB read: admins/{uid} (requires auth)</div><div class="result wait" id="r-admins">Pending…</div></div></div>
+<div class="test"><span class="icon">📁</span><div><div class="label">DB read: files (requires auth)</div><div class="result wait" id="r-files">Pending…</div></div></div>
+
+<div class="section-title">③ Network / CSP</div>
+<div class="test"><span class="icon">🔌</span><div><div class="label">WebSocket to Firebase RTDB</div><div class="result wait" id="r-ws">Pending…</div></div></div>
+<div class="test"><span class="icon">🌍</span><div><div class="label">Supabase reachable</div><div class="result wait" id="r-supa">Pending…</div></div></div>
+
+<div class="section-title">④ Environment</div>
+<div class="test"><span class="icon">ℹ️</span><div><div class="label">Browser / User Agent</div><div class="result info" id="r-ua"></div></div></div>
+<div class="test"><span class="icon">🕐</span><div><div class="label">Timestamp</div><div class="result info" id="r-ts"></div></div></div>
+
+<script type="module">
+  import { initializeApp }           from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getDatabase, ref, get }   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { firebaseConfig, supabaseConfig } from "./js/config.js";
+
+  function set(id, cls, text, extra) {
+    const el = document.getElementById(id);
+    el.className = "result " + cls;
+    el.textContent = text;
+    if (extra) {
+      const pre = document.createElement("pre");
+      pre.textContent = extra;
+      el.parentElement.appendChild(pre);
+    }
+  }
+
+  // Fill static info immediately
+  document.getElementById("r-ua").textContent = navigator.userAgent;
+  document.getElementById("r-ts").textContent = new Date().toISOString();
+
+  let app, auth, db, currentUser = null;
+
+  window.runAll = async () => {
+    // Clear previous pre tags
+    document.querySelectorAll("pre").forEach(p => p.remove());
+    document.querySelectorAll(".result").forEach(el => {
+      el.className = "result wait";
+      el.textContent = "Running…";
+    });
+    document.getElementById("r-ua").textContent = navigator.userAgent;
+    document.getElementById("r-ts").textContent = new Date().toISOString();
+
+    // ① Init
+    try {
+      app  = initializeApp(firebaseConfig, "diag-" + Date.now());
+      auth = getAuth(app);
+      db   = getDatabase(app);
+      set("r-init", "ok", "✅ Firebase app initialised OK", JSON.stringify({
+        projectId: firebaseConfig.projectId,
+        databaseURL: firebaseConfig.databaseURL,
+        authDomain: firebaseConfig.authDomain
+      }, null, 2));
+    } catch(e) {
+      set("r-init", "err", "❌ Init failed: " + e.message);
+      return;
+    }
+
+    // ① Auth state
+    set("r-auth", "wait", "⏳ Waiting for auth state…");
+    const authResult = await new Promise(resolve => {
+      const unsub = onAuthStateChanged(auth, user => {
+        unsub();
+        currentUser = user;
+        if (user) {
+          resolve({ ok: true, msg: `✅ Signed in as: ${user.email || user.uid}`, detail: `uid: ${user.uid}\nemail: ${user.email}\nprovider: ${user.providerData?.[0]?.providerId}` });
+        } else {
+          resolve({ ok: false, msg: "⚠️ Not signed in — sign in to test DB reads", detail: "Go to index.html and sign in, then come back to this page." });
+        }
+      });
+      setTimeout(() => { unsub(); resolve({ ok: false, msg: "❌ Auth state timeout (>10s)" }); }, 10000);
+    });
+    set("r-auth", authResult.ok ? "ok" : "err", authResult.msg, authResult.detail);
+
+    // ② REST ping
+    try {
+      const t0 = performance.now();
+      const r = await fetch(`${firebaseConfig.databaseURL}/.json?shallow=true`, { signal: AbortSignal.timeout(8000) });
+      const ms = Math.round(performance.now() - t0);
+      set("r-rest", "ok", `✅ DB REST reachable — HTTP ${r.status} in ${ms}ms`, `URL: ${firebaseConfig.databaseURL}/.json?shallow=true\nStatus: ${r.status} (401 = rules blocked = normal without auth)`);
+    } catch(e) {
+      set("r-rest", "err", "❌ DB REST unreachable: " + e.message);
+    }
+
+    // ② DB reads (only if authed)
+    if (currentUser) {
+      // admins read
+      try {
+        const t0 = performance.now();
+        const snap = await Promise.race([
+          get(ref(db, `admins/${currentUser.uid}`)),
+          new Promise((_, r) => setTimeout(() => r(new Error("Timeout after 10s")), 10000))
+        ]);
+        const ms = Math.round(performance.now() - t0);
+        const isAdmin = snap.exists();
+        set("r-admins", "ok", `✅ admins read OK in ${ms}ms — isAdmin: ${isAdmin}`, `Path: admins/${currentUser.uid}\nValue: ${JSON.stringify(snap.val())}`);
+      } catch(e) {
+        set("r-admins", "err", "❌ admins read failed: " + e.message, "This is likely why Admin Console button is missing!");
+      }
+
+      // files read
+      try {
+        const t0 = performance.now();
+        const snap = await Promise.race([
+          get(ref(db, "files")),
+          new Promise((_, r) => setTimeout(() => r(new Error("Timeout after 10s")), 10000))
+        ]);
+        const ms = Math.round(performance.now() - t0);
+        const count = snap.exists() ? Object.keys(snap.val()).length : 0;
+        set("r-files", "ok", `✅ files read OK in ${ms}ms — ${count} file(s) found`);
+      } catch(e) {
+        set("r-files", "err", "❌ files read failed: " + e.message, "This is likely why files page is stuck loading!");
+      }
+    } else {
+      set("r-admins", "err", "⚠️ Skipped — not signed in");
+      set("r-files",  "err", "⚠️ Skipped — not signed in");
+    }
+
+    // ③ WebSocket
+    set("r-ws", "wait", "⏳ Testing WebSocket…");
+    await new Promise(resolve => {
+      const wsUrl = firebaseConfig.databaseURL.replace("https://", "wss://") + "/.ws?v=5";
+      try {
+        const ws = new WebSocket(wsUrl);
+        const timer = setTimeout(() => {
+          ws.close();
+          set("r-ws", "err", "❌ WebSocket timed out after 8s — CSP may be blocking it", `URL tried: ${wsUrl}`);
+          resolve();
+        }, 8000);
+        ws.onopen = () => {
+          clearTimeout(timer);
+          ws.close();
+          set("r-ws", "ok", "✅ WebSocket connected OK", `URL: ${wsUrl}`);
+          resolve();
+        };
+        ws.onerror = (e) => {
+          clearTimeout(timer);
+          set("r-ws", "err", "❌ WebSocket error — possibly CSP blocked", `URL: ${wsUrl}\nCheck browser console for CSP error details.`);
+          resolve();
+        };
+      } catch(e) {
+        set("r-ws", "err", "❌ WebSocket exception: " + e.message);
+        resolve();
+      }
+    });
+
+    // ③ Supabase
+    try {
+      const t0 = performance.now();
+      const r = await fetch(`${supabaseConfig.supabaseUrl}/storage/v1/bucket`, {
+        headers: { "Authorization": `Bearer ${supabaseConfig.supabaseKey}` },
+        signal: AbortSignal.timeout(8000)
+      });
+      const ms = Math.round(performance.now() - t0);
+      set("r-supa", "ok", `✅ Supabase reachable — HTTP ${r.status} in ${ms}ms`);
+    } catch(e) {
+      set("r-supa", "err", "❌ Supabase unreachable: " + e.message);
+    }
+  };
+
+  // Auto-run on load
+  window.runAll();
+</script>
+</body>
+</html>

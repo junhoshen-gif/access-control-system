@@ -75,7 +75,11 @@
       createUserWithEmailAndPassword,
       updateProfile,
       GoogleAuthProvider,
-      signInWithPopup
+      signInWithPopup,
+      signInWithRedirect,
+      getRedirectResult,
+      browserLocalPersistence,
+      setPersistence
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
     import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
     import { firebaseConfig } from "./js/config.js";
@@ -83,6 +87,9 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getDatabase(app);
+
+    // Force local persistence — critical for Safari ITP compatibility
+    await setPersistence(auth, browserLocalPersistence);
 
     function showError(msg) {
       const el = document.getElementById("authError");
@@ -132,17 +139,37 @@
       }
     });
 
-    async function socialSignIn(provider) {
+    // Handle Google redirect result (Safari redirect flow) — must be after helpers defined
+    (async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result?.user) {
+          await saveUserProfile(result.user, result.user.displayName);
+          window.location.href = "index.html";
+        }
+      } catch (err) {
+        if (err.code !== "auth/popup-closed-by-user") showError(friendlyError(err.code));
+      }
+    })();
+
+    // Google sign-in — popup first, redirect fallback for Safari
+    window.signInGoogle = async () => {
+      const provider = new GoogleAuthProvider();
       try {
         const cred = await signInWithPopup(auth, provider);
         await saveUserProfile(cred.user, cred.user.displayName);
         window.location.href = "index.html";
       } catch (err) {
-        if (err.code !== "auth/popup-closed-by-user") showError(friendlyError(err.code));
+        if (err.code === "auth/popup-blocked" ||
+            err.code === "auth/popup-closed-by-user" ||
+            err.code === "auth/cancelled-popup-request") {
+          try { await signInWithRedirect(auth, provider); }
+          catch (e) { showError(friendlyError(e.code)); }
+        } else {
+          showError(friendlyError(err.code));
+        }
       }
-    }
-
-    window.signInGoogle = () => socialSignIn(new GoogleAuthProvider());
+    };
 
     window.togglePw = () => {
       const pw = document.getElementById("password");
