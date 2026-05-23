@@ -10,6 +10,7 @@
  *   ALLOWED_ORIGIN    — your Firebase Hosting URL, e.g. https://your-project.web.app
  */
 
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
