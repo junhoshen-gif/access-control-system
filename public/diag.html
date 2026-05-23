@@ -80,16 +80,11 @@
     getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut,
     browserLocalPersistence, setPersistence
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getDatabase, forceLongPolling, ref, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-  import { firebaseConfig } from "./js/config.js";
-
-  // Force HTTP long-polling — fixes Safari WebSocket auth hang
-  forceLongPolling();
+  import { firebaseConfig, dbGet } from "./js/config.js";
 
   // Use the SAME default app so we share auth session with index.html/admin.html
   const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db   = getDatabase(app);
 
   document.getElementById("r-ua").textContent = navigator.userAgent;
 
@@ -153,15 +148,12 @@
       setResult("r-admins", "wait", "⏳ Reading…");
       try {
         const t0 = performance.now();
-        const snap = await Promise.race([
-          get(ref(db, `admins/${user.uid}`)),
-          new Promise((_, r) => setTimeout(() => r(new Error("Timeout 10s — DB connection hung")), 10000))
-        ]);
+        const adminVal = await dbGet(auth, `admins/${user.uid}`);
         const ms = Math.round(performance.now() - t0);
-        const isAdmin = snap.exists();
+        const isAdmin = adminVal !== null;
         setResult("r-admins", isAdmin ? "ok" : "warn",
           isAdmin ? `✅ isAdmin = TRUE (${ms}ms) — Admin Console button SHOULD appear` : `⚠️ isAdmin = FALSE (${ms}ms) — Your UID is not in the admins node!`,
-          `Path: admins/${user.uid}\nValue: ${JSON.stringify(snap.val())}\n\n${!isAdmin ? "ACTION NEEDED: Add your UID to admins node in Firebase Console" : ""}`
+          `Path: admins/${user.uid}\nValue: ${JSON.stringify(adminVal)}\n\n${!isAdmin ? "ACTION NEEDED: Add your UID to admins node in Firebase Console" : ""}`
         );
       } catch(e) {
         setResult("r-admins", "err", "❌ " + e.message, "DB read failed — this is why Admin Console button is missing");
@@ -171,12 +163,9 @@
       setResult("r-files", "wait", "⏳ Reading…");
       try {
         const t0 = performance.now();
-        const snap = await Promise.race([
-          get(ref(db, "files")),
-          new Promise((_, r) => setTimeout(() => r(new Error("Timeout 10s — DB connection hung")), 10000))
-        ]);
+        const filesVal = await dbGet(auth, "files");
         const ms = Math.round(performance.now() - t0);
-        const count = snap.exists() ? Object.keys(snap.val()).length : 0;
+        const count = filesVal ? Object.keys(filesVal).length : 0;
         setResult("r-files", "ok", `✅ files read OK (${ms}ms) — ${count} file(s) in DB`);
       } catch(e) {
         setResult("r-files", "err", "❌ " + e.message);

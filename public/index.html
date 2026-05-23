@@ -101,16 +101,12 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getDatabase, forceLongPolling, ref, get, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-  import { firebaseConfig } from "./js/config.js";
-
-  // Force HTTP long-polling instead of WebSocket — fixes Safari ITP blocking
-  // authenticated WebSocket connections (all get() calls would hang otherwise)
-  forceLongPolling();
+  import { getDatabase, ref, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { firebaseConfig, dbGet } from "./js/config.js";
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db = getDatabase(app);
+  const db = getDatabase(app); // still needed for push() (logs)
 
   let allFiles = [];        // files the user has access to
   let allProducts = {};     // published products (for "Buy Access" section)
@@ -148,18 +144,14 @@
     // Log login event (fire-and-forget — never block page load)
     writeLog("login");
 
-    // Check admin — with timeout so UI never hangs indefinitely
+    // Check admin via REST (Safari WebSocket-safe)
     try {
-      const adminSnap = await Promise.race([
-        get(ref(db, `admins/${user.uid}`)),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 10000))
-      ]);
-      if (adminSnap.exists()) {
+      const adminVal = await dbGet(auth, `admins/${user.uid}`);
+      if (adminVal !== null) {
         document.getElementById("adminLink").classList.remove("hidden");
       }
     } catch (err) {
       console.warn("Admin check failed:", err.message);
-      // Don't block page — just skip showing the admin link
     }
 
     // Load accessible files and products
@@ -174,18 +166,14 @@
 
   async function loadFiles(uid) {
     try {
-      const dbTimeout = new Promise((_, rej) =>
-        setTimeout(() => rej(new Error("資料庫連線逾時，請重新整理頁面。(Database timeout — please refresh)")), 15000)
-      );
-      const [accessSnap, filesSnap] = await Promise.race([
-        Promise.all([get(ref(db, `access/${uid}`)), get(ref(db, "files"))]),
-        dbTimeout
+      // Use REST API — bypasses Safari WebSocket auth block completely
+      const [accessData, filesData] = await Promise.all([
+        dbGet(auth, `access/${uid}`).then(v => v || {}),
+        dbGet(auth, "files").then(v => v || {})
       ]);
 
       document.getElementById("loadingState").classList.add("hidden");
 
-      const accessData = accessSnap.exists() ? accessSnap.val() : {};
-      const filesData  = filesSnap.exists()  ? filesSnap.val()  : {};
       const now = Date.now();
 
       allFiles = Object.entries(accessData)
@@ -226,9 +214,9 @@
     }
 
     try {
-      const snap = await get(ref(db, "products"));
-      if (!snap.exists()) return;
-      allProducts = snap.val();
+      const val = await dbGet(auth, "products");
+      if (!val) return;
+      allProducts = val;
     } catch(e) { return; }
 
     // Filter to products that contain at least one file the user doesn't have

@@ -265,15 +265,12 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getDatabase, forceLongPolling, ref, get, serverTimestamp, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-  import { firebaseConfig, supabaseConfig } from "./js/config.js";
-
-  // Force HTTP long-polling — fixes Safari WebSocket auth hang
-  forceLongPolling();
+  import { getDatabase, ref, serverTimestamp, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { firebaseConfig, supabaseConfig, dbGet } from "./js/config.js";
 
   const app  = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db   = getDatabase(app);
+  const db   = getDatabase(app); // needed for set/remove (write ops)
 
   let currentUser = null;
   let isAdmin = false;
@@ -296,8 +293,8 @@
       document.getElementById("userName").textContent = user.displayName || user.email;
       document.getElementById("userAvatar").textContent = (user.displayName || user.email || "?")[0].toUpperCase();
 
-      const adminSnap = await get(ref(db, `admins/${user.uid}`));
-      isAdmin = adminSnap.exists();
+      const adminVal = await dbGet(auth, `admins/${user.uid}`);
+      isAdmin = adminVal !== null;
       if (isAdmin) {
         document.getElementById("navAdminLink").classList.remove("hidden");
         // Show admin interval control immediately, now that we know the user is admin
@@ -686,19 +683,19 @@
 
   async function loadDbStats() {
     try {
-      const [usersSnap, filesSnap, accessSnap] = await Promise.all([
-        get(ref(db, "users")),
-        get(ref(db, "files")),
-        get(ref(db, "access")),
+      const [usersVal, filesVal, accessVal] = await Promise.all([
+        dbGet(auth, "users"),
+        dbGet(auth, "files"),
+        dbGet(auth, "access"),
       ]);
 
-      const userCount  = usersSnap.exists()  ? Object.keys(usersSnap.val()).length  : 0;
-      const fileCount  = filesSnap.exists()  ? Object.keys(filesSnap.val()).length  : 0;
+      const userCount  = usersVal  ? Object.keys(usersVal).length  : 0;
+      const fileCount  = filesVal  ? Object.keys(filesVal).length  : 0;
 
       let accessCount = 0, expiredCount = 0;
       const now = Date.now();
-      if (accessSnap.exists()) {
-        Object.values(accessSnap.val()).forEach(userFiles => {
+      if (accessVal) {
+        Object.values(accessVal).forEach(userFiles => {
           Object.values(userFiles).forEach(a => {
             accessCount++;
             if (a.expiresAt && a.expiresAt < now) expiredCount++;
@@ -775,15 +772,14 @@
   // Load admin interval setting from Firebase
   async function loadIntervalSetting() {
     try {
-      const snap = await get(ref(db, "settings/statusCheckInterval"));
-      if (snap.exists()) {
-        const saved = snap.val();
-        currentIntervalSec = saved;
+      const savedVal = await dbGet(auth, "settings/statusCheckInterval");
+      if (savedVal !== null) {
+        currentIntervalSec = savedVal;
         const sel = document.getElementById("intervalSelect");
         // Find matching option or default to 30s
-        const opt = [...sel.options].find(o => parseInt(o.value) === saved);
-        if (opt) sel.value = String(saved);
-        startAutoRefresh(saved);
+        const opt = [...sel.options].find(o => parseInt(o.value) === savedVal);
+        if (opt) sel.value = String(savedVal);
+        startAutoRefresh(savedVal);
       } else {
         startAutoRefresh(30);
       }

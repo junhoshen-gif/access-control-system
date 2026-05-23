@@ -544,17 +544,14 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getDatabase, forceLongPolling, ref, get, set, remove, push, update, query, orderByChild, limitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-  import { firebaseConfig } from "./js/config.js";
-
-  // Force HTTP long-polling — fixes Safari WebSocket auth hang
-  forceLongPolling();
+  import { getDatabase, ref, set, remove, push, update, query, orderByChild, limitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { firebaseConfig, dbGet } from "./js/config.js";
 
   const RENDER_SERVER_URL = "https://fileaccess-ecpay.onrender.com";
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db   = getDatabase(app);
+  const db   = getDatabase(app); // needed for write ops (set/push/update/remove)
 
   let currentUser = null;
   let allUsers    = {};
@@ -632,8 +629,8 @@
   // ── Auth Guard ────────────────────────────────────────────────────────────
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = "login.html"; return; }
-    const adminSnap = await get(ref(db, `admins/${user.uid}`));
-    if (!adminSnap.exists()) { window.location.href = "index.html"; return; }
+    const adminVal = await dbGet(auth, `admins/${user.uid}`);
+    if (adminVal === null) { window.location.href = "index.html"; return; }
     currentUser = user;
     document.getElementById("userName").textContent = user.displayName || user.email;
     document.getElementById("userAvatar").textContent = (user.displayName || user.email || "A")[0].toUpperCase();
@@ -798,7 +795,7 @@
 
   // ── Files Table ───────────────────────────────────────────────────────────
   async function loadFiles() {
-    try { const snap = await get(ref(db, "files")); allFiles = snap.exists() ? snap.val() : {}; }
+    try { allFiles = await dbGet(auth, "files").then(v => v || {}); }
     catch (err) { console.error("loadFiles:", err); allFiles = {}; }
     renderFilesTable();
   }
@@ -848,17 +845,17 @@
     updates[`files/${fileId}`] = null;
 
     // Remove from all users' /access
-    const accessSnap = await get(ref(db, "access"));
-    if (accessSnap.exists()) {
-      Object.keys(accessSnap.val()).forEach(uid => {
-        if (accessSnap.val()[uid][fileId]) updates[`access/${uid}/${fileId}`] = null;
+    const accessData = await dbGet(auth, "access").catch(() => null);
+    if (accessData) {
+      Object.keys(accessData).forEach(uid => {
+        if (accessData[uid][fileId]) updates[`access/${uid}/${fileId}`] = null;
       });
     }
 
     // Remove fileId from all products' fileIds arrays
-    const productsSnap = await get(ref(db, "products"));
-    if (productsSnap.exists()) {
-      Object.entries(productsSnap.val()).forEach(([productKey, product]) => {
+    const productsData = await dbGet(auth, "products").catch(() => null);
+    if (productsData) {
+      Object.entries(productsData).forEach(([productKey, product]) => {
         if (Array.isArray(product.fileIds) && product.fileIds.includes(fileId)) {
           updates[`products/${productKey}/fileIds`] = product.fileIds.filter(id => id !== fileId);
         }
@@ -878,9 +875,9 @@
   // ── Users ─────────────────────────────────────────────────────────────────
   async function loadUsers() {
     try {
-      const [usersSnap, adminsSnap] = await Promise.all([get(ref(db, "users")), get(ref(db, "admins"))]);
-      allUsers = usersSnap.exists() ? usersSnap.val() : {};
-      const admins = adminsSnap.exists() ? adminsSnap.val() : {};
+      const [usersVal, adminsVal] = await Promise.all([dbGet(auth, "users"), dbGet(auth, "admins")]);
+      allUsers = usersVal || {};
+      const admins = adminsVal || {};
       if (currentUser && !allUsers[currentUser.uid]) {
         allUsers[currentUser.uid] = { email: currentUser.email, displayName: currentUser.displayName || "", createdAt: Date.now() };
         await set(ref(db, `users/${currentUser.uid}`), allUsers[currentUser.uid]);
@@ -944,12 +941,12 @@
     const tbody   = document.getElementById("accessTbody");
     loading.classList.remove("hidden"); empty.classList.add("hidden"); table.classList.add("hidden");
     try {
-      const accessSnap = await get(ref(db, "access"));
+      const accessVal = await dbGet(auth, "access");
       loading.classList.add("hidden");
-      if (!accessSnap.exists()) { empty.classList.remove("hidden"); return; }
+      if (!accessVal) { empty.classList.remove("hidden"); return; }
       const rows = [];
       const now = Date.now();
-      Object.entries(accessSnap.val()).forEach(([uid, files]) => {
+      Object.entries(accessVal).forEach(([uid, files]) => {
         if (!files || typeof files !== "object") return;
         Object.entries(files).forEach(([fileId, access]) => rows.push({ uid, fileId, ...access }));
       });
@@ -1412,17 +1409,13 @@
   let allPurchases = {};  // keyed by uid
 
   async function loadPricing() {
-    try {
-      const snap = await get(ref(db, "products"));
-      allProducts = snap.exists() ? snap.val() : {};
-    } catch(e) { allProducts = {}; }
+    try { allProducts = await dbGet(auth, "products").then(v => v || {}); }
+    catch(e) { allProducts = {}; }
     renderProducts();
     populateProductFileCheckboxes();
 
-    try {
-      const snap = await get(ref(db, "purchases"));
-      allPurchases = snap.exists() ? snap.val() : {};
-    } catch(e) { allPurchases = {}; }
+    try { allPurchases = await dbGet(auth, "purchases").then(v => v || {}); }
+    catch(e) { allPurchases = {}; }
     renderPurchases();
   }
 

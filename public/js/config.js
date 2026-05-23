@@ -13,8 +13,25 @@ export const firebaseConfig = {
   appId:             "1:551173243790:web:6116b77f164c1e67d81adf"
 };
 
-// Note: All pages call forceLongPolling() from firebase-database.js to fix
-// Safari ITP blocking authenticated WebSocket connections.
+// ─────────────────────────────────────────────────────────────────────────────
+// Firebase REST helper — bypasses SDK WebSocket entirely (Safari-safe)
+// Safari blocks authenticated WebSocket connections; plain HTTPS always works.
+// Usage: await dbGet(auth, "admins/uid123")  → returns the value or null
+// ─────────────────────────────────────────────────────────────────────────────
+export async function dbGet(auth, path) {
+  const DB_URL = "https://access-control-system-335f5-default-rtdb.firebaseio.com";
+  // Get current ID token (null if not signed in → unauthenticated request)
+  let token = null;
+  try {
+    const user = auth.currentUser;
+    if (user) token = await user.getIdToken();
+  } catch (_) {}
+
+  const url = `${DB_URL}/${path}.json${token ? `?auth=${token}` : ""}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`DB REST ${res.status}: ${await res.text()}`);
+  return await res.json(); // null if node doesn't exist
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Supabase Configuration
