@@ -13,20 +13,8 @@ export const firebaseConfig = {
   appId:             "1:551173243790:web:6116b77f164c1e67d81adf"
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Firebase RTDB options — force long-polling so Safari ITP doesn't block
-// authenticated WebSocket connections (which causes all get() to hang)
-// Usage: initializeDatabase(app, firebaseConfig.databaseURL, rtdbOptions)
-// ─────────────────────────────────────────────────────────────────────────────
-export const rtdbOptions = {
-  experimentalForceLongPolling: true,
-  useFetchStreams: false
-};
-
-// Helper: get the RTDB instance with long-polling enabled (Safari-safe)
-// Import this instead of calling getDatabase(app) directly.
-// Usage: import { getDB } from "./js/config.js"  — but since config.js can't
-// import firebase, callers must use: initializeDatabase(app, firebaseConfig.databaseURL, rtdbOptions)
+// Note: All pages call forceLongPolling() from firebase-database.js to fix
+// Safari ITP blocking authenticated WebSocket connections.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Supabase Configuration

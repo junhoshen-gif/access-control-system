@@ -80,14 +80,16 @@
     getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut,
     browserLocalPersistence, setPersistence
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getDatabase, initializeDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-  import { firebaseConfig, rtdbOptions } from "./js/config.js";
+  import { getDatabase, forceLongPolling, ref, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { firebaseConfig } from "./js/config.js";
+
+  // Force HTTP long-polling — fixes Safari WebSocket auth hang
+  forceLongPolling();
 
   // Use the SAME default app so we share auth session with index.html/admin.html
   const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  // initializeDatabase with long-polling to bypass Safari WebSocket auth block
-  const db   = (() => { try { return initializeDatabase(app, firebaseConfig.databaseURL, rtdbOptions); } catch { return getDatabase(app); } })();
+  const db   = getDatabase(app);
 
   document.getElementById("r-ua").textContent = navigator.userAgent;
 
