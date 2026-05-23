@@ -544,7 +544,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getDatabase, ref, set, remove, push, update, query, orderByChild, limitToLast } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getDatabase, ref, set, remove, push, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
   import { firebaseConfig, dbGet } from "./js/config.js";
 
   const RENDER_SERVER_URL = "https://fileaccess-ecpay.onrender.com";
@@ -876,6 +876,7 @@
   async function loadUsers() {
     try {
       const [usersVal, adminsVal] = await Promise.all([dbGet(auth, "users"), dbGet(auth, "admins")]);
+      console.log("[loadUsers] usersVal keys:", usersVal ? Object.keys(usersVal) : null);
       allUsers = usersVal || {};
       const admins = adminsVal || {};
       if (currentUser && !allUsers[currentUser.uid]) {
@@ -883,7 +884,8 @@
         await set(ref(db, `users/${currentUser.uid}`), allUsers[currentUser.uid]);
       }
       Object.keys(allUsers).forEach(uid => { allUsers[uid].isAdmin = !!admins[uid]; });
-    } catch (err) { console.error("loadUsers:", err); allUsers = {}; }
+      console.log("[loadUsers] final allUsers count:", Object.keys(allUsers).length);
+    } catch (err) { console.error("[loadUsers] ERROR:", err); allUsers = {}; }
   }
 
   function renderUsersTable() {
@@ -985,9 +987,9 @@
     document.getElementById("logTable").classList.add("hidden");
     document.getElementById("logLoadMore").classList.add("hidden");
     try {
-      const snap = await get(query(ref(db, "logs"), orderByChild("timestamp"), limitToLast(500)));
-      if (!snap.exists()) { document.getElementById("logLoading").classList.add("hidden"); document.getElementById("logEmpty").classList.remove("hidden"); return; }
-      allLogs = Object.entries(snap.val()).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.timestamp - a.timestamp);
+      const logsVal = await dbGet(auth, "logs");
+      if (!logsVal) { document.getElementById("logLoading").classList.add("hidden"); document.getElementById("logEmpty").classList.remove("hidden"); return; }
+      allLogs = Object.entries(logsVal).map(([id, v]) => ({ id, ...v })).sort((a, b) => b.timestamp - a.timestamp).slice(0, 500);
       document.getElementById("logLoading").classList.add("hidden");
       logDisplayCount = LOG_PAGE_SIZE;
       renderLog();
@@ -1102,10 +1104,9 @@
     // Load all logs (last 500)
     let logs = [];
     try {
-      const snap = await get(query(ref(db, "logs"), orderByChild("timestamp"), limitToLast(500)));
-      if (snap.exists()) {
-        snap.forEach(child => logs.push({ key: child.key, ...child.val() }));
-        logs.reverse(); // newest first
+      const logsVal = await dbGet(auth, "logs");
+      if (logsVal) {
+        logs = Object.entries(logsVal).map(([key, v]) => ({ key, ...v })).sort((a, b) => b.timestamp - a.timestamp).slice(0, 500);
       }
     } catch(e) { console.error("sec: logs load error", e); }
 
