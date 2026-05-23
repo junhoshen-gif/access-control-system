@@ -144,18 +144,18 @@
     // Log login event (fire-and-forget — never block page load)
     writeLog("login");
 
-    // Upsert user profile into users node so admin can see all users
-    // Uses REST API (dbSet) to bypass SDK WebSocket — works for all users
+    // Upsert user profile into users node so admin can see all users.
+    // Always write on every login — it's idempotent and avoids a pre-read
+    // that would 403 because regular users can't read the parent /users node
+    // (only their own child), causing the catch to swallow the error before
+    // dbSet is ever called.
     try {
-      const existingUser = await dbGet(auth, `users/${user.uid}`);
-      if (!existingUser) {
-        await dbSet(auth, `users/${user.uid}`, {
-          email: user.email || "",
-          displayName: user.displayName || "",
-          createdAt: Date.now()
-        });
-      }
-    } catch(e) { /* ignore — non-critical */ }
+      await dbSet(auth, `users/${user.uid}`, {
+        email:       user.email       || "",
+        displayName: user.displayName || "",
+        createdAt:   Date.now()
+      });
+    } catch(e) { console.warn("User profile upsert failed:", e.message); }
 
     // Check admin via REST (Safari WebSocket-safe)
     try {
