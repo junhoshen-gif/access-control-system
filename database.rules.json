@@ -2,7 +2,6 @@
   "rules": {
     "users": {
       ".read": "root.child('admins').child(auth.uid).exists()",
-      ".write": "root.child('admins').child(auth.uid).exists()",
       "$uid": {
         ".read": "$uid === auth.uid || root.child('admins').child(auth.uid).exists()",
         ".write": "$uid === auth.uid || root.child('admins').child(auth.uid).exists()"
