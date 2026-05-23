@@ -818,14 +818,34 @@
         <td class="text-muted text-sm">${f.size ? formatSize(f.size) : "—"}</td>
         <td class="text-muted text-sm">${formatDate(f.uploadedAt)}</td>
         <td>
-          <button class="btn btn-ghost btn-xs" onclick="previewFile('${escHtml(f.url)}', '${escHtml(f.name)}', '${f.type}')">Preview</button>
+          <button class="btn btn-ghost btn-xs admin-preview-btn" data-fileid="${escHtml(id)}" data-name="${escHtml(f.name)}">Preview</button>
           <button class="btn btn-danger-ghost btn-xs" onclick="deleteFile('${id}', '${escHtml(f.name)}')">Delete</button>
         </td>
       </tr>`;
     }).join("");
   }
 
-  window.previewFile = (url, name, type) => { window.open(url, "_blank"); };
+  // Preview via signed URL (never exposes the raw public Supabase URL)
+  window.previewFile = async (fileId, name) => {
+    try {
+      const idToken = await currentUser.getIdToken();
+      const resp = await fetch(
+        `${RENDER_SERVER_URL}/files/signed-url?fileId=${encodeURIComponent(fileId)}`,
+        { headers: { "Authorization": `Bearer ${idToken}` } }
+      );
+      if (!resp.ok) throw new Error((await resp.json()).error || resp.statusText);
+      const { signedUrl } = await resp.json();
+      window.open(signedUrl, "_blank");
+    } catch (err) {
+      alert("Preview failed: " + err.message);
+    }
+  };
+
+  // Delegated listener for preview buttons in the files table
+  document.getElementById("adminFilesTbody").addEventListener("click", (e) => {
+    const btn = e.target.closest(".admin-preview-btn");
+    if (btn) previewFile(btn.dataset.fileid, btn.dataset.name);
+  });
 
   window.deleteFile = (id, name) => {
     deleteTarget = id;
@@ -839,32 +859,23 @@
     const fileId = deleteTarget;
     const fname  = allFiles[fileId]?.name || fileId;
 
-    const updates = {};
-
-    // Remove from /files
-    updates[`files/${fileId}`] = null;
-
-    // Remove from all users' /access
-    const accessData = await dbGet(auth, "access").catch(() => null);
-    if (accessData) {
-      Object.keys(accessData).forEach(uid => {
-        if (accessData[uid][fileId]) updates[`access/${uid}/${fileId}`] = null;
+    // Delegate to the server — it deletes from Supabase AND cleans up Firebase
+    // (files, access grants, product fileIds). We should not duplicate that logic here.
+    try {
+      const idToken = await currentUser.getIdToken(true);
+      const resp = await fetch(`${RENDER_SERVER_URL}/files/${encodeURIComponent(fileId)}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${idToken}` }
       });
+      if (!resp.ok) {
+        const e = await resp.json().catch(() => ({}));
+        throw new Error(e.error || resp.statusText);
+      }
+    } catch (err) {
+      alert("Delete failed: " + err.message);
+      return;
     }
 
-    // Remove fileId from all products' fileIds arrays
-    const productsData = await dbGet(auth, "products").catch(() => null);
-    if (productsData) {
-      Object.entries(productsData).forEach(([productKey, product]) => {
-        if (Array.isArray(product.fileIds) && product.fileIds.includes(fileId)) {
-          updates[`products/${productKey}/fileIds`] = product.fileIds.filter(id => id !== fileId);
-        }
-      });
-    }
-
-    await update(ref(db), updates);
-
-    writeLog("file_delete", { fileName: fname, fileId });
     delete allFiles[fileId];
     closeDeleteModal();
     renderFilesTable();
@@ -923,7 +934,9 @@
     const expiry = document.getElementById("accessExpiry").value;
     if (!uid || !fileId) { showAccessAlert("Please select both a user and a file.", "error"); return; }
     const accessData = { granted: true, grantedAt: Date.now(), grantedBy: currentUser.uid };
-    if (expiry) accessData.expiresAt = new Date(expiry).getTime();
+    // Parse expiry as end-of-day in local time (not UTC midnight, which would cut off
+    // access 8 hours early in UTC+8 / Taiwan timezone).
+    if (expiry) accessData.expiresAt = new Date(expiry + "T23:59:59").getTime();
     await set(ref(db, `access/${uid}/${fileId}`), accessData);
     writeLog("access_grant", {
       targetUid: uid,
@@ -1080,7 +1093,7 @@
     }
     if (!confirm(`確定要刪除 ${oldLogs.length} 筆 90 天以前的記錄嗎？此操作無法還原。`)) return;
     const updates = {};
-    oldLogs.forEach(l => { updates[`logs/${l.key}`] = null; });
+    oldLogs.forEach(l => { updates[`logs/${l.id}`] = null; });
     try {
       await update(ref(db), updates);
       allLogs = allLogs.filter(l => l.timestamp >= cutoff);

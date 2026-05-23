@@ -130,17 +130,20 @@ app.get("/files/signed-url", async (req, res) => {
   }
 
   // Get file record to find the storage path
+  // Always use the raw storagePath field (never extract from the URL,
+  // which contains an already-encoded path and would cause double-encoding).
   let filePath;
   try {
     const fileSnap = await db.ref(`files/${fileId}`).once("value");
     if (!fileSnap.exists()) return res.status(404).json({ error: "File not found" });
     const fileData = fileSnap.val();
-    // Extract just the storage path from the full Supabase URL
-    // URL format: https://{project}.supabase.co/storage/v1/object/public/{bucket}/{path}
-    const url = fileData.url || "";
-    const marker = `/object/public/${SUPABASE_BUCKET}/`;
-    const idx = url.indexOf(marker);
-    filePath = idx !== -1 ? url.slice(idx + marker.length) : fileData.storagePath || "";
+    filePath = fileData.storagePath || "";
+    // Legacy fallback: if storagePath is missing, extract raw path from URL and decode it
+    if (!filePath && fileData.url) {
+      const marker = `/object/public/${SUPABASE_BUCKET}/`;
+      const idx = fileData.url.indexOf(marker);
+      if (idx !== -1) filePath = decodeURIComponent(fileData.url.slice(idx + marker.length));
+    }
   } catch {
     return res.status(500).json({ error: "DB error" });
   }
@@ -148,6 +151,7 @@ app.get("/files/signed-url", async (req, res) => {
   if (!filePath) return res.status(500).json({ error: "Cannot resolve file path" });
 
   // Request signed URL from Supabase (900 seconds = 15 minutes)
+  // encodeURIComponent the raw storagePath exactly once here.
   try {
     const supaRes = await fetch(
       `${SUPABASE_URL}/storage/v1/object/sign/${SUPABASE_BUCKET}/${encodeURIComponent(filePath)}`,
@@ -287,11 +291,12 @@ app.delete("/files/:fileId", async (req, res) => {
     return res.status(500).json({ error: "DB error" });
   }
 
-  // Delete from Supabase
+  // Delete from Supabase — use raw storagePath to avoid double-encoding.
+  // Legacy fallback: decode from URL if storagePath is missing.
   const storagePath = fileData.storagePath || (() => {
     const marker = `/object/public/${SUPABASE_BUCKET}/`;
     const idx = (fileData.url || "").indexOf(marker);
-    return idx !== -1 ? fileData.url.slice(idx + marker.length) : "";
+    return idx !== -1 ? decodeURIComponent(fileData.url.slice(idx + marker.length)) : "";
   })();
 
   if (storagePath) {
@@ -484,10 +489,12 @@ app.post("/ecpay/create-order", async (req, res) => {
     product = snap.val();
   } catch { return res.status(500).json({ error: "DB error" }); }
 
-  const ts       = (Date.now() % 100000).toString().padStart(5, "0");
-  const shortPK  = productKey.replace(/[^A-Za-z0-9]/g, "").slice(0, 5).padEnd(5, "0");
-  const shortUID = uid.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).padEnd(10, "0");
-  const merchantTradeNo = `${shortPK}${shortUID}${ts}`;
+  // Use 5 cryptographically random hex chars (not timestamp % 100000 which cycles every ~28h
+  // and can collide for the same user+product pair within that window).
+  const randSuffix = crypto.randomBytes(3).toString("hex").slice(0, 5); // 5 hex chars
+  const shortPK    = productKey.replace(/[^A-Za-z0-9]/g, "").slice(0, 5).padEnd(5, "0");
+  const shortUID   = uid.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).padEnd(10, "0");
+  const merchantTradeNo = `${shortPK}${shortUID}${randSuffix}`; // 5+10+5 = 20 chars max
 
   try {
     await db.ref(`tradeMap/${merchantTradeNo}`).set({ uid, productKey, createdAt: Date.now() });

@@ -46,7 +46,7 @@
       ".indexOn": ["timestamp"],
       "$logId": {
         ".read": "root.child('admins').child(auth.uid).exists()",
-        ".write": "root.child('admins').child(auth.uid).exists()"
+        ".write": "auth != null && (!data.exists() || root.child('admins').child(auth.uid).exists())"
       }
     },
     "tradeMap": {

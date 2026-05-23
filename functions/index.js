@@ -103,6 +103,20 @@ exports.stripeWebhook = functions
       return res.status(200).send("OK – no matching product");
     }
 
+    // ── Idempotency: prevent double-processing on Stripe retry ───────────
+    // Use the Stripe session ID as the purchase key — it is globally unique.
+    // If we already wrote this purchase, skip silently.
+    try {
+      const existingSnap = await db.ref(`purchases/${uid}/${session.id}`).once("value");
+      if (existingSnap.exists()) {
+        functions.logger.info("Already processed, skipping:", { sessionId: session.id });
+        return res.status(200).json({ received: true, skipped: true });
+      }
+    } catch (err) {
+      functions.logger.error("Idempotency check failed:", err);
+      return res.status(500).send("DB read error");
+    }
+
     // ── Grant access to each file in the product ──────────────────────────
     const fileIds = matchedProduct.fileIds || [];    // array of fileId strings
     const durationDays = matchedProduct.durationDays || null;  // null = permanent
