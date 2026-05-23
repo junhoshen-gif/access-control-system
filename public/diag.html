@@ -62,6 +62,8 @@
 <div class="section-title">② Realtime Database reads</div>
 <div class="test"><span class="icon">👤</span><div><div class="label">DB read: admins/{uid}</div><div class="result wait" id="r-admins">—</div></div></div>
 <div class="test"><span class="icon">📁</span><div><div class="label">DB read: files</div><div class="result wait" id="r-files">—</div></div></div>
+<div class="test"><span class="icon">👥</span><div><div class="label">DB read: users (admin only)</div><div class="result wait" id="r-users">—</div></div></div>
+<div class="test"><span class="icon">📋</span><div><div class="label">DB read: logs (admin only)</div><div class="result wait" id="r-logs">—</div></div></div>
 <div class="test"><span class="icon">🌐</span><div><div class="label">DB REST ping (unauthenticated)</div><div class="result wait" id="r-rest">—</div></div></div>
 
 <div class="section-title">③ Network</div>
@@ -171,10 +173,42 @@
         setResult("r-files", "err", "❌ " + e.message);
       }
 
+      // ② DB: users
+      setResult("r-users", "wait", "⏳ Reading…");
+      try {
+        const t0 = performance.now();
+        const usersVal = await dbGet(auth, "users");
+        const ms = Math.round(performance.now() - t0);
+        const count = usersVal ? Object.keys(usersVal).length : 0;
+        const emails = usersVal ? Object.values(usersVal).map(u => u.email || u.displayName || "(no email)").join(", ") : "";
+        setResult("r-users", count > 0 ? "ok" : "warn",
+          count > 0 ? `✅ users read OK (${ms}ms) — ${count} user(s) in DB` : `⚠️ users node is empty or null (${ms}ms)`,
+          emails || "No users found — other users need to log in once to register"
+        );
+      } catch(e) {
+        setResult("r-users", "err", "❌ " + e.message, "Permission denied — check DB rules or token");
+      }
+
+      // ② DB: logs
+      setResult("r-logs", "wait", "⏳ Reading…");
+      try {
+        const t0 = performance.now();
+        const logsVal = await dbGet(auth, "logs");
+        const ms = Math.round(performance.now() - t0);
+        const count = logsVal ? Object.keys(logsVal).length : 0;
+        setResult("r-logs", count > 0 ? "ok" : "warn",
+          count > 0 ? `✅ logs read OK (${ms}ms) — ${count} log entries` : `⚠️ logs node is empty (${ms}ms)`
+        );
+      } catch(e) {
+        setResult("r-logs", "err", "❌ " + e.message, "Permission denied or DB error");
+      }
+
     } else {
       setResult("r-auth", "err", "❌ Not signed in — use the Sign In button above to sign in on this page");
       setResult("r-admins", "warn", "⚠️ Skipped — not signed in");
       setResult("r-files",  "warn", "⚠️ Skipped — not signed in");
+      setResult("r-users",  "warn", "⚠️ Skipped — not signed in");
+      setResult("r-logs",   "warn", "⚠️ Skipped — not signed in");
     }
 
     // ② DB REST ping
