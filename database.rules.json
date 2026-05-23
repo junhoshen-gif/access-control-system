@@ -12,8 +12,11 @@
       ".write": false
     },
     "files": {
-      ".read": "auth != null",
-      ".write": "root.child('admins').child(auth.uid).exists()"
+      ".read": "root.child('admins').child(auth.uid).exists()",
+      ".write": "root.child('admins').child(auth.uid).exists()",
+      "$fileId": {
+        ".read": "auth != null && root.child('access').child(auth.uid).child($fileId).child('granted').val() === true"
+      }
     },
     "access": {
       ".read": "root.child('admins').child(auth.uid).exists()",

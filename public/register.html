@@ -91,9 +91,6 @@
     const auth = getAuth(app);
     const db = getDatabase(app);
 
-    // Force local persistence — critical for Safari ITP compatibility
-    await setPersistence(auth, browserLocalPersistence);
-
     function showError(msg) {
       const el = document.getElementById("authError");
       el.textContent = msg;
@@ -142,8 +139,13 @@
       }
     });
 
-    // Handle Google redirect result (Safari redirect flow) — must be after helpers defined
+    // Async init: persistence + redirect result handler
+    // Wrapped in IIFE — no top-level await required (Safari 14 compat)
     (async () => {
+      // Force local persistence — critical for Safari ITP compatibility
+      await setPersistence(auth, browserLocalPersistence);
+
+      // Handle Google redirect result (Safari redirect flow)
       try {
         const result = await getRedirectResult(auth);
         if (result?.user) {

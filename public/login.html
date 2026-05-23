@@ -30,6 +30,12 @@
     <!-- Error / Info Banner -->
     <div id="authError" class="alert alert-error hidden"></div>
 
+    <!-- Redirect sign-in loading state (shown while getRedirectResult resolves on Safari) -->
+    <div id="redirectLoading" class="hidden" style="text-align:center;padding:1.5rem 0;">
+      <div class="spinner" style="margin:0 auto 0.75rem;"></div>
+      <p style="color:var(--color-text-muted);font-size:0.9rem;">Completing sign-in…</p>
+    </div>
+
     <!-- Email / Password Form -->
     <form id="emailForm" class="auth-form">
       <div class="form-group">
@@ -80,9 +86,7 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
 
-    // Force local persistence — critical for Safari ITP compatibility
-    await setPersistence(auth, browserLocalPersistence);
-
+    // ── Helpers (defined synchronously so they're available immediately) ────────
     function showError(msg) {
       const el = document.getElementById("authError");
       el.textContent = msg;
@@ -97,17 +101,19 @@
       btn.querySelector(".btn-spinner")?.classList.toggle("hidden", !loading);
       btn.disabled = loading;
     }
-
-    // Handle Google redirect result on page load (Safari uses redirect instead of popup)
-    try {
-      const result = await getRedirectResult(auth);
-      if (result?.user) {
-        window.location.href = "index.html";
-      }
-    } catch (err) {
-      if (err.code !== "auth/popup-closed-by-user") showError(friendlyError(err.code));
+    function friendlyError(code) {
+      const map = {
+        "auth/user-not-found": "No account found with this email.",
+        "auth/wrong-password": "Incorrect password. Please try again.",
+        "auth/invalid-email": "Please enter a valid email address.",
+        "auth/too-many-requests": "Too many attempts. Please try again later.",
+        "auth/account-exists-with-different-credential": "An account already exists with this email using a different sign-in method.",
+        "auth/invalid-credential": "Invalid credentials. Please check your email and password.",
+      };
+      return map[code] || "Sign-in failed. Please try again.";
     }
 
+    // ── Event listeners (wired up synchronously) ─────────────────────────────
     // Email/Password
     document.getElementById("emailForm").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -158,17 +164,39 @@
       else { pw.type = "password"; btn.textContent = "Show"; }
     };
 
-    function friendlyError(code) {
-      const map = {
-        "auth/user-not-found": "No account found with this email.",
-        "auth/wrong-password": "Incorrect password. Please try again.",
-        "auth/invalid-email": "Please enter a valid email address.",
-        "auth/too-many-requests": "Too many attempts. Please try again later.",
-        "auth/account-exists-with-different-credential": "An account already exists with this email using a different sign-in method.",
-        "auth/invalid-credential": "Invalid credentials. Please check your email and password.",
-      };
-      return map[code] || "Sign-in failed. Please try again.";
-    }
+    // ── Async init: persistence + redirect result ─────────────────────────────
+    // Wrapped in an IIFE so top-level await isn't required (Safari 14 compat)
+    (async () => {
+      // Force local persistence — critical for Safari ITP compatibility
+      await setPersistence(auth, browserLocalPersistence);
+
+      // Show a loading indicator while getRedirectResult resolves —
+      // on Safari this can take a moment after returning from Google's OAuth page
+      const redirectEl = document.getElementById("redirectLoading");
+      const formEl     = document.getElementById("emailForm");
+      const dividerEl  = document.querySelector(".divider");
+      const socialEl   = document.querySelector(".social-grid");
+      redirectEl.classList.remove("hidden");
+      formEl.classList.add("hidden");
+      if (dividerEl) dividerEl.classList.add("hidden");
+      if (socialEl)  socialEl.classList.add("hidden");
+
+      try {
+        const result = await getRedirectResult(auth);
+        if (result?.user) {
+          window.location.href = "index.html";
+          return; // page is navigating, leave spinner visible
+        }
+      } catch (err) {
+        if (err.code !== "auth/popup-closed-by-user") showError(friendlyError(err.code));
+      }
+
+      // No redirect in progress — restore the normal sign-in form
+      redirectEl.classList.add("hidden");
+      formEl.classList.remove("hidden");
+      if (dividerEl) dividerEl.classList.remove("hidden");
+      if (socialEl)  socialEl.classList.remove("hidden");
+    })();
   </script>
 </body>
 </html>

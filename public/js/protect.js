@@ -82,19 +82,35 @@
   });
 
   // ── 2. Block keyboard shortcuts ───────────────────────────────────────────
+  // On the admin page, copy/select-all are only blocked inside the file viewer
+  // so admins can freely copy UIDs, emails, and file IDs from tables/forms.
+  const isAdminPage = /\/admin\.html/.test(window.location.pathname);
+
+  function isInsideViewer(el) {
+    return !!(el && el.closest && el.closest(
+      "#viewerModal, .file-viewer-frame, .image-viewer, .modal-panel"
+    ));
+  }
+
   document.addEventListener("keydown", (e) => {
     const ctrl = e.ctrlKey || e.metaKey;
 
+    // Copy (Ctrl+C) and Select-All (Ctrl+A): on admin page only block inside viewer
+    if (ctrl && (e.key === "c" || e.key === "a")) {
+      if (isAdminPage && !isInsideViewer(e.target)) return; // allow on admin
+      e.preventDefault();
+      showBlockedToast(e.key === "c" ? "Copying is not allowed." : "Select all is not allowed.");
+      return false;
+    }
+
     const blocked = [
-      { match: ctrl && (e.key === "s" || e.key === "S"),       msg: "Saving is not allowed." },
-      { match: ctrl && e.key === "c",                          msg: "Copying is not allowed." },
-      { match: ctrl && e.key === "u",                          msg: "Viewing source is not allowed." },
-      { match: ctrl && e.key === "p",                          msg: "Printing is not allowed." },
-      { match: ctrl && e.key === "a",                          msg: "Select all is not allowed." },
-      { match: ctrl && e.shiftKey && e.key === "i",            msg: "Developer tools are disabled." },
-      { match: ctrl && e.shiftKey && e.key === "j",            msg: "Developer tools are disabled." },
-      { match: ctrl && e.shiftKey && e.key === "c",            msg: "Developer tools are disabled." },
-      { match: e.key === "F12",                                msg: "Developer tools are disabled." },
+      { match: ctrl && (e.key === "s" || e.key === "S"),  msg: "Saving is not allowed." },
+      { match: ctrl && e.key === "u",                      msg: "Viewing source is not allowed." },
+      { match: ctrl && e.key === "p",                      msg: "Printing is not allowed." },
+      { match: ctrl && e.shiftKey && e.key === "i",        msg: "Developer tools are disabled." },
+      { match: ctrl && e.shiftKey && e.key === "j",        msg: "Developer tools are disabled." },
+      { match: ctrl && e.shiftKey && e.key === "c",        msg: "Developer tools are disabled." },
+      { match: e.key === "F12",                            msg: "Developer tools are disabled." },
     ];
 
     for (const b of blocked) {

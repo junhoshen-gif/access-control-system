@@ -272,6 +272,14 @@
   const auth = getAuth(app);
   const db   = getDatabase(app); // needed for set/remove (write ops)
 
+  // Safari-compatible fetch timeout (AbortSignal.timeout requires Safari 16.4+)
+  function fetchWithTimeout(url, options, ms) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    return fetch(url, { ...options, signal: controller.signal })
+      .finally(() => clearTimeout(timer));
+  }
+
   let currentUser = null;
   let isAdmin = false;
   let refreshTimer = null;
@@ -335,7 +343,7 @@
     try {
       // Ping the .json REST endpoint (no auth needed for a 401/200 response)
       const dbUrl = firebaseConfig.databaseURL;
-      const res = await fetch(`${dbUrl}/.json?shallow=true`, { signal: AbortSignal.timeout(5000) });
+      const res = await fetchWithTimeout(`${dbUrl}/.json?shallow=true`, {}, 5000);
       const ms = Math.round(performance.now() - start);
       // 401 = rules blocked = DB is responding fine
       return { ok: res.status < 500, ms };
@@ -347,10 +355,9 @@
   async function pingSupabase() {
     const start = performance.now();
     try {
-      const res = await fetch(`${supabaseConfig.supabaseUrl}/storage/v1/bucket`, {
-        headers: { "Authorization": `Bearer ${supabaseConfig.supabaseKey}` },
-        signal: AbortSignal.timeout(5000)
-      });
+      const res = await fetchWithTimeout(`${supabaseConfig.supabaseUrl}/storage/v1/bucket`, {
+        headers: { "Authorization": `Bearer ${supabaseConfig.supabaseKey}` }
+      }, 5000);
       const ms = Math.round(performance.now() - start);
       return { ok: res.status < 500, ms };
     } catch {
@@ -372,7 +379,7 @@
     if (statusEl) statusEl.textContent = "Waking up… (may take ~50s on free tier)";
     if (badgeEl)  { badgeEl.textContent = "Starting…"; badgeEl.className = "service-status-badge badge-unknown"; }
     try {
-      const res = await fetch(`${ECPAY_SERVER_URL}/`, { signal: AbortSignal.timeout(60000) });
+      const res = await fetchWithTimeout(`${ECPAY_SERVER_URL}/`, {}, 60000);
       const ms = Math.round(performance.now() - start);
       const text = await res.text();
       const ok = res.ok && text.includes("running");
@@ -386,10 +393,9 @@
     const start = performance.now();
     try {
       // Ping ECPay's main payment domain — a 200/302/403 all mean it's reachable
-      const res = await fetch("https://payment.ecpay.com.tw/", {
-        mode: "no-cors",
-        signal: AbortSignal.timeout(8000)
-      });
+      const res = await fetchWithTimeout("https://payment.ecpay.com.tw/", {
+        mode: "no-cors"
+      }, 8000);
       const ms = Math.round(performance.now() - start);
       // no-cors opaque response = reachable
       return { ok: true, ms };

@@ -88,6 +88,14 @@
   const app  = getApps().length ? getApp() : initializeApp(firebaseConfig);
   const auth = getAuth(app);
 
+  // Safari-compatible fetch timeout (AbortSignal.timeout requires Safari 16.4+)
+  function fetchWithTimeout(url, options, ms) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    return fetch(url, { ...options, signal: controller.signal })
+      .finally(() => clearTimeout(timer));
+  }
+
   document.getElementById("r-ua").textContent = navigator.userAgent;
 
   function setResult(id, cls, text, detail) {
@@ -214,7 +222,7 @@
     // ② DB REST ping
     try {
       const t0 = performance.now();
-      const r = await fetch(`${firebaseConfig.databaseURL}/.json?shallow=true`, { signal: AbortSignal.timeout(8000) });
+      const r = await fetchWithTimeout(`${firebaseConfig.databaseURL}/.json?shallow=true`, {}, 8000);
       const ms = Math.round(performance.now() - t0);
       setResult("r-rest", "ok", `✅ HTTP ${r.status} in ${ms}ms`);
     } catch(e) {

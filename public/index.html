@@ -179,26 +179,37 @@
 
   async function loadFiles(uid) {
     try {
-      // Use REST API — bypasses Safari WebSocket auth block completely
-      const [accessData, filesData] = await Promise.all([
-        dbGet(auth, `access/${uid}`).then(v => v || {}),
-        dbGet(auth, "files").then(v => v || {})
-      ]);
+      // Use REST API — bypasses Safari WebSocket auth block completely.
+      // Fetch the user's access grants first, then fetch only the specific file
+      // metadata entries the user has access to (one request per file).
+      // This is necessary because /files is now restricted to admins for bulk reads;
+      // regular users can only read individual /files/$fileId entries they have a grant for.
+      const accessData = await dbGet(auth, `access/${uid}`).then(v => v || {});
 
       document.getElementById("loadingState").classList.add("hidden");
 
       const now = Date.now();
 
-      allFiles = Object.entries(accessData)
-        .filter(([fileId, access]) => {
-          if (!access.granted) return false;
-          if (access.expiresAt && access.expiresAt < now) return false;
-          return filesData[fileId];
-        })
-        .map(([fileId, access]) => ({
+      // Filter to valid (granted, non-expired) file IDs
+      const validEntries = Object.entries(accessData).filter(([, access]) => {
+        if (!access.granted) return false;
+        if (access.expiresAt && access.expiresAt < now) return false;
+        return true;
+      });
+
+      // Fetch each file's metadata in parallel (user can read /files/$fileId they have access to)
+      const fileResults = await Promise.all(
+        validEntries.map(([fileId]) =>
+          dbGet(auth, `files/${fileId}`).then(data => ({ fileId, data })).catch(() => ({ fileId, data: null }))
+        )
+      );
+
+      allFiles = fileResults
+        .filter(({ data }) => data !== null)
+        .map(({ fileId, data }) => ({
           id: fileId,
-          ...filesData[fileId],
-          expiresAt: access.expiresAt || null
+          ...data,
+          expiresAt: accessData[fileId].expiresAt || null
         }));
 
       // Track which file IDs user has access to (for store filtering)
@@ -473,6 +484,17 @@
     }
 
     body.innerHTML = `<div class="viewer-wrap">${inner}</div>`;
+
+    // Apply watermark overlay for viewable content types (deters screenshots)
+    if (["pdf", "image", "html", "text", "video"].includes(def.viewer) &&
+        typeof window.applyViewerWatermark === "function") {
+      const viewerWrap = body.querySelector(".viewer-wrap");
+      if (viewerWrap) {
+        viewerWrap.style.position = "relative";
+        const canvas = window.applyViewerWatermark(currentUserEmail);
+        viewerWrap.appendChild(canvas);
+      }
+    }
   }
 
   function closeViewer() {

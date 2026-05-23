@@ -14,6 +14,18 @@ export const firebaseConfig = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Safari-compatible fetch timeout helper
+// AbortSignal.timeout() is only available in Safari 16.4+; this polyfill works
+// back to Safari 12 using AbortController + setTimeout.
+// ─────────────────────────────────────────────────────────────────────────────
+function fetchWithTimeout(url, options, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(timer));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Firebase REST helper — bypasses SDK WebSocket entirely (Safari-safe)
 // Safari blocks authenticated WebSocket connections; plain HTTPS always works.
 // Usage: await dbGet(auth, "admins/uid123")  → returns the value or null
@@ -27,7 +39,7 @@ export async function dbGet(auth, path) {
   } catch (_) {}
 
   const url = `${DB_URL}/${path}.json${token ? `?auth=${token}` : ""}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  const res = await fetchWithTimeout(url, {}, 10000);
   if (!res.ok) throw new Error(`DB REST ${res.status}: ${await res.text()}`);
   return await res.json(); // null if node doesn't exist
 }
@@ -42,12 +54,11 @@ export async function dbSet(auth, path, value) {
   } catch (_) {}
 
   const url = `${DB_URL}/${path}.json${token ? `?auth=${token}` : ""}`;
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(value),
-    signal: AbortSignal.timeout(10000)
-  });
+    body: JSON.stringify(value)
+  }, 10000);
   if (!res.ok) throw new Error(`DB REST PUT ${res.status}: ${await res.text()}`);
   return await res.json();
 }
