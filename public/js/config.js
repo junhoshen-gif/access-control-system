@@ -44,6 +44,59 @@ export async function dbGet(auth, path) {
   return await res.json(); // null if node doesn't exist
 }
 
+// REST DELETE — removes a node from the database
+export async function dbDelete(auth, path) {
+  const DB_URL = "https://access-control-system-335f5-default-rtdb.firebaseio.com";
+  let token = null;
+  try {
+    const user = auth.currentUser;
+    if (user) token = await user.getIdToken();
+  } catch (_) {}
+
+  const url = `${DB_URL}/${path}.json${token ? `?auth=${token}` : ""}`;
+  const res = await fetchWithTimeout(url, { method: "DELETE" }, 10000);
+  if (!res.ok) throw new Error(`DB REST DELETE ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+// REST PATCH — merges/updates specific fields at a path
+export async function dbPatch(auth, path, value) {
+  const DB_URL = "https://access-control-system-335f5-default-rtdb.firebaseio.com";
+  let token = null;
+  try {
+    const user = auth.currentUser;
+    if (user) token = await user.getIdToken();
+  } catch (_) {}
+
+  const url = `${DB_URL}/${path}.json${token ? `?auth=${token}` : ""}`;
+  const res = await fetchWithTimeout(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(value)
+  }, 10000);
+  if (!res.ok) throw new Error(`DB REST PATCH ${res.status}: ${await res.text()}`);
+  return await res.json();
+}
+
+// REST POST — pushes a new child node (like Firebase push())
+export async function dbPush(auth, path, value) {
+  const DB_URL = "https://access-control-system-335f5-default-rtdb.firebaseio.com";
+  let token = null;
+  try {
+    const user = auth.currentUser;
+    if (user) token = await user.getIdToken();
+  } catch (_) {}
+
+  const url = `${DB_URL}/${path}.json${token ? `?auth=${token}` : ""}`;
+  const res = await fetchWithTimeout(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(value)
+  }, 10000);
+  if (!res.ok) throw new Error(`DB REST POST ${res.status}: ${await res.text()}`);
+  return await res.json(); // returns { name: "-Nxxx..." } (the new key)
+}
+
 // REST PUT — bypasses SDK WebSocket for writes too
 export async function dbSet(auth, path, value) {
   const DB_URL = "https://access-control-system-335f5-default-rtdb.firebaseio.com";
