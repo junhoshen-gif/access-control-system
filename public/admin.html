@@ -841,7 +841,7 @@
         } else {
           result = await uploadViaServer(file);
         }
-        const fileData = { name: file.name, type: file.type || "application/octet-stream", size: file.size, url: result.url, storagePath: result.storagePath, uploadedBy: currentUser.uid, uploadedAt: Date.now() };
+        const fileData = { name: file.name, type: file.type || "application/octet-stream", size: file.size, storagePath: result.storagePath, uploadedBy: currentUser.uid, uploadedAt: Date.now() };
         statusEl.textContent = "Done ✓";
         statusEl.className   = "queue-status status-done";
         successCount++;
@@ -874,7 +874,7 @@
       const e = await resp.json().catch(() => ({}));
       throw new Error(e.error || "Upload failed");
     }
-    return await resp.json(); // { fileId, url, storagePath }
+    return await resp.json(); // { fileId, storagePath }
   }
 
   // ── Large-file path: split → upload chunks → merge ────────────────────────
@@ -912,7 +912,7 @@
       statusEl.textContent = `Uploading… ${pct}%`;
     }
 
-    // All chunks received — ask server to merge and push to Supabase
+    // All chunks received — ask server to merge and push to S3
     statusEl.textContent = "Merging…";
     const idToken  = await currentUser.getIdToken();
     const mergeResp = await fetch(`${RENDER_SERVER_URL}/files/upload-merge`, {
@@ -932,7 +932,7 @@
       const e = await mergeResp.json().catch(() => ({}));
       throw new Error(e.error || "Merge failed");
     }
-    return await mergeResp.json(); // { fileId, url, storagePath }
+    return await mergeResp.json(); // { fileId, storagePath }
   }
 
   // ── Files Table ───────────────────────────────────────────────────────────
@@ -967,7 +967,7 @@
     }).join("");
   }
 
-  // Preview via signed URL (never exposes the raw public Supabase URL)
+  // Preview via S3 pre-signed URL (15-minute expiry)
   window.previewFile = async (fileId, name) => {
     try {
       const idToken = await currentUser.getIdToken();
@@ -1001,7 +1001,7 @@
     const fileId = deleteTarget;
     const fname  = allFiles[fileId]?.name || fileId;
 
-    // Delegate to the server — it deletes from Supabase AND cleans up Firebase
+    // Delegate to the server — it deletes from S3 AND cleans up Firebase
     // (files, access grants, product fileIds). We should not duplicate that logic here.
     try {
       const idToken = await currentUser.getIdToken(true);
@@ -1894,7 +1894,6 @@
 
   // No fixed cloud limit — show relative usage against a display ceiling of 100 GB.
   // The bar just gives a visual sense of growth; actual limit is your disk.
-  const STORAGE_LIMIT_BYTES = 100 * 1024 * 1024 * 1024; // 100 GB display ceiling
 
   function fmtBytes(bytes) {
     if (bytes === 0) return "0 B";
@@ -1934,9 +1933,9 @@
       if (!filesVal) {
         emptyEl.classList.remove("hidden");
         document.getElementById("storageUsed").textContent      = "0 B";
-        document.getElementById("storageRemaining").textContent = "∞ (disk)";
+        document.getElementById("storageRemaining").textContent = "S3 (unlimited)";
         document.getElementById("storageFileCount").textContent = "0";
-        document.getElementById("storagePercent").textContent   = "0%";
+        document.getElementById("storagePercent").textContent   = "—";
         return;
       }
 
@@ -1946,30 +1945,17 @@
         .sort((a, b) => b.size - a.size);
 
       const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
-      const usedPct    = Math.min((totalBytes / STORAGE_LIMIT_BYTES) * 100, 100);
-      const remaining  = Math.max(STORAGE_LIMIT_BYTES - totalBytes, 0);
 
       // Update summary cards
       document.getElementById("storageUsed").textContent      = fmtBytes(totalBytes);
-      document.getElementById("storageRemaining").textContent = "∞ (disk)";
+      document.getElementById("storageRemaining").textContent = "S3 (unlimited)";
       document.getElementById("storageFileCount").textContent = files.length;
-      document.getElementById("storagePercent").textContent   = usedPct.toFixed(1) + "%";
+      document.getElementById("storagePercent").textContent   = "—";
       document.getElementById("storageTableMeta").textContent = `${files.length} file${files.length !== 1 ? "s" : ""}`;
 
-      // Colour the bar: green < 70%, amber 70–90%, red > 90%
+      // S3 has no fixed limit — hide the usage bar
       const barEl = document.getElementById("storageBar");
-      barEl.style.width = usedPct + "%";
-      barEl.style.background = usedPct > 90 ? "#EF4444" : usedPct > 70 ? "#F59E0B" : "#2563EB";
-
-      // Warning banner
-      const warnEl = document.getElementById("storageWarning");
-      if (usedPct > 90) {
-        warnEl.textContent = `⚠️ Storage is ${usedPct.toFixed(1)}% full. You are close to the 1 GB free tier limit. Consider upgrading Supabase or deleting unused files.`;
-        warnEl.classList.remove("hidden");
-      } else if (usedPct > 70) {
-        warnEl.textContent = `ℹ️ Storage is ${usedPct.toFixed(1)}% full. You have ${fmtBytes(remaining)} remaining on the free tier.`;
-        warnEl.classList.remove("hidden");
-      }
+      barEl.style.width = "0%";
 
       // File breakdown table
       if (files.length === 0) {
