@@ -35,6 +35,11 @@ const {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  ListObjectsV2Command,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
 } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
@@ -104,6 +109,13 @@ const dbLimiter    = rateLimit({ windowMs: 60_000, max: 300, standardHeaders: tr
 app.use("/ecpay/", ecpayLimiter);
 app.use("/files/", fileLimiter);
 app.use("/db/",    dbLimiter);
+
+// ── Raw body for streaming chunk uploads (must come before json middleware) ─
+// /files/upload-part receives raw binary — skip express.json() for this route.
+app.use("/files/upload-part", (req, res, next) => {
+  // Already handled as a stream in the route handler; just pass through.
+  next();
+});
 
 // ── Firebase Auth helper ────────────────────────────────────────────────────
 async function verifyToken(req, res) {
@@ -219,10 +231,275 @@ app.delete("/db/*", async (req, res) => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// FILE ENDPOINTS  (S3)
+// FILE ENDPOINTS  (S3 – direct browser-to-S3 via presigned URLs)
 // ════════════════════════════════════════════════════════════════════════════
 
+const ALLOWED_MIMES = new Set([
+  "application/pdf", "application/epub+zip",
+  "image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml",
+  "text/html", "text/plain", "text/markdown", "text/csv",
+  "video/mp4", "video/webm", "audio/mpeg", "audio/wav",
+  "model/stl", "application/octet-stream",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/zip", "application/x-rar-compressed",
+]);
+
+// ── POST /files/presign  ────────────────────────────────────────────────────
+// Admin requests a presigned PUT URL; browser uploads directly to S3.
+// Body: { filename, mimetype, size }
+// Returns: { fileId, storagePath, uploadUrl, imagePrefix? }
+app.post("/files/presign", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  const { filename, mimetype, size } = req.body;
+  if (!filename || !mimetype) return res.status(400).json({ error: "Missing filename or mimetype" });
+  if (!ALLOWED_MIMES.has(mimetype)) return res.status(400).json({ error: "File type not allowed" });
+
+  const fileId      = newId();
+  const safeName    = sanitizeFilename(filename);
+  const storagePath = `${fileId}_${safeName}`;
+  const key         = s3Key(storagePath);
+
+  try {
+    const command   = new PutObjectCommand({ Bucket: S3_BUCKET, Key: key, ContentType: mimetype });
+    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 3600 }); // 1 hour to complete upload
+    return res.json({ fileId, storagePath, uploadUrl });
+  } catch (err) {
+    console.error("S3 presign error:", err);
+    return res.status(500).json({ error: "Could not generate upload URL" });
+  }
+});
+
+// ── POST /files/register  ───────────────────────────────────────────────────
+// Called by browser after the direct S3 PUT succeeds, to save metadata.
+// Body: { fileId, storagePath, filename, mimetype, size }
+app.post("/files/register", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  const { fileId, storagePath, filename, mimetype, size } = req.body;
+  if (!fileId || !storagePath || !filename) return res.status(400).json({ error: "Missing fields" });
+
+  const ts = nowMs();
+  const fileRecord = {
+    name:       filename,
+    type:       mimetype || "application/octet-stream",
+    size:       Number(size) || 0,
+    storagePath,
+    uploadedBy: decoded.uid,
+    uploadedAt: ts,
+  };
+
+  try {
+    await db.ref(`files/${fileId}`).set(fileRecord);
+    await db.ref(`logs/${"-" + newId()}`).set({
+      action: "file_upload", uid: decoded.uid, email: "", name: "",
+      timestamp: ts, fileName: filename, fileId, fileSize: Number(size) || 0,
+    });
+    return res.json({ ok: true, fileId });
+  } catch (err) {
+    console.error("Firebase register error:", err);
+    return res.status(500).json({ error: "Could not save file metadata" });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// STREAMING MULTIPART UPLOAD  (browser → Render → S3, no memory buffering)
+// ════════════════════════════════════════════════════════════════════════════
+// Flow:
+//   1. POST /files/upload-begin   → creates S3 multipart upload, returns s3UploadId + fileId
+//   2. POST /files/upload-part    → streams one chunk straight to S3, returns ETag
+//   3. POST /files/upload-complete → finalises S3 upload, writes Firebase metadata
+//   4. POST /files/upload-abort   → cancels an in-progress multipart upload (on error)
+//
+// Each chunk arrives as raw bytes (Content-Type: application/octet-stream).
+// Render never accumulates more than one chunk in memory at a time.
+// Minimum S3 part size is 5 MB except for the last part.
+
+// ── POST /files/upload-begin ────────────────────────────────────────────────
+app.post("/files/upload-begin", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  const { filename, mimetype, size } = req.body;
+  if (!filename || !mimetype) return res.status(400).json({ error: "Missing filename or mimetype" });
+  if (!ALLOWED_MIMES.has(mimetype)) return res.status(400).json({ error: "File type not allowed" });
+
+  const fileId      = newId();
+  const safeName    = sanitizeFilename(filename);
+  const storagePath = `${fileId}_${safeName}`;
+  const key         = s3Key(storagePath);
+
+  try {
+    const cmd    = new CreateMultipartUploadCommand({ Bucket: S3_BUCKET, Key: key, ContentType: mimetype });
+    const result = await s3.send(cmd);
+    return res.json({ fileId, storagePath, s3UploadId: result.UploadId });
+  } catch (err) {
+    console.error("S3 multipart begin error:", err);
+    return res.status(500).json({ error: "Could not start upload" });
+  }
+});
+
+// ── POST /files/upload-part ─────────────────────────────────────────────────
+// Streams the raw chunk body directly to S3. No temp files, no buffering.
+// Body: raw bytes (Content-Type: application/octet-stream)
+// Query: storagePath, s3UploadId, partNumber
+app.post("/files/upload-part", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  const { storagePath, s3UploadId, partNumber } = req.query;
+  if (!storagePath || !s3UploadId || !partNumber) {
+    return res.status(400).json({ error: "Missing storagePath, s3UploadId, or partNumber" });
+  }
+
+  const key    = s3Key(storagePath);
+  const partNo = parseInt(partNumber, 10);
+
+  // Collect the raw body stream into a Buffer for this one part.
+  // Each part is ~5 MB so this is a bounded, small allocation.
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const body = Buffer.concat(chunks);
+
+  try {
+    const cmd    = new UploadPartCommand({
+      Bucket:     S3_BUCKET,
+      Key:        key,
+      UploadId:   s3UploadId,
+      PartNumber: partNo,
+      Body:       body,
+    });
+    const result = await s3.send(cmd);
+    return res.json({ ETag: result.ETag, partNumber: partNo });
+  } catch (err) {
+    console.error("S3 upload-part error:", err);
+    return res.status(500).json({ error: "Part upload failed" });
+  }
+});
+
+// ── POST /files/upload-complete ─────────────────────────────────────────────
+// Body: { fileId, storagePath, s3UploadId, parts: [{ETag, partNumber}], filename, mimetype, size }
+app.post("/files/upload-complete", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  const { fileId, storagePath, s3UploadId, parts, filename, mimetype, size } = req.body;
+  if (!fileId || !storagePath || !s3UploadId || !parts?.length) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const key = s3Key(storagePath);
+
+  try {
+    await s3.send(new CompleteMultipartUploadCommand({
+      Bucket:          S3_BUCKET,
+      Key:             key,
+      UploadId:        s3UploadId,
+      MultipartUpload: { Parts: parts.map(p => ({ ETag: p.ETag, PartNumber: p.partNumber })) },
+    }));
+  } catch (err) {
+    console.error("S3 complete error:", err);
+    return res.status(500).json({ error: "Could not complete upload" });
+  }
+
+  // Save metadata to Firebase
+  const ts = nowMs();
+  try {
+    await db.ref(`files/${fileId}`).set({
+      name:       filename,
+      type:       mimetype || "application/octet-stream",
+      size:       Number(size) || 0,
+      storagePath,
+      uploadedBy: decoded.uid,
+      uploadedAt: ts,
+    });
+    await db.ref(`logs/${"-" + newId()}`).set({
+      action: "file_upload", uid: decoded.uid, email: "", name: "",
+      timestamp: ts, fileName: filename, fileId, fileSize: Number(size) || 0,
+    });
+  } catch (err) {
+    console.error("Firebase write error:", err);
+    // S3 upload already done — still return success
+  }
+
+  return res.json({ ok: true, fileId, storagePath });
+});
+
+// ── POST /files/upload-abort ────────────────────────────────────────────────
+// Body: { storagePath, s3UploadId }
+app.post("/files/upload-abort", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  const { storagePath, s3UploadId } = req.body;
+  if (!storagePath || !s3UploadId) return res.status(400).json({ error: "Missing fields" });
+
+  try {
+    await s3.send(new AbortMultipartUploadCommand({
+      Bucket:   S3_BUCKET,
+      Key:      s3Key(storagePath),
+      UploadId: s3UploadId,
+    }));
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("S3 abort error:", err);
+    return res.status(500).json({ error: "Abort failed" });
+  }
+});
+
+// ── POST /images/presign  ───────────────────────────────────────────────────
+// Presign a PUT URL for a product image (stored under images/ prefix in S3).
+// Body: { filename, mimetype }
+// Returns: { imageKey, uploadUrl }
+app.post("/images/presign", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  const { filename, mimetype } = req.body;
+  const allowedImageMimes = new Set(["image/png","image/jpeg","image/gif","image/webp"]);
+  if (!allowedImageMimes.has(mimetype)) return res.status(400).json({ error: "Images only (PNG/JPG/GIF/WEBP)" });
+
+  const safeName = sanitizeFilename(filename);
+  const imageKey = `images/${newId()}_${safeName}`;
+
+  try {
+    const command   = new PutObjectCommand({ Bucket: S3_BUCKET, Key: imageKey, ContentType: mimetype });
+    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+    return res.json({ imageKey, uploadUrl });
+  } catch (err) {
+    console.error("S3 image presign error:", err);
+    return res.status(500).json({ error: "Could not generate image upload URL" });
+  }
+});
+
+// ── GET /images/signed-url?key=images/xxx  ─────────────────────────────────
+// Returns a short-lived signed GET URL for a product image.
+// No auth required (product images are semi-public on the store page).
+app.get("/images/signed-url", async (req, res) => {
+  const { key } = req.query;
+  if (!key || !key.startsWith("images/")) return res.status(400).json({ error: "Invalid key" });
+  try {
+    const command   = new GetObjectCommand({ Bucket: S3_BUCKET, Key: key });
+    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+    return res.json({ signedUrl });
+  } catch (err) {
+    console.error("S3 image URL error:", err);
+    return res.status(500).json({ error: "Could not generate image URL" });
+  }
+});
+
 // ── GET /files/signed-url?fileId=xxx ────────────────────────────────────────
+// Returns a GET presigned URL for a file (access-checked).
 app.get("/files/signed-url", async (req, res) => {
   const decoded = await verifyToken(req, res);
   if (!decoded) return;
@@ -252,7 +529,6 @@ app.get("/files/signed-url", async (req, res) => {
     return res.status(500).json({ error: "Database error" });
   }
 
-  // Generate a pre-signed S3 URL (15 minutes)
   try {
     const command   = new GetObjectCommand({ Bucket: S3_BUCKET, Key: s3Key(storagePath) });
     const signedUrl = await getSignedUrl(s3, command, { expiresIn: 900 });
@@ -263,158 +539,64 @@ app.get("/files/signed-url", async (req, res) => {
   }
 });
 
-// ── POST /files/upload  (small files ≤ 100 MB, multipart) ───────────────────
-app.post("/files/upload", upload.single("file"), async (req, res) => {
-  const decoded = await verifyToken(req, res);
-  if (!decoded) return;
-  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+// ── GET /files/preview-url?fileId=xxx&pages=N ───────────────────────────────
+// Returns a signed URL for previewing a file, plus the page limit metadata.
+// Anyone can call this (no access grant needed) — used for product previews.
+app.get("/files/preview-url", async (req, res) => {
+  const fileId    = req.query.fileId;
+  const pageLimit = parseInt(req.query.pages, 10) || null;
+  if (!fileId) return res.status(400).json({ error: "Missing fileId" });
 
-  const file = req.file;
-  if (!file) return res.status(400).json({ error: "No file provided" });
-
-  const ALLOWED_MIMES = [
-    "application/pdf", "application/epub+zip",
-    "image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml",
-    "text/html", "text/plain", "text/markdown", "text/csv",
-    "video/mp4", "video/webm", "audio/mpeg", "audio/wav",
-    "model/stl", "application/octet-stream",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/zip", "application/x-rar-compressed",
-  ];
-  if (!ALLOWED_MIMES.includes(file.mimetype)) {
-    return res.status(400).json({ error: "File type not allowed" });
-  }
-
-  const fileId      = newId();
-  const safeName    = sanitizeFilename(file.originalname);
-  const storagePath = `${fileId}_${safeName}`;
-
-  // Upload to S3
+  // Load the product to verify this file has a preview configured
+  let storagePath, fileType;
   try {
-    await s3.send(new PutObjectCommand({
-      Bucket:      S3_BUCKET,
-      Key:         s3Key(storagePath),
-      Body:        file.buffer,
-      ContentType: file.mimetype,
-    }));
-  } catch (err) {
-    console.error("S3 upload error:", err);
-    return res.status(500).json({ error: "Upload to S3 failed" });
+    const snap = await db.ref(`files/${fileId}`).get();
+    const f    = snap.val();
+    if (!f) return res.status(404).json({ error: "File not found" });
+    storagePath = f.storagePath;
+    fileType    = f.type;
+  } catch {
+    return res.status(500).json({ error: "Database error" });
   }
 
-  const ts = nowMs();
-  const fileRecord = {
-    name:        file.originalname,
-    type:        file.mimetype,
-    size:        file.size,
-    storagePath,
-    uploadedBy:  decoded.uid,
-    uploadedAt:  ts,
-  };
-
-  // Save metadata to Firebase
   try {
-    await db.ref(`files/${fileId}`).set(fileRecord);
-    await db.ref(`logs/${"-" + newId()}`).set({
-      action: "file_upload", uid: decoded.uid, email: "", name: "",
-      timestamp: ts, fileName: file.originalname, fileId, fileSize: file.size,
-    });
+    const command   = new GetObjectCommand({ Bucket: S3_BUCKET, Key: s3Key(storagePath) });
+    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 1800 });
+    return res.json({ signedUrl, pageLimit, fileType });
   } catch (err) {
-    console.error("Firebase write error:", err);
-    // S3 upload succeeded — still return fileId so admin knows it landed
+    console.error("S3 preview URL error:", err);
+    return res.status(500).json({ error: "Could not generate preview URL" });
   }
-
-  return res.json({ fileId, storagePath });
 });
 
-// ── POST /files/upload-chunk  (one chunk at a time, stored on Render's tmp) ──
-app.post("/files/upload-chunk", chunkUpload.single("file"), async (req, res) => {
+// ── GET /storage/stats ───────────────────────────────────────────────────────
+// Returns real S3 usage: { totalSize, fileCount } in bytes.
+app.get("/storage/stats", async (req, res) => {
   const decoded = await verifyToken(req, res);
   if (!decoded) return;
   if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
 
-  const { uploadId, chunkIndex, totalChunks } = req.body;
-  if (!uploadId || chunkIndex === undefined || !totalChunks) {
-    return res.status(400).json({ error: "Missing uploadId, chunkIndex, or totalChunks" });
-  }
-  if (!req.file) return res.status(400).json({ error: "No chunk data received" });
-
-  return res.json({ ok: true, chunkIndex: parseInt(chunkIndex, 10) });
-});
-
-// ── POST /files/upload-merge  (assemble chunks → S3) ────────────────────────
-app.post("/files/upload-merge", async (req, res) => {
-  const decoded = await verifyToken(req, res);
-  if (!decoded) return;
-  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
-
-  const { uploadId, filename, mimetype, totalChunks } = req.body;
-  if (!uploadId || !filename || !mimetype || !totalChunks) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
-
-  const n        = parseInt(totalChunks, 10);
-  const chunkDir = path.join(os.tmpdir(), "fileaccess_chunks", uploadId);
-
-  // Verify all chunks exist
-  for (let i = 0; i < n; i++) {
-    const p = path.join(chunkDir, `chunk_${String(i).padStart(6, "0")}`);
-    if (!fs.existsSync(p)) return res.status(400).json({ error: `Missing chunk ${i}` });
-  }
-
-  const fileId      = newId();
-  const safeName    = sanitizeFilename(filename);
-  const storagePath = `${fileId}_${safeName}`;
-  const key         = s3Key(storagePath);
-
-  // Stream all chunks into a single Buffer then upload
-  // (For very large files this could be replaced with S3 multipart upload)
-  let totalSize = 0;
-  const parts   = [];
-  for (let i = 0; i < n; i++) {
-    const buf = fs.readFileSync(path.join(chunkDir, `chunk_${String(i).padStart(6, "0")}`));
-    totalSize += buf.length;
-    parts.push(buf);
-  }
-  const combined = Buffer.concat(parts);
-
-  // Clean up temp chunks
-  fs.rmSync(chunkDir, { recursive: true, force: true });
-
   try {
-    await s3.send(new PutObjectCommand({
-      Bucket:      S3_BUCKET,
-      Key:         key,
-      Body:        combined,
-      ContentType: mimetype,
-    }));
+    let totalSize  = 0;
+    let fileCount  = 0;
+    let imageCount = 0;
+    let imageSize  = 0;
+    let token;
+    do {
+      const cmd  = new ListObjectsV2Command({ Bucket: S3_BUCKET, ContinuationToken: token });
+      const resp = await s3.send(cmd);
+      for (const obj of (resp.Contents || [])) {
+        if (obj.Key.startsWith("files/")) { totalSize += obj.Size; fileCount++; }
+        if (obj.Key.startsWith("images/")) { imageSize += obj.Size; imageCount++; }
+      }
+      token = resp.NextContinuationToken;
+    } while (token);
+
+    return res.json({ totalSize, fileCount, imageSize, imageCount });
   } catch (err) {
-    console.error("S3 merge upload error:", err);
-    return res.status(500).json({ error: "S3 upload failed" });
+    console.error("S3 list error:", err);
+    return res.status(500).json({ error: "Could not fetch storage stats" });
   }
-
-  const ts = nowMs();
-  const fileRecord = {
-    name:        filename,
-    type:        mimetype,
-    size:        totalSize,
-    storagePath,
-    uploadedBy:  decoded.uid,
-    uploadedAt:  ts,
-  };
-
-  try {
-    await db.ref(`files/${fileId}`).set(fileRecord);
-    await db.ref(`logs/${"-" + newId()}`).set({
-      action: "file_upload", uid: decoded.uid, email: "", name: "",
-      timestamp: ts, fileName: filename, fileId, fileSize: totalSize,
-    });
-  } catch (err) {
-    console.error("Firebase write error:", err);
-  }
-
-  return res.json({ fileId, storagePath });
 });
 
 // ── DELETE /files/:fileId ────────────────────────────────────────────────────

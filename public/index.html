@@ -252,14 +252,31 @@
     if (availableProducts.length === 0) return;
 
     document.getElementById("storeSection").classList.remove("hidden");
-    document.getElementById("storeGrid").innerHTML = availableProducts.map(([key, p]) => {
-      const price = p.price || (p.priceNTD ? `NT$${p.priceNTD}` : "");
-      const method = p.paymentMethod === "Credit" ? "💳 信用卡" : p.paymentMethod === "ATM" ? "🏧 ATM" : "💳 信用卡 / 🏧 ATM";
-      const fileCount = (p.fileIds || []).length;
+    const cards = availableProducts.map(([key, p]) => {
+      const price      = p.price || (p.priceNTD ? `NT$${p.priceNTD}` : "");
+      const method     = p.paymentMethod === "Credit" ? "💳 信用卡" : p.paymentMethod === "ATM" ? "🏧 ATM" : "💳 信用卡 / 🏧 ATM";
+      const fileCount  = (p.fileIds || []).length;
+      const hasImages  = Array.isArray(p.imageKeys) && p.imageKeys.length > 0;
+      const hasPreview = p.previewFileId;
+
+      // Image carousel placeholder — images loaded async after render
+      const imageSection = hasImages
+        ? `<div class="store-card-images" data-productkey="${escHtml(key)}" style="display:flex;gap:6px;overflow-x:auto;padding:0.5rem 0;min-height:80px;align-items:center;">
+            ${p.imageKeys.map((k, i) =>
+              `<img data-imgkey="${escHtml(k)}" alt="product image ${i+1}"
+                style="height:72px;width:auto;border-radius:6px;object-fit:cover;border:1px solid var(--color-border);flex-shrink:0;" />`
+            ).join("")}
+           </div>`
+        : `<div style="padding:0.75rem 0;text-align:center;color:var(--color-text-muted);font-size:2rem;">📦</div>`;
+
+      const previewBtn = hasPreview
+        ? `<button class="btn btn-ghost btn-sm" onclick="openProductPreview('${escHtml(key)}')">預覽 Preview</button>`
+        : "";
+
       return `
         <div class="store-card">
+          ${imageSection}
           <div class="store-card-body">
-            <div class="store-icon">📦</div>
             <div class="store-info">
               <div class="store-name">${escHtml(p.name)}</div>
               <div class="store-meta">${fileCount} 個檔案 · ${method}</div>
@@ -268,13 +285,67 @@
           </div>
           <div class="store-card-footer">
             <span class="store-price">${escHtml(price)}</span>
-            <button class="btn btn-primary btn-sm" onclick="buyProduct('${key}', this)">
-              立即購買
-            </button>
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+              ${previewBtn}
+              <button class="btn btn-primary btn-sm" onclick="buyProduct('${key}', this)">立即購買</button>
+            </div>
           </div>
         </div>`;
     }).join("");
+
+    document.getElementById("storeGrid").innerHTML = cards;
+
+    // Async: load signed URLs for all product images
+    loadProductImages();
   }
+
+  // ── Load signed URLs for product images ────────────────────────────────────
+  async function loadProductImages() {
+    const imgs = document.querySelectorAll(".store-card-images img[data-imgkey]");
+    for (const img of imgs) {
+      const key = img.dataset.imgkey;
+      try {
+        const resp = await fetch(`${ECPAY_SERVER_URL}/images/signed-url?key=${encodeURIComponent(key)}`);
+        if (resp.ok) {
+          const { signedUrl } = await resp.json();
+          img.src = signedUrl;
+        }
+      } catch { /* non-fatal */ }
+    }
+  }
+
+  // ── Product preview modal ───────────────────────────────────────────────────
+  window.openProductPreview = async (productKey) => {
+    const p = allProducts[productKey];
+    if (!p?.previewFileId) return;
+
+    const modal = document.getElementById("viewerModal");
+    const body  = document.getElementById("viewerBody");
+
+    document.getElementById("viewerTitle").textContent = `預覽：${p.name}`;
+    body.innerHTML = `<div style="text-align:center;padding:2rem;"><div class="spinner"></div><p>載入中…</p></div>`;
+    modal.classList.remove("hidden");
+
+    try {
+      const url   = `${ECPAY_SERVER_URL}/files/preview-url?fileId=${encodeURIComponent(p.previewFileId)}${p.previewPages ? `&pages=${p.previewPages}` : ""}`;
+      const resp  = await fetch(url);
+      if (!resp.ok) throw new Error("無法取得預覽連結");
+      const { signedUrl, pageLimit, fileType } = await resp.json();
+
+      if (fileType === "application/pdf") {
+        const pageNote = pageLimit ? `<p style="text-align:center;color:var(--color-text-muted);font-size:0.85rem;margin-bottom:0.75rem;">僅供預覽前 ${pageLimit} 頁 · 購買後可查看完整內容</p>` : "";
+        // Append #page=1&view=FitH and disable toolbar via embed to suggest limited pages
+        // (Browser PDF viewer can't enforce page limits server-side; pageLimit is for display note only)
+        body.innerHTML = `${pageNote}<iframe src="${signedUrl}#page=1" style="width:100%;height:70vh;border:none;border-radius:8px;"></iframe>`;
+      } else if (fileType?.startsWith("image/")) {
+        body.innerHTML = `<img src="${signedUrl}" style="max-width:100%;max-height:70vh;border-radius:8px;display:block;margin:auto;" />`;
+      } else {
+        body.innerHTML = `<div style="text-align:center;padding:2rem;"><a href="${signedUrl}" target="_blank" rel="noopener" class="btn btn-primary">開啟預覽檔案</a></div>`;
+      }
+    } catch(err) {
+      body.innerHTML = `<p style="color:var(--color-error);text-align:center;">${escHtml(err.message)}</p>`;
+    }
+  };
 
   window.buyProduct = async (productKey, btn) => {
     if (!ECPAY_SERVER_URL) {

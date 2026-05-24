@@ -243,6 +243,38 @@
             </div>
           </div>
 
+          <!-- ── Preview section ─────────────────────────────────────── -->
+          <div class="form-group" style="border-top:1px solid var(--color-border);padding-top:1rem;">
+            <label class="form-label">免費預覽 Free Preview</label>
+            <p class="text-muted text-sm" style="margin-bottom:0.75rem;">選擇一個檔案作為預覽，並設定最多可預覽的頁數（PDF）。使用者不需購買即可預覽。</p>
+            <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;">
+              <div class="form-group" style="margin:0;flex:1;min-width:200px;">
+                <label class="form-label text-sm">預覽檔案 Preview File</label>
+                <select id="productPreviewFileId" class="form-input">
+                  <option value="">— 不設定預覽 —</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;min-width:130px;">
+                <label class="form-label text-sm">最多頁數 Page Limit</label>
+                <input type="number" id="productPreviewPages" class="form-input" placeholder="e.g. 3" min="1" max="50"/>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Product images ──────────────────────────────────────── -->
+          <div class="form-group" style="border-top:1px solid var(--color-border);padding-top:1rem;">
+            <label class="form-label">商品圖片 Product Images <span class="text-muted text-sm">(最多 10 張 · PNG/JPG/GIF/WEBP)</span></label>
+            <p class="text-muted text-sm" style="margin-bottom:0.75rem;">圖片會顯示在購買頁的商品卡片上。</p>
+            <div id="productImagesPreview" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;"></div>
+            <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
+              <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
+                ＋ 上傳圖片
+                <input type="file" id="productImageInput" accept="image/png,image/jpeg,image/gif,image/webp" multiple style="display:none;" onchange="handleProductImageSelect(this)"/>
+              </label>
+              <span id="productImageCount" class="text-muted text-sm">0 / 10</span>
+            </div>
+          </div>
+
           <div style="display:flex;gap:0.75rem;">
             <button class="btn btn-primary" onclick="saveProduct()">儲存商品 Save</button>
             <button class="btn btn-ghost" onclick="resetProductForm()">清除 Clear</button>
@@ -820,10 +852,10 @@
 
   window.removeFromQueue = (i) => { pendingFiles.splice(i, 1); renderQueue(); };
 
-  // Files ≤ this threshold go via the simple single-request upload.
-  // Files above it are split into CHUNK_SIZE pieces and reassembled server-side.
-  const CHUNKED_THRESHOLD = 100 * 1024 * 1024; // 100 MB
-  const CHUNK_SIZE        =   5 * 1024 * 1024; //   5 MB per chunk
+  // ── Streaming multipart upload: browser → Render → S3 ────────────────────
+  // Render streams each 5 MB chunk straight to S3 without buffering the whole
+  // file. Memory usage on Render stays at ~5 MB per upload regardless of size.
+  const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB — S3 minimum part size
 
   window.startUpload = async () => {
     if (pendingFiles.length === 0) return;
@@ -835,12 +867,7 @@
       statusEl.textContent = "Uploading…";
       statusEl.className   = "queue-status status-uploading";
       try {
-        let result;
-        if (file.size > CHUNKED_THRESHOLD) {
-          result = await uploadViaChunks(file, statusEl);
-        } else {
-          result = await uploadViaServer(file);
-        }
+        const result = await uploadViaStreamingMultipart(file, statusEl);
         const fileData = { name: file.name, type: file.type || "application/octet-stream", size: file.size, storagePath: result.storagePath, uploadedBy: currentUser.uid, uploadedAt: Date.now() };
         statusEl.textContent = "Done ✓";
         statusEl.className   = "queue-status status-done";
@@ -848,7 +875,7 @@
         allFiles[result.fileId] = fileData;
       } catch (err) {
         console.error(err);
-        statusEl.textContent = "Failed ✗";
+        statusEl.textContent = `Failed ✗ ${err.message || ""}`;
         statusEl.className   = "queue-status status-error";
       }
     }
@@ -860,79 +887,79 @@
     }
   };
 
-  // ── Small-file path (unchanged) ───────────────────────────────────────────
-  async function uploadViaServer(file) {
-    const idToken  = await currentUser.getIdToken(true);
-    const formData = new FormData();
-    formData.append("file", file);
-    const resp = await fetch(`${RENDER_SERVER_URL}/files/upload`, {
-      method:  "POST",
-      headers: { "Authorization": `Bearer ${idToken}` },
-      body:    formData
-    });
-    if (!resp.ok) {
-      const e = await resp.json().catch(() => ({}));
-      throw new Error(e.error || "Upload failed");
-    }
-    return await resp.json(); // { fileId, storagePath }
-  }
-
-  // ── Large-file path: split → upload chunks → merge ────────────────────────
-  async function uploadViaChunks(file, statusEl) {
+  async function uploadViaStreamingMultipart(file, statusEl) {
+    const mimetype    = file.type || "application/octet-stream";
     const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-    // Unique ID for this upload session so the server can group the chunks
-    const uploadId    = `${Date.now()}_${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`;
 
-    for (let i = 0; i < totalChunks; i++) {
-      const start     = i * CHUNK_SIZE;
-      const end       = Math.min(start + CHUNK_SIZE, file.size);
-      const chunkBlob = file.slice(start, end);
-
-      // Refresh token every 10 chunks (long uploads may outlast the 1-hour token)
-      const idToken  = (i % 10 === 0) ? await currentUser.getIdToken(true) : await currentUser.getIdToken();
-
-      const formData = new FormData();
-      formData.append("uploadId",    uploadId);
-      formData.append("chunkIndex",  String(i));
-      formData.append("totalChunks", String(totalChunks));
-      formData.append("file",        chunkBlob, file.name);
-
-      const resp = await fetch(`${RENDER_SERVER_URL}/files/upload-chunk`, {
-        method:  "POST",
-        headers: { "Authorization": `Bearer ${idToken}` },
-        body:    formData
-      });
-      if (!resp.ok) {
-        const e = await resp.json().catch(() => ({}));
-        throw new Error(e.error || `Chunk ${i} upload failed`);
-      }
-
-      // Update status label with live progress
-      const pct = Math.round(((i + 1) / totalChunks) * 90); // 0–90% while uploading chunks
-      statusEl.textContent = `Uploading… ${pct}%`;
-    }
-
-    // All chunks received — ask server to merge and push to S3
-    statusEl.textContent = "Merging…";
-    const idToken  = await currentUser.getIdToken();
-    const mergeResp = await fetch(`${RENDER_SERVER_URL}/files/upload-merge`, {
+    // Step 1 — begin: create S3 multipart upload, get fileId + s3UploadId
+    let idToken = await currentUser.getIdToken(true);
+    const beginResp = await fetch(`${RENDER_SERVER_URL}/files/upload-begin`, {
       method:  "POST",
-      headers: {
-        "Authorization": `Bearer ${idToken}`,
-        "Content-Type":  "application/json"
-      },
-      body: JSON.stringify({
-        uploadId,
-        filename:    file.name,
-        mimetype:    file.type || "application/octet-stream",
-        totalChunks: String(totalChunks)
-      })
+      headers: { "Authorization": `Bearer ${idToken}`, "Content-Type": "application/json" },
+      body:    JSON.stringify({ filename: file.name, mimetype, size: file.size })
     });
-    if (!mergeResp.ok) {
-      const e = await mergeResp.json().catch(() => ({}));
-      throw new Error(e.error || "Merge failed");
+    if (!beginResp.ok) {
+      const e = await beginResp.json().catch(() => ({}));
+      throw new Error(e.error || "Could not start upload");
     }
-    return await mergeResp.json(); // { fileId, storagePath }
+    const { fileId, storagePath, s3UploadId } = await beginResp.json();
+
+    // Step 2 — stream each chunk to Render → S3
+    const parts = [];
+    try {
+      for (let i = 0; i < totalChunks; i++) {
+        const start     = i * CHUNK_SIZE;
+        const end       = Math.min(start + CHUNK_SIZE, file.size);
+        const chunkBlob = file.slice(start, end);
+
+        // Refresh token every 10 parts for long uploads
+        if (i % 10 === 0) idToken = await currentUser.getIdToken(true);
+
+        const pct = Math.round(((i + 1) / totalChunks) * 95);
+        statusEl.textContent = `Uploading… ${pct}%`;
+
+        const partResp = await fetch(
+          `${RENDER_SERVER_URL}/files/upload-part?storagePath=${encodeURIComponent(storagePath)}&s3UploadId=${encodeURIComponent(s3UploadId)}&partNumber=${i + 1}`,
+          {
+            method:  "POST",
+            headers: {
+              "Authorization": `Bearer ${idToken}`,
+              "Content-Type":  "application/octet-stream",
+            },
+            body: chunkBlob,
+          }
+        );
+        if (!partResp.ok) {
+          const e = await partResp.json().catch(() => ({}));
+          throw new Error(e.error || `Part ${i + 1} failed`);
+        }
+        const { ETag, partNumber } = await partResp.json();
+        parts.push({ ETag, partNumber });
+      }
+    } catch (err) {
+      // Abort the incomplete S3 multipart upload to avoid storage charges
+      idToken = await currentUser.getIdToken();
+      fetch(`${RENDER_SERVER_URL}/files/upload-abort`, {
+        method:  "POST",
+        headers: { "Authorization": `Bearer ${idToken}`, "Content-Type": "application/json" },
+        body:    JSON.stringify({ storagePath, s3UploadId })
+      }).catch(() => {});
+      throw err;
+    }
+
+    // Step 3 — complete: finalise S3 upload + save Firebase metadata
+    statusEl.textContent = "Finalising…";
+    idToken = await currentUser.getIdToken();
+    const completeResp = await fetch(`${RENDER_SERVER_URL}/files/upload-complete`, {
+      method:  "POST",
+      headers: { "Authorization": `Bearer ${idToken}`, "Content-Type": "application/json" },
+      body:    JSON.stringify({ fileId, storagePath, s3UploadId, parts, filename: file.name, mimetype, size: file.size })
+    });
+    if (!completeResp.ok) {
+      const e = await completeResp.json().catch(() => ({}));
+      throw new Error(e.error || "Could not finalise upload");
+    }
+    return { fileId, storagePath };
   }
 
   // ── Files Table ───────────────────────────────────────────────────────────
@@ -1583,9 +1610,11 @@
 
   function populateProductFileCheckboxes() {
     const container = document.getElementById("productFileCheckboxes");
+    const previewSel = document.getElementById("productPreviewFileId");
     const files = Object.entries(allFiles);
     if (files.length === 0) {
       container.innerHTML = `<p class="text-muted text-sm">尚無檔案，請先上傳檔案。</p>`;
+      previewSel.innerHTML = `<option value="">— 不設定預覽 —</option>`;
       return;
     }
     container.innerHTML = files.map(([id, f]) =>
@@ -1594,6 +1623,14 @@
         <span>${escHtml(f.name)}</span>
       </label>`
     ).join("");
+
+    // Populate preview file dropdown (only PDFs make sense for page-limited preview)
+    const prevVal = previewSel.value;
+    previewSel.innerHTML = `<option value="">— 不設定預覽 —</option>` +
+      files.map(([id, f]) =>
+        `<option value="${id}">${escHtml(f.name)}</option>`
+      ).join("");
+    if (prevVal) previewSel.value = prevVal; // restore selection after refresh
   }
 
   function renderProducts() {
@@ -1798,6 +1835,87 @@
     }
   };
 
+  // ── Product image state (pending uploads not yet in S3) ──────────────────
+  let pendingProductImages = []; // [{ file, objectUrl }] — not yet uploaded
+  let existingProductImages = []; // [imageKey] — already in S3 (when editing)
+
+  window.handleProductImageSelect = (input) => {
+    const allowed = ["image/png","image/jpeg","image/gif","image/webp"];
+    const files = [...input.files].filter(f => allowed.includes(f.type));
+    const total = existingProductImages.length + pendingProductImages.length + files.length;
+    if (total > 10) {
+      alert(`最多只能有 10 張圖片（目前已有 ${existingProductImages.length + pendingProductImages.length} 張）。`);
+      input.value = "";
+      return;
+    }
+    files.forEach(f => pendingProductImages.push({ file: f, objectUrl: URL.createObjectURL(f) }));
+    input.value = "";
+    renderProductImagesPreviews();
+  };
+
+  function renderProductImagesPreviews() {
+    const container = document.getElementById("productImagesPreview");
+    const countEl   = document.getElementById("productImageCount");
+    const total     = existingProductImages.length + pendingProductImages.length;
+    countEl.textContent = `${total} / 10`;
+
+    const existingHtml = existingProductImages.map((key, i) =>
+      `<div style="position:relative;width:72px;height:72px;">
+        <img src="" data-imgkey="${escHtml(key)}" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--color-border);" onerror="this.src=''"/>
+        <button onclick="removeExistingImage(${i})" title="移除" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#EF4444;color:#fff;cursor:pointer;font-size:11px;line-height:18px;padding:0;">✕</button>
+      </div>`
+    ).join("");
+
+    const pendingHtml = pendingProductImages.map((img, i) =>
+      `<div style="position:relative;width:72px;height:72px;">
+        <img src="${img.objectUrl}" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--color-border);"/>
+        <button onclick="removePendingImage(${i})" title="移除" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#EF4444;color:#fff;cursor:pointer;font-size:11px;line-height:18px;padding:0;">✕</button>
+        <span style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.5);color:#fff;font-size:9px;text-align:center;border-radius:0 0 6px 6px;">待上傳</span>
+      </div>`
+    ).join("");
+
+    container.innerHTML = existingHtml + pendingHtml;
+
+    // Lazy-load signed URLs for existing images
+    container.querySelectorAll("img[data-imgkey]").forEach(img => {
+      const key = img.dataset.imgkey;
+      currentUser.getIdToken().then(token =>
+        fetch(`${RENDER_SERVER_URL}/images/signed-url?key=${encodeURIComponent(key)}`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        }).then(r => r.ok ? r.json() : null).then(d => { if (d?.signedUrl) img.src = d.signedUrl; })
+      ).catch(() => {});
+    });
+  }
+
+  window.removeExistingImage = (i) => {
+    existingProductImages.splice(i, 1);
+    renderProductImagesPreviews();
+  };
+  window.removePendingImage = (i) => {
+    URL.revokeObjectURL(pendingProductImages[i].objectUrl);
+    pendingProductImages.splice(i, 1);
+    renderProductImagesPreviews();
+  };
+
+  async function uploadPendingImages() {
+    if (pendingProductImages.length === 0) return [];
+    const idToken = await currentUser.getIdToken(true);
+    const uploaded = [];
+    for (const { file } of pendingProductImages) {
+      const presignResp = await fetch(`${RENDER_SERVER_URL}/images/presign`, {
+        method:  "POST",
+        headers: { "Authorization": `Bearer ${idToken}`, "Content-Type": "application/json" },
+        body:    JSON.stringify({ filename: file.name, mimetype: file.type })
+      });
+      if (!presignResp.ok) throw new Error("Could not get image upload URL");
+      const { imageKey, uploadUrl } = await presignResp.json();
+      const s3Resp = await fetch(uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+      if (!s3Resp.ok) throw new Error(`Image upload failed (${s3Resp.status})`);
+      uploaded.push(imageKey);
+    }
+    return uploaded;
+  }
+
   window.saveProduct = async () => {
     const name         = document.getElementById("productName").value.trim();
     const priceNTD     = parseInt(document.getElementById("productPriceNTD").value.trim(), 10);
@@ -1808,11 +1926,22 @@
     const durationRaw  = document.getElementById("productDuration").value.trim();
     const editKey      = document.getElementById("editProductKey").value;
     const fileIds      = [...document.querySelectorAll(".product-file-cb:checked")].map(cb => cb.value);
+    const previewFileId = document.getElementById("productPreviewFileId").value || null;
+    const previewPages  = parseInt(document.getElementById("productPreviewPages").value, 10) || null;
 
     if (!name)              return showPricingAlert("商品名稱為必填。", "error");
     if (!priceNTD || priceNTD < 1) return showPricingAlert("請輸入有效的新台幣金額。", "error");
     if (!merchantId)        return showPricingAlert("請填入 ECPay 廠商代號。", "error");
     if (fileIds.length === 0) return showPricingAlert("請選擇至少一個檔案。", "error");
+
+    // Upload pending images to S3 first
+    let newImageKeys = [];
+    try {
+      newImageKeys = await uploadPendingImages();
+    } catch(e) {
+      return showPricingAlert("圖片上傳失敗：" + e.message, "error");
+    }
+    const imageKeys = [...existingProductImages, ...newImageKeys];
 
     const data = {
       name,
@@ -1823,6 +1952,9 @@
       useSandbox,
       fileIds,
       durationDays:  durationRaw ? parseInt(durationRaw, 10) : null,
+      previewFileId: previewFileId || null,
+      previewPages:  (previewFileId && previewPages) ? previewPages : null,
+      imageKeys:     imageKeys.length > 0 ? imageKeys : null,
       updatedAt:     Date.now()
     };
 
@@ -1853,24 +1985,35 @@
     document.getElementById("productMerchantId").value      = p.merchantId || "";
     document.getElementById("productUseSandbox").checked    = !!p.useSandbox;
     document.getElementById("productDuration").value        = p.durationDays || "";
+    document.getElementById("productPreviewFileId").value   = p.previewFileId || "";
+    document.getElementById("productPreviewPages").value    = p.previewPages || "";
     document.getElementById("productFormTitle").textContent = "編輯商品 Edit Product";
     document.querySelectorAll(".product-file-cb").forEach(cb => {
       cb.checked = (p.fileIds || []).includes(cb.value);
     });
+    // Load existing images
+    pendingProductImages  = [];
+    existingProductImages = p.imageKeys ? [...p.imageKeys] : [];
+    renderProductImagesPreviews();
     document.getElementById("productFormTitle").scrollIntoView({ behavior: "smooth" });
   };
 
   window.resetProductForm = () => {
-    document.getElementById("editProductKey").value        = "";
-    document.getElementById("productName").value           = "";
-    document.getElementById("productPriceNTD").value       = "";
-    document.getElementById("productPrice").value          = "";
-    document.getElementById("productPaymentMethod").value  = "ALL";
-    document.getElementById("productMerchantId").value     = "";
-    document.getElementById("productUseSandbox").checked   = false;
-    document.getElementById("productDuration").value       = "";
+    document.getElementById("editProductKey").value         = "";
+    document.getElementById("productName").value            = "";
+    document.getElementById("productPriceNTD").value        = "";
+    document.getElementById("productPrice").value           = "";
+    document.getElementById("productPaymentMethod").value   = "ALL";
+    document.getElementById("productMerchantId").value      = "";
+    document.getElementById("productUseSandbox").checked    = false;
+    document.getElementById("productDuration").value        = "";
+    document.getElementById("productPreviewFileId").value   = "";
+    document.getElementById("productPreviewPages").value    = "";
     document.getElementById("productFormTitle").textContent = "新增商品 New Product";
     document.querySelectorAll(".product-file-cb").forEach(cb => cb.checked = false);
+    pendingProductImages  = [];
+    existingProductImages = [];
+    renderProductImagesPreviews();
   };
 
   window.deleteProduct = async (key) => {
@@ -1892,23 +2035,20 @@
   // STORAGE
   // ════════════════════════════════════════════════════════════════════════
 
-  // No fixed cloud limit — show relative usage against a display ceiling of 100 GB.
-  // The bar just gives a visual sense of growth; actual limit is your disk.
-
   function fmtBytes(bytes) {
     if (bytes === 0) return "0 B";
     const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB"];
+    const sizes = ["B", "KB", "MB", "GB", "TB"];
     const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
     return parseFloat((bytes / Math.pow(k, i)).toFixed(i === 0 ? 0 : 2)) + " " + sizes[i];
   }
 
   window.loadStorage = async function loadStorage() {
-    const loadingEl   = document.getElementById("storageLoading");
-    const emptyEl     = document.getElementById("storageEmpty");
-    const tableEl     = document.getElementById("storageTable");
-    const tbody       = document.getElementById("storageTbody");
-    const refreshBtn  = document.getElementById("storageRefreshBtn");
+    const loadingEl  = document.getElementById("storageLoading");
+    const emptyEl    = document.getElementById("storageEmpty");
+    const tableEl    = document.getElementById("storageTable");
+    const tbody      = document.getElementById("storageTbody");
+    const refreshBtn = document.getElementById("storageRefreshBtn");
 
     // Reset UI
     loadingEl.classList.remove("hidden");
@@ -1925,47 +2065,57 @@
     if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = "Loading…"; }
 
     try {
-      // Fetch file metadata from Firebase (admin has full read access)
-      const filesVal = await dbGet(auth, "files");
+      // Fetch real S3 usage + Firebase file metadata in parallel
+      const idToken = await currentUser.getIdToken();
+      const [filesVal, statsResp] = await Promise.all([
+        dbGet(auth, "files"),
+        fetch(`${RENDER_SERVER_URL}/storage/stats`, {
+          headers: { "Authorization": `Bearer ${idToken}` }
+        }).then(r => r.ok ? r.json() : null)
+      ]);
 
       loadingEl.classList.add("hidden");
 
+      // ── Summary cards (from real S3 stats) ──────────────────────────────
+      const s3Files  = statsResp?.fileCount  ?? 0;
+      const s3Bytes  = statsResp?.totalSize  ?? 0;
+      const s3Images = statsResp?.imageCount ?? 0;
+      const s3ImgSz  = statsResp?.imageSize  ?? 0;
+      const totalS3  = s3Bytes + s3ImgSz;
+
+      // Show a bar relative to a soft 50 GB display ceiling
+      const DISPLAY_CEILING = 50 * 1024 * 1024 * 1024;
+      const usedPct = Math.min((totalS3 / DISPLAY_CEILING) * 100, 100);
+
+      document.getElementById("storageUsed").textContent      = fmtBytes(s3Bytes);
+      document.getElementById("storageRemaining").textContent = `${fmtBytes(s3ImgSz)} images`;
+      document.getElementById("storageFileCount").textContent = s3Files;
+      document.getElementById("storagePercent").textContent   = usedPct.toFixed(2) + "%";
+
+      const barEl = document.getElementById("storageBar");
+      barEl.style.width      = usedPct + "%";
+      barEl.style.background = usedPct > 90 ? "#EF4444" : usedPct > 70 ? "#F59E0B" : "#2563EB";
+
       if (!filesVal) {
         emptyEl.classList.remove("hidden");
-        document.getElementById("storageUsed").textContent      = "0 B";
-        document.getElementById("storageRemaining").textContent = "S3 (unlimited)";
-        document.getElementById("storageFileCount").textContent = "0";
-        document.getElementById("storagePercent").textContent   = "—";
         return;
       }
 
-      // Build sorted file list
+      // ── File breakdown table (from Firebase metadata) ────────────────────
       const files = Object.entries(filesVal)
         .map(([id, f]) => ({ id, ...f, size: Number(f.size) || 0 }))
         .sort((a, b) => b.size - a.size);
 
-      const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
-
-      // Update summary cards
-      document.getElementById("storageUsed").textContent      = fmtBytes(totalBytes);
-      document.getElementById("storageRemaining").textContent = "S3 (unlimited)";
-      document.getElementById("storageFileCount").textContent = files.length;
-      document.getElementById("storagePercent").textContent   = "—";
       document.getElementById("storageTableMeta").textContent = `${files.length} file${files.length !== 1 ? "s" : ""}`;
 
-      // S3 has no fixed limit — hide the usage bar
-      const barEl = document.getElementById("storageBar");
-      barEl.style.width = "0%";
-
-      // File breakdown table
       if (files.length === 0) {
         emptyEl.classList.remove("hidden");
       } else {
         tableEl.classList.remove("hidden");
         tbody.innerHTML = files.map(f => {
           const def     = getTypeDef(f.type, f.name);
-          const pct     = totalBytes > 0 ? ((f.size / totalBytes) * 100).toFixed(1) : "0.0";
-          const barW    = totalBytes > 0 ? Math.max((f.size / totalBytes) * 100, 0.5) : 0;
+          const pct     = s3Bytes > 0 ? ((f.size / s3Bytes) * 100).toFixed(1) : "0.0";
+          const barW    = s3Bytes > 0 ? Math.max((f.size / s3Bytes) * 100, 0.5) : 0;
           const uploaded = f.uploadedAt ? formatDate(f.uploadedAt) : "—";
           return `<tr>
             <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(f.name)}">${def.icon} ${escHtml(f.name)}</td>
