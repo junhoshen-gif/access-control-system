@@ -51,10 +51,9 @@ app.use(cors({ origin: allowedOrigin }));
 app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 app.use(express.json({ limit: "10kb" }));
 
-// ── Multer for file uploads (memory storage, max 100 MB) ──────────────────
+// ── Multer for file uploads (memory storage, no size limit) ───────────────
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 } // 100 MB
 });
 
 // ── Rate limiters ──────────────────────────────────────────────────────────
