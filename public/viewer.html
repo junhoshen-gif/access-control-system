@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>File Viewer – FileAccess</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f172a;
+      --surface:   #1e293b;
+      --border:    #334155;
+      --text:      #f1f5f9;
+      --muted:     #94a3b8;
+      --accent:    #2563eb;
+      --error:     #ef4444;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, system-ui, sans-serif;
+      overflow: hidden; /* prevent body scroll — viewer scrolls internally */
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* ── Top bar ─────────────────────────────────────────────────────────── */
+    #topbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 52px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 1.25rem;
+      gap: 1rem;
+      z-index: 100;
+    }
+
+    #backBtn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.875rem;
+      padding: 0.3rem 0.5rem;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    #backBtn:hover { color: var(--text); background: var(--border); }
+
+    #fileTitle {
+      font-size: 0.95rem;
+      font-weight: 500;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #pageInfo {
+      font-size: 0.82rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* PDF zoom controls */
+    #pdfControls {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    #pdfControls button {
+      background: var(--border);
+      border: none;
+      color: var(--text);
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #pdfControls button:hover { background: var(--accent); }
+    #zoomLabel { font-size: 0.82rem; color: var(--muted); min-width: 3rem; text-align: center; }
+
+    /* ── Main viewer area ────────────────────────────────────────────────── */
+    #viewerArea {
+      position: fixed;
+      top: 52px; left: 0; right: 0; bottom: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem 1rem 3rem;
+    }
+
+    /* ── Loading / error states ──────────────────────────────────────────── */
+    #statusBox {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      height: 100%;
+      color: var(--muted);
+      font-size: 0.9rem;
+      text-align: center;
+    }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── PDF canvas pages ────────────────────────────────────────────────── */
+    .pdf-page-wrap {
+      position: relative;
+      margin-bottom: 1rem;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+      border-radius: 4px;
+      overflow: hidden;
+      line-height: 0; /* remove gap below canvas */
+    }
+    .pdf-page-wrap canvas {
+      display: block;
+      max-width: 100%;
+    }
+
+    /* Watermark overlay sits on top of each canvas */
+    .wm-canvas {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    /* ── Image viewer ────────────────────────────────────────────────────── */
+    #imgWrap {
+      position: relative;
+      display: inline-block;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+      border-radius: 8px;
+      overflow: hidden;
+      line-height: 0;
+    }
+    #imgWrap img {
+      display: block;
+      max-width: min(900px, 100%);
+      max-height: calc(100vh - 100px);
+      border-radius: 8px;
+    }
+
+    /* ── Print guard: hide everything while printing ─────────────────────── */
+    @media print {
+      body::before {
+        content: "Printing is not allowed.";
+        display: block;
+        font-size: 2rem;
+        text-align: center;
+        margin-top: 40vh;
+        color: #000;
+      }
+      #topbar, #viewerArea { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div id="topbar">
+  <button id="backBtn" onclick="goBack()">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+    Back
+  </button>
+  <span id="fileTitle">Loading…</span>
+  <span id="pageInfo"></span>
+  <div id="pdfControls">
+    <button onclick="zoomOut()" title="Zoom out">−</button>
+    <span id="zoomLabel">100%</span>
+    <button onclick="zoomIn()"  title="Zoom in">+</button>
+    <button onclick="zoomReset()" title="Reset zoom" style="width:auto;padding:0 8px;font-size:0.75rem;">Reset</button>
+  </div>
+</div>
+
+<!-- Content area -->
+<div id="viewerArea">
+  <div id="statusBox">
+    <div class="spinner"></div>
+    <p id="statusMsg">Authenticating…</p>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp }        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { firebaseConfig, RENDER_SERVER_URL } from "./js/config.js";
+
+// ── Constants ───────────────────────────────────────────────────────────────
+const PDFJS_CDN   = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs";
+const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs";
+
+// ── Parse query params ───────────────────────────────────────────────────────
+const params  = new URLSearchParams(location.search);
+const fileId  = params.get("fileId")  || "";
+const fileName = decodeURIComponent(params.get("name") || "File");
+const fileType = decodeURIComponent(params.get("type") || "");
+
+document.getElementById("fileTitle").textContent = fileName;
+
+// ── Firebase auth ─────────────────────────────────────────────────────────
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+
+onAuthStateChanged(auth, async user => {
+  if (!user) {
+    // Not logged in — redirect to login
+    window.location.href = "login.html";
+    return;
+  }
+  if (!fileId) {
+    showError("No file specified.");
+    return;
+  }
+  setStatus("Fetching secure link…");
+  await loadFile(user);
+});
+
+// ── Main load flow ────────────────────────────────────────────────────────
+async function loadFile(user) {
+  // Step 1: get signed URL from Render server
+  let signedUrl;
+  try {
+    const idToken = await user.getIdToken(true);
+    const resp = await fetch(
+      `${RENDER_SERVER_URL}/files/signed-url?fileId=${encodeURIComponent(fileId)}`,
+      { headers: { "Authorization": `Bearer ${idToken}` } }
+    );
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.error || `Server error ${resp.status}`);
+    }
+    ({ signedUrl } = await resp.json());
+  } catch (err) {
+    showError(`Could not get file link: ${err.message}`);
+    return;
+  }
+
+  // Step 2: fetch bytes from S3
+  setStatus("Downloading file…");
+  let blob;
+  try {
+    const resp = await fetch(signedUrl);
+    if (!resp.ok) throw new Error(`S3 error ${resp.status}`);
+    blob = await resp.blob();
+  } catch (err) {
+    showError(`Could not download file: ${err.message}\n\nOrigin: ${location.origin}`);
+    return;
+  }
+
+  // Step 3: render
+  const area = document.getElementById("viewerArea");
+  area.innerHTML = ""; // clear spinner
+
+  const type = fileType || blob.type;
+
+  if (type === "application/pdf") {
+    document.getElementById("pdfControls").style.display = "flex";
+    await renderPdf(blob, area, user.email || user.displayName || "");
+  } else if (type.startsWith("image/")) {
+    renderImage(blob, area, user.email || user.displayName || "");
+  } else if (type.startsWith("video/")) {
+    renderVideo(blob, area);
+  } else if (type.startsWith("audio/")) {
+    renderAudio(blob, area, fileName);
+  } else if (type.startsWith("text/")) {
+    await renderText(blob, area);
+  } else {
+    showError(`Cannot preview this file type (${type || "unknown"}).\nAsk an admin to download it for you.`);
+  }
+}
+
+// ── PDF renderer (pdf.js, canvas-based) ──────────────────────────────────
+let pdfDoc    = null;
+let pdfScale  = 1.5;
+let pdfArea   = null;
+let wmEmail   = "";
+
+async function renderPdf(blob, area, email) {
+  pdfArea  = area;
+  wmEmail  = email;
+
+  setStatus("Loading PDF engine…");
+
+  // Dynamically import pdf.js from CDN
+  let pdfjsLib;
+  try {
+    pdfjsLib = await import(PDFJS_CDN);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+  } catch (err) {
+    showError(`Could not load PDF engine: ${err.message}`);
+    return;
+  }
+
+  setStatus("Rendering PDF…");
+
+  const arrayBuffer = await blob.arrayBuffer();
+  try {
+    pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  } catch (err) {
+    showError(`Could not parse PDF: ${err.message}`);
+    return;
+  }
+
+  const total = pdfDoc.numPages;
+  document.getElementById("pageInfo").textContent = `${total} page${total !== 1 ? "s" : ""}`;
+  document.title = `${fileName} – FileAccess`;
+
+  area.innerHTML = "";
+  for (let i = 1; i <= total; i++) {
+    await renderPage(pdfjsLib, pdfDoc, i, area, email);
+  }
+}
+
+async function renderPage(pdfjsLib, doc, pageNum, area, email) {
+  const page     = await doc.getPage(pageNum);
+  const viewport = page.getViewport({ scale: pdfScale });
+
+  const wrap   = document.createElement("div");
+  wrap.className = "pdf-page-wrap";
+  wrap.dataset.page = pageNum;
+
+  const canvas  = document.createElement("canvas");
+  canvas.width  = viewport.width;
+  canvas.height = viewport.height;
+
+  wrap.appendChild(canvas);
+  area.appendChild(wrap);
+
+  await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+
+  // Watermark on top
+  applyWatermark(wrap, canvas.width, canvas.height, email);
+}
+
+// ── Zoom controls (re-renders all pages) ─────────────────────────────────
+window.zoomIn    = () => setZoom(pdfScale + 0.25);
+window.zoomOut   = () => setZoom(Math.max(0.5, pdfScale - 0.25));
+window.zoomReset = () => setZoom(1.5);
+
+async function setZoom(scale) {
+  if (!pdfDoc) return;
+  pdfScale = scale;
+  document.getElementById("zoomLabel").textContent = Math.round(scale * 100 / 1.5 * 100) + "%";
+
+  // Re-render all pages at new scale
+  const { default: pdfjsLib } = await import(PDFJS_CDN).catch(() => ({}));
+  if (!pdfjsLib) return;
+
+  pdfArea.innerHTML = "";
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    await renderPage(pdfjsLib, pdfDoc, i, pdfArea, wmEmail);
+  }
+}
+
+// ── Image renderer ────────────────────────────────────────────────────────
+function renderImage(blob, area, email) {
+  const url  = URL.createObjectURL(blob);
+  const wrap = document.createElement("div");
+  wrap.id = "imgWrap";
+
+  const img = document.createElement("img");
+  img.src = url;
+  img.alt = fileName;
+  img.draggable = false;
+  img.onload = () => {
+    applyWatermark(wrap, wrap.offsetWidth, wrap.offsetHeight, email);
+    URL.revokeObjectURL(url);
+  };
+
+  wrap.appendChild(img);
+  area.appendChild(wrap);
+}
+
+// ── Video renderer ────────────────────────────────────────────────────────
+function renderVideo(blob, area) {
+  const url   = URL.createObjectURL(blob);
+  const video = document.createElement("video");
+  video.src             = url;
+  video.controls        = true;
+  video.controlsList    = "nodownload";
+  video.disablePictureInPicture = true;
+  video.style.cssText   = "max-width:min(900px,100%);max-height:calc(100vh - 100px);border-radius:8px;display:block;box-shadow:0 4px 24px rgba(0,0,0,0.5);";
+  video.onended = () => URL.revokeObjectURL(url);
+  area.appendChild(video);
+}
+
+// ── Audio renderer ────────────────────────────────────────────────────────
+function renderAudio(blob, area, name) {
+  const url   = URL.createObjectURL(blob);
+  const wrap  = document.createElement("div");
+  wrap.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:1.5rem;padding:4rem 2rem;";
+  wrap.innerHTML = `<div style="font-size:5rem">🎵</div><p style="font-size:1.1rem;font-weight:500">${escHtml(name)}</p>`;
+  const audio = document.createElement("audio");
+  audio.src          = url;
+  audio.controls     = true;
+  audio.controlsList = "nodownload";
+  audio.onended      = () => URL.revokeObjectURL(url);
+  wrap.appendChild(audio);
+  area.appendChild(wrap);
+}
+
+// ── Text renderer ─────────────────────────────────────────────────────────
+async function renderText(blob, area) {
+  const text = await blob.text();
+  const pre  = document.createElement("pre");
+  pre.style.cssText = "background:var(--surface);padding:1.5rem;border-radius:8px;font-size:0.85rem;line-height:1.6;max-width:860px;width:100%;white-space:pre-wrap;word-break:break-word;color:var(--text);";
+  pre.textContent = text;
+  area.appendChild(pre);
+}
+
+// ── Watermark ─────────────────────────────────────────────────────────────
+function applyWatermark(container, w, h, email) {
+  if (!email) return;
+  const wm  = document.createElement("canvas");
+  wm.className = "wm-canvas";
+  wm.width  = w || 800;
+  wm.height = h || 600;
+  wm.style.opacity = "0.15";
+
+  const ctx  = wm.getContext("2d");
+  ctx.font   = "bold 15px Inter, system-ui, sans-serif";
+  ctx.fillStyle = "#ffffff";
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate(-30 * Math.PI / 180);
+  ctx.translate(-w / 2, -h / 2);
+
+  const text  = `🔒 ${email}`;
+  const stepX = 260;
+  const stepY = 110;
+  for (let y = -h; y < w + h; y += stepY) {
+    for (let x = -w; x < w + h; x += stepX) {
+      ctx.fillText(text, x, y);
+    }
+  }
+  ctx.restore();
+
+  container.style.position = "relative";
+  container.appendChild(wm);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function setStatus(msg) {
+  const box = document.getElementById("statusBox");
+  if (box) {
+    box.querySelector("#statusMsg").textContent = msg;
+    // Make sure it's visible
+    document.getElementById("viewerArea").innerHTML = "";
+    document.getElementById("viewerArea").appendChild(box);
+  }
+}
+
+function showError(msg) {
+  const area = document.getElementById("viewerArea");
+  area.innerHTML = `
+    <div id="statusBox">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--error)" stroke-width="1.5">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      <p style="color:var(--error);font-weight:500;">Failed to load file</p>
+      <pre style="font-size:0.78rem;color:var(--muted);max-width:520px;white-space:pre-wrap;text-align:left;background:var(--surface);padding:0.75rem 1rem;border-radius:8px;">${escHtml(msg)}</pre>
+      <button onclick="goBack()" style="background:var(--accent);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:6px;cursor:pointer;font-size:0.9rem;">← Go back</button>
+    </div>`;
+}
+
+function escHtml(s) {
+  return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+window.goBack = () => history.length > 1 ? history.back() : (location.href = "index.html");
+
+// ── Protection: block right-click, print shortcuts, drag ─────────────────
+document.addEventListener("contextmenu", e => e.preventDefault());
+
+document.addEventListener("keydown", e => {
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (
+    (ctrl && (e.key === "p" || e.key === "s" || e.key === "S")) ||
+    (ctrl && e.shiftKey && (e.key === "i" || e.key === "j")) ||
+    e.key === "F12"
+  ) {
+    e.preventDefault();
+  }
+});
+
+document.addEventListener("dragstart", e => e.preventDefault());
+
+window.addEventListener("beforeprint", () => {
+  // CSS @media print already hides everything — this just blocks programmatic print
+});
+</script>
+</body>
+</html>

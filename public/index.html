@@ -369,7 +369,10 @@
       const { signedUrl, pageLimit, fileType } = await resp.json();
 
       if (fileType === "application/pdf") {
-        await renderPdfPreview(body, signedUrl, pageLimit);
+        const pageNote = pageLimit
+          ? `<p style="text-align:center;color:var(--color-text-muted);font-size:0.85rem;margin:0 0 0.75rem;">Preview: first ${pageLimit} pages only · Purchase to read the full content</p>`
+          : "";
+        body.innerHTML = pageNote + `<iframe src="${signedUrl}" style="width:100%;height:70vh;border:none;border-radius:8px;display:block;"></iframe>`;
       } else if (fileType?.startsWith("image/")) {
         body.innerHTML = `<img src="${signedUrl}" style="max-width:100%;max-height:70vh;border-radius:8px;display:block;margin:auto;" />`;
       } else {
@@ -555,9 +558,8 @@
     const def  = getTypeDef(type, name);
 
     if (def.viewer === "pdf") {
-      // Use pdf.js canvas renderer to avoid S3 X-Frame-Options blocking iframes
-      body.innerHTML = `<div class="viewer-wrap"></div>`;
-      await renderPdfPreview(body.querySelector(".viewer-wrap"), signedUrl, null);
+      // Browser built-in PDF viewer via direct iframe → signed S3 URL
+      body.innerHTML = `<div class="viewer-wrap"><iframe src="${signedUrl}" style="width:100%;height:70vh;border:none;border-radius:8px;display:block;"></iframe></div>`;
       return;
     }
 
@@ -621,13 +623,15 @@
     return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 
-  // Delegated click handler for file cards (avoids URL injection via inline onclick)
+  // Delegated click handler for file cards — opens full-page viewer
   document.getElementById("fileGrid").addEventListener("click", (e) => {
     const card = e.target.closest(".file-card[data-fileid]");
     if (!card) return;
     const fileId = card.dataset.fileid;
     const f = allFiles.find(f => f.id === fileId);
-    if (f) openViewer(f.id, f.name, f.type);  // no URL — server provides signed URL
+    if (!f) return;
+    const url = `viewer.html?fileId=${encodeURIComponent(f.id)}&name=${encodeURIComponent(f.name)}&type=${encodeURIComponent(f.type || "")}`;
+    window.location.href = url;
   });
 
   // Close modal on Escape
