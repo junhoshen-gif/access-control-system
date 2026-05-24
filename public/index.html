@@ -8,6 +8,8 @@
   <script src="js/protect.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- pdf.js for rendering PDFs without iframes (avoids S3 X-Frame-Options block) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 
@@ -314,6 +316,52 @@
     }
   }
 
+  // ── PDF preview renderer (pdf.js canvas — avoids iframe/X-Frame-Options) ───
+  async function renderPdfPreview(container, pdfUrl, pageLimit) {
+    // Configure pdf.js worker
+    if (typeof pdfjsLib === "undefined") {
+      container.innerHTML = `<p style="color:var(--color-error);text-align:center;">PDF 載入器未就緒，請重新整理。</p>`;
+      return;
+    }
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+    const pageNote = pageLimit
+      ? `<p style="text-align:center;color:var(--color-text-muted);font-size:0.85rem;margin:0 0 0.75rem;">僅供預覽前 ${pageLimit} 頁 · 購買後可查看完整內容</p>`
+      : "";
+
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "overflow-y:auto;max-height:70vh;padding:0 4px;";
+    container.innerHTML = pageNote;
+    container.appendChild(wrap);
+
+    try {
+      const pdf       = await pdfjsLib.getDocument({ url: pdfUrl, withCredentials: false }).promise;
+      const lastPage  = pageLimit ? Math.min(pageLimit, pdf.numPages) : pdf.numPages;
+
+      for (let pageNum = 1; pageNum <= lastPage; pageNum++) {
+        const page     = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas   = document.createElement("canvas");
+        canvas.width   = viewport.width;
+        canvas.height  = viewport.height;
+        canvas.style.cssText = "display:block;width:100%;margin-bottom:8px;border-radius:4px;";
+        wrap.appendChild(canvas);
+        await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+      }
+
+      if (pageLimit && pdf.numPages > pageLimit) {
+        const notice = document.createElement("p");
+        notice.style.cssText = "text-align:center;padding:1rem;color:var(--color-text-muted);font-size:0.85rem;";
+        notice.textContent = `── 預覽結束（共 ${pdf.numPages} 頁，購買後可查看完整內容）──`;
+        wrap.appendChild(notice);
+      }
+    } catch (err) {
+      console.error("PDF render error:", err);
+      container.innerHTML += `<p style="color:var(--color-error);text-align:center;">無法載入 PDF 預覽：${err.message}</p>`;
+    }
+  }
+
   // ── Product preview modal ───────────────────────────────────────────────────
   window.openProductPreview = async (productKey) => {
     const p = allProducts[productKey];
@@ -333,10 +381,7 @@
       const { signedUrl, pageLimit, fileType } = await resp.json();
 
       if (fileType === "application/pdf") {
-        const pageNote = pageLimit ? `<p style="text-align:center;color:var(--color-text-muted);font-size:0.85rem;margin-bottom:0.75rem;">僅供預覽前 ${pageLimit} 頁 · 購買後可查看完整內容</p>` : "";
-        // Append #page=1&view=FitH and disable toolbar via embed to suggest limited pages
-        // (Browser PDF viewer can't enforce page limits server-side; pageLimit is for display note only)
-        body.innerHTML = `${pageNote}<iframe src="${signedUrl}#page=1" style="width:100%;height:70vh;border:none;border-radius:8px;"></iframe>`;
+        await renderPdfPreview(body, signedUrl, pageLimit);
       } else if (fileType?.startsWith("image/")) {
         body.innerHTML = `<img src="${signedUrl}" style="max-width:100%;max-height:70vh;border-radius:8px;display:block;margin:auto;" />`;
       } else {
@@ -520,11 +565,16 @@
     writeLog("file_view", { fileName: name, fileId });
 
     const def  = getTypeDef(type, name);
+
+    if (def.viewer === "pdf") {
+      // Use pdf.js canvas renderer to avoid S3 X-Frame-Options blocking iframes
+      body.innerHTML = `<div class="viewer-wrap"></div>`;
+      await renderPdfPreview(body.querySelector(".viewer-wrap"), signedUrl, null);
+      return;
+    }
+
     let inner = "";
     switch (def.viewer) {
-      case "pdf":
-        inner = `<iframe src="${signedUrl}#toolbar=0&navpanes=0" class="file-viewer-frame"></iframe>`;
-        break;
       case "image":
         inner = `<div class="image-viewer"><img src="${signedUrl}" alt="${escHtml(name)}" /></div>`;
         break;
