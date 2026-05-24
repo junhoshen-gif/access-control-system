@@ -77,7 +77,7 @@
     <section id="section-upload" class="admin-section">
       <div class="section-header">
         <h2>Upload Files</h2>
-        <p class="text-muted">Supported: PDF, Images, HTML, STL, SVG, MP4, MP3, TXT, DOCX, XLSX, ZIP • Max 100MB per file</p>
+        <p class="text-muted">Supported: PDF, Images, HTML, STL, SVG, MP4, MP3, TXT, DOCX, XLSX, ZIP • Max 500MB per file</p>
       </div>
       <div id="uploadAlert" class="alert hidden"></div>
       <div class="upload-zone" id="uploadZone">
@@ -795,7 +795,7 @@
   function addToQueue(files) {
     const valid = files.filter(f => {
       if (!isAllowedFile(f)) { showUploadAlert(`"${f.name}" — unsupported file type.`, "error"); return false; }
-      if (f.size > 100 * 1024 * 1024) { showUploadAlert(`"${f.name}" exceeds the 100 MB limit.`, "error"); return false; }
+      if (f.size > 500 * 1024 * 1024) { showUploadAlert(`"${f.name}" exceeds the 500 MB limit.`, "error"); return false; }
       return true;
     });
     pendingFiles = [...pendingFiles, ...valid];
