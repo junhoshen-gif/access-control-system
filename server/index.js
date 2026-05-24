@@ -194,7 +194,8 @@ app.post("/files/upload", upload.single("file"), async (req, res) => {
 
   // Validate MIME type (allowlist)
   const ALLOWED_MIMES = [
-    "application/pdf","image/png","image/jpeg","image/gif","image/webp","image/svg+xml",
+    "application/pdf","application/epub+zip",
+    "image/png","image/jpeg","image/gif","image/webp","image/svg+xml",
     "text/html","text/plain","text/markdown","text/csv",
     "video/mp4","video/webm","audio/mpeg","audio/wav",
     "model/stl","application/octet-stream",

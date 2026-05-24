@@ -470,6 +470,9 @@
 
   // ── Constants ──────────────────────────────────────────────────────────────
   const ECPAY_SERVER_URL = "https://fileaccess-ecpay.onrender.com";
+
+  // Ping the server immediately so Render starts waking up before auth finishes
+  fetch(`${ECPAY_SERVER_URL}/`, { mode: "no-cors" }).catch(() => {});
   const ZOOM_STEP  = 0.15;
   const ZOOM_MIN   = 0.4;
   const ZOOM_MAX   = 3.0;
@@ -561,19 +564,47 @@
     initReader();
   });
 
-  // ── Fetch signed URL ───────────────────────────────────────────────────────
+  // ── Fetch signed URL (with timeout + wake-up hint) ───────────────────────
   async function fetchSignedUrl() {
+    // Show a friendlier message after 4 s in case the Render server is cold-starting
+    const wakeTimer = setTimeout(() => {
+      elLoading.innerHTML = `
+        <div class="spinner"></div>
+        <p>Server is waking up — this can take up to 30 s on first load…</p>
+        <p style="font-size:0.8rem;color:var(--muted);margin-top:0.25rem;">Please wait.</p>
+      `;
+    }, 4000);
+
     try {
       const idToken = await currentUser.getIdToken();
-      const resp = await fetch(
-        `${ECPAY_SERVER_URL}/files/signed-url?fileId=${encodeURIComponent(fileId)}`,
-        { headers: { "Authorization": `Bearer ${idToken}` } }
-      );
-      if (!resp.ok) throw new Error((await resp.json()).error || resp.statusText);
+
+      // 60-second hard timeout
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 60000);
+
+      let resp;
+      try {
+        resp = await fetch(
+          `${ECPAY_SERVER_URL}/files/signed-url?fileId=${encodeURIComponent(fileId)}`,
+          { headers: { "Authorization": `Bearer ${idToken}` }, signal: controller.signal }
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        throw new Error(body.error || `Server error ${resp.status}`);
+      }
       ({ signedUrl } = await resp.json());
     } catch (err) {
-      showError(`Cannot load file: ${escHtml(err.message)}`);
+      const msg = err.name === "AbortError"
+        ? "Request timed out. The server may be unavailable — please try again."
+        : err.message;
+      showError(`Cannot load file: ${escHtml(msg)} &nbsp;<a href="index.html">← Back</a>`);
       throw err;
+    } finally {
+      clearTimeout(wakeTimer);
     }
   }
 
