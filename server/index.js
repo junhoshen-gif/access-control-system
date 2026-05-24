@@ -1,102 +1,113 @@
 /**
- * FileAccess – ECPay + File Proxy Server
- * Hosted free on Render.com (no credit card required)
+ * FileAccess – Render Server
  *
- * Required environment variables (set in Render dashboard):
- *   ECPAY_HASH_KEY           – from ECPay merchant backend → API介接 → HashKey
- *   ECPAY_HASH_IV            – from ECPay merchant backend → API介接 → HashIV
- *   ECPAY_MERCHANT_ID        – your ECPay MerchantID
- *   FIREBASE_DATABASE_URL    – e.g. https://your-project-default-rtdb.firebaseio.com
- *   FIREBASE_SERVICE_ACCOUNT – full JSON string of your Firebase service account key
- *   SUPABASE_URL             – e.g. https://xxxx.supabase.co
- *   SUPABASE_SERVICE_KEY     – Supabase service_role key (keep secret, server-only)
- *   SUPABASE_BUCKET          – storage bucket name, e.g. fileaccess
- *   SITE_URL                 – your Firebase Hosting URL, e.g. https://your-project.web.app
- *   SERVER_URL               – this server's URL, e.g. https://fileaccess-ecpay.onrender.com
+ * Files  → AWS S3  (upload / download / delete directly from Render)
+ * DB     → Firebase Realtime Database  (users, access, products, logs, etc.)
+ * Auth   → Firebase Authentication     (verifyIdToken)
+ *
+ * Required environment variables (Render dashboard → Environment):
+ *   AWS_ACCESS_KEY_ID        – AWS IAM key
+ *   AWS_SECRET_ACCESS_KEY    – AWS IAM secret
+ *   AWS_REGION               – e.g. us-east-1
+ *   S3_BUCKET                – your S3 bucket name
+ *   FIREBASE_SERVICE_ACCOUNT – full JSON of Firebase service account (one line)
+ *   FIREBASE_DATABASE_URL    – https://YOUR-PROJECT-default-rtdb.firebaseio.com
+ *   ECPAY_HASH_KEY           – ECPay HashKey
+ *   ECPAY_HASH_IV            – ECPay HashIV
+ *   ECPAY_MERCHANT_ID        – ECPay MerchantID
+ *   SITE_URL                 – your Firebase Hosting URL
+ *   SERVER_URL               – this Render server's public URL
  *   PORT                     – set automatically by Render (default 10000)
  */
 
-const express     = require("express");
-const cors        = require("cors");
-const crypto      = require("crypto");
-const admin       = require("firebase-admin");
-const rateLimit   = require("express-rate-limit");
-const helmet      = require("helmet");
-const multer      = require("multer");
-const fetch       = require("node-fetch");
-const fs          = require("fs");
-const path        = require("path");
-const os          = require("os");
+const express   = require("express");
+const cors      = require("cors");
+const crypto    = require("crypto");
+const admin     = require("firebase-admin");
+const rateLimit = require("express-rate-limit");
+const helmet    = require("helmet");
+const multer    = require("multer");
+const fs        = require("fs");
+const path      = require("path");
+const os        = require("os");
+const {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+} = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
-// ── Firebase init ──────────────────────────────────────────────────────────
+// ── AWS S3 ─────────────────────────────────────────────────────────────────
+const s3 = new S3Client({
+  region: process.env.AWS_REGION || "us-east-1",
+  credentials: {
+    accessKeyId:     process.env.AWS_ACCESS_KEY_ID     || "",
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
+  },
+});
+const S3_BUCKET = process.env.S3_BUCKET || "";
+
+function s3Key(storagePath) {
+  return `files/${storagePath}`;
+}
+
+// ── Firebase init (Auth + Realtime Database) ────────────────────────────────
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: process.env.FIREBASE_DATABASE_URL
+  credential:  admin.credential.cert(serviceAccount),
+  databaseURL: process.env.FIREBASE_DATABASE_URL || "",
 });
 const db = admin.database();
 
-// ── Express ────────────────────────────────────────────────────────────────
+// ── Express ─────────────────────────────────────────────────────────────────
 const app  = express();
 const PORT = process.env.PORT || 10000;
 
-// ── Trust Render's reverse proxy so express-rate-limit reads the real client IP ──
-// Render terminates TLS and forwards requests via a single trusted proxy hop.
 app.set("trust proxy", 1);
 
-// ── Security headers (Helmet) ──────────────────────────────────────────────
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }, // allow Supabase CDN images
-  contentSecurityPolicy: false  // CSP is set on Firebase Hosting side
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: false,
 }));
 
-// ── CORS: only allow requests from our Firebase Hosting domain ─────────────
 const allowedOrigin = process.env.SITE_URL || "https://access-control-system-335f5.web.app";
 app.use(cors({ origin: allowedOrigin }));
 
-// ── Body parsing with size limits ──────────────────────────────────────────
 app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 app.use(express.json({ limit: "10kb" }));
 
-// ── Multer for file uploads (memory storage, no size limit) ───────────────
-const upload = multer({
-  storage: multer.memoryStorage(),
+// ── Multer (small files → memory) ──────────────────────────────────────────
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Disk-based multer for chunk uploads
+const chunkUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(os.tmpdir(), "fileaccess_chunks", req.body.uploadId || "unknown");
+      fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const idx = parseInt(req.body.chunkIndex, 10);
+      cb(null, `chunk_${String(idx).padStart(6, "0")}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB per chunk
 });
 
-// ── Rate limiters ──────────────────────────────────────────────────────────
-const ecpayLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many requests, please try again later." }
-});
-const fileLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 300, // raised: chunked uploads can produce ~100 requests per large file
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many requests, please try again later." }
-});
+// ── Rate limiters ────────────────────────────────────────────────────────────
+const ecpayLimiter = rateLimit({ windowMs: 60_000, max: 30,  standardHeaders: true, legacyHeaders: false });
+const fileLimiter  = rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false });
+const dbLimiter    = rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false });
 
 app.use("/ecpay/", ecpayLimiter);
 app.use("/files/", fileLimiter);
+app.use("/db/",    dbLimiter);
 
-// ── Supabase helpers ───────────────────────────────────────────────────────
-const SUPABASE_URL    = process.env.SUPABASE_URL    || "";
-const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY || "";
-const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || "fileaccess";
-
-function supabaseHeaders() {
-  return {
-    "apikey":        SUPABASE_KEY,
-    "Authorization": `Bearer ${SUPABASE_KEY}`,
-  };
-}
-
-// ── Verify Firebase ID Token helper ───────────────────────────────────────
+// ── Firebase Auth helper ────────────────────────────────────────────────────
 async function verifyToken(req, res) {
-  const auth = req.headers.authorization || "";
+  const auth    = req.headers.authorization || "";
   const idToken = auth.startsWith("Bearer ") ? auth.slice(7) : req.body?.idToken;
   if (!idToken) { res.status(401).json({ error: "Missing token" }); return null; }
   try {
@@ -107,479 +118,394 @@ async function verifyToken(req, res) {
   }
 }
 
-// ── Health check ───────────────────────────────────────────────────────────
+// ── Admin check (reads from Firebase Realtime DB) ──────────────────────────
+async function isAdmin(uid) {
+  try {
+    const snap = await db.ref(`admins/${uid}`).get();
+    return snap.val() === true;
+  } catch {
+    return false;
+  }
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function sanitizeFilename(name) {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_") || "file";
+}
+
+function newId() {
+  return crypto.randomBytes(12).toString("hex");
+}
+
+function nowMs() {
+  return Date.now();
+}
+
+// ── Health ──────────────────────────────────────────────────────────────────
 app.get("/", (req, res) => res.send("FileAccess server is running ✓"));
 
 // ════════════════════════════════════════════════════════════════════════════
-// FILE ENDPOINTS
+// DATABASE PROXY  /db/*  → Firebase Realtime Database
 // ════════════════════════════════════════════════════════════════════════════
 
-// ── GET /files/signed-url?fileId=xxx ─────────────────────────────────────
-// Returns a 15-minute Supabase signed URL after verifying the user has access
-app.get("/files/signed-url", async (req, res) => {
+// GET /db/*
+app.get("/db/*", async (req, res) => {
   const decoded = await verifyToken(req, res);
   if (!decoded) return;
-  const uid    = decoded.uid;
-  const fileId = req.query.fileId;
-  if (!fileId) return res.status(400).json({ error: "Missing fileId" });
-
-  // Check access
+  const refPath = req.params[0];
   try {
-    const now = Date.now();
-    const accessSnap = await db.ref(`access/${uid}/${fileId}`).once("value");
-    if (!accessSnap.exists()) return res.status(403).json({ error: "Access denied" });
-    const access = accessSnap.val();
-    if (!access.granted) return res.status(403).json({ error: "Access denied" });
-    if (access.expiresAt && access.expiresAt < now) return res.status(403).json({ error: "Access expired" });
-  } catch {
-    return res.status(500).json({ error: "DB error" });
-  }
-
-  // Get file record to find the storage path
-  // Always use the raw storagePath field (never extract from the URL,
-  // which contains an already-encoded path and would cause double-encoding).
-  let filePath;
-  try {
-    const fileSnap = await db.ref(`files/${fileId}`).once("value");
-    if (!fileSnap.exists()) return res.status(404).json({ error: "File not found" });
-    const fileData = fileSnap.val();
-    filePath = fileData.storagePath || "";
-    // Legacy fallback: if storagePath is missing, extract raw path from URL and decode it
-    if (!filePath && fileData.url) {
-      const marker = `/object/public/${SUPABASE_BUCKET}/`;
-      const idx = fileData.url.indexOf(marker);
-      if (idx !== -1) filePath = decodeURIComponent(fileData.url.slice(idx + marker.length));
-    }
-  } catch {
-    return res.status(500).json({ error: "DB error" });
-  }
-
-  if (!filePath) return res.status(500).json({ error: "Cannot resolve file path" });
-
-  // Request signed URL from Supabase (900 seconds = 15 minutes)
-  // encodeURIComponent the raw storagePath exactly once here.
-  try {
-    const supaRes = await fetch(
-      `${SUPABASE_URL}/storage/v1/object/sign/${SUPABASE_BUCKET}/${encodeURIComponent(filePath)}`,
-      {
-        method: "POST",
-        headers: { ...supabaseHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ expiresIn: 900 })
-      }
-    );
-    if (!supaRes.ok) {
-      const err = await supaRes.text();
-      console.error("Supabase sign error:", err);
-      return res.status(500).json({ error: "Could not generate signed URL" });
-    }
-    const { signedURL } = await supaRes.json();
-    return res.json({ signedUrl: `${SUPABASE_URL}/storage/v1${signedURL}` });
+    const snap = await db.ref(refPath).get();
+    res.json(snap.val());
   } catch (err) {
-    console.error("Signed URL error:", err);
-    return res.status(500).json({ error: "Internal error" });
+    console.error("DB GET error:", err.message);
+    res.status(500).json({ error: "Database error" });
   }
 });
 
-// ── POST /files/upload ────────────────────────────────────────────────────
-// Admin-only: uploads file to Supabase, saves metadata to Firebase
-app.post("/files/upload", upload.single("file"), async (req, res) => {
-  // Verify token and admin status
+// PUT /db/*
+app.put("/db/*", async (req, res) => {
   const decoded = await verifyToken(req, res);
   if (!decoded) return;
-  const uid = decoded.uid;
-
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+  const refPath = req.params[0];
   try {
-    const adminSnap = await db.ref(`admins/${uid}`).once("value");
-    if (!adminSnap.exists()) return res.status(403).json({ error: "Admin only" });
-  } catch {
-    return res.status(500).json({ error: "DB error" });
+    await db.ref(refPath).set(req.body);
+    res.json(req.body);
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
   }
+});
+
+// POST /db/*  (push / auto-ID)
+app.post("/db/*", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+  const refPath = req.params[0];
+  try {
+    const newRef = await db.ref(refPath).push(req.body);
+    res.json({ name: newRef.key });
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// PATCH /db/*  (update sub-fields)
+app.patch("/db/*", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+  const refPath = req.params[0];
+  try {
+    await db.ref(refPath).update(req.body);
+    res.json(req.body);
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// DELETE /db/*
+app.delete("/db/*", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+  const refPath = req.params[0];
+  try {
+    await db.ref(refPath).remove();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// FILE ENDPOINTS  (S3)
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── GET /files/signed-url?fileId=xxx ────────────────────────────────────────
+app.get("/files/signed-url", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  const { uid } = decoded;
+  const fileId  = req.query.fileId;
+  if (!fileId) return res.status(400).json({ error: "Missing fileId" });
+
+  // Check access in Firebase
+  try {
+    const snap = await db.ref(`access/${uid}/${fileId}`).get();
+    const grant = snap.val();
+    if (!grant || !grant.granted) return res.status(403).json({ error: "Access denied" });
+    if (grant.expiresAt && grant.expiresAt < Date.now()) {
+      return res.status(403).json({ error: "Access expired" });
+    }
+  } catch {
+    return res.status(500).json({ error: "Database error" });
+  }
+
+  // Look up storagePath from Firebase
+  let storagePath;
+  try {
+    const snap = await db.ref(`files/${fileId}/storagePath`).get();
+    storagePath = snap.val();
+    if (!storagePath) return res.status(404).json({ error: "File not found" });
+  } catch {
+    return res.status(500).json({ error: "Database error" });
+  }
+
+  // Generate a pre-signed S3 URL (15 minutes)
+  try {
+    const command   = new GetObjectCommand({ Bucket: S3_BUCKET, Key: s3Key(storagePath) });
+    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 900 });
+    return res.json({ signedUrl });
+  } catch (err) {
+    console.error("S3 signed URL error:", err);
+    return res.status(500).json({ error: "Could not generate signed URL" });
+  }
+});
+
+// ── POST /files/upload  (small files ≤ 100 MB, multipart) ───────────────────
+app.post("/files/upload", upload.single("file"), async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
 
   const file = req.file;
   if (!file) return res.status(400).json({ error: "No file provided" });
 
-  // Validate MIME type (allowlist)
   const ALLOWED_MIMES = [
-    "application/pdf","application/epub+zip",
-    "image/png","image/jpeg","image/gif","image/webp","image/svg+xml",
-    "text/html","text/plain","text/markdown","text/csv",
-    "video/mp4","video/webm","audio/mpeg","audio/wav",
-    "model/stl","application/octet-stream",
+    "application/pdf", "application/epub+zip",
+    "image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml",
+    "text/html", "text/plain", "text/markdown", "text/csv",
+    "video/mp4", "video/webm", "audio/mpeg", "audio/wav",
+    "model/stl", "application/octet-stream",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/zip","application/x-rar-compressed"
+    "application/zip", "application/x-rar-compressed",
   ];
   if (!ALLOWED_MIMES.includes(file.mimetype)) {
     return res.status(400).json({ error: "File type not allowed" });
   }
 
-  // Upload to Supabase
-  const storagePath = `${Date.now()}_${file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+  const fileId      = newId();
+  const safeName    = sanitizeFilename(file.originalname);
+  const storagePath = `${fileId}_${safeName}`;
+
+  // Upload to S3
   try {
-    const supaRes = await fetch(
-      `${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${encodeURIComponent(storagePath)}`,
-      {
-        method: "POST",
-        headers: {
-          ...supabaseHeaders(),
-          "Content-Type": file.mimetype,
-          "x-upsert": "false"
-        },
-        body: file.buffer
-      }
-    );
-    if (!supaRes.ok) {
-      const err = await supaRes.text();
-      console.error("Supabase upload error:", err);
-      return res.status(500).json({ error: "Upload failed" });
-    }
+    await s3.send(new PutObjectCommand({
+      Bucket:      S3_BUCKET,
+      Key:         s3Key(storagePath),
+      Body:        file.buffer,
+      ContentType: file.mimetype,
+    }));
   } catch (err) {
-    console.error("Upload error:", err);
-    return res.status(500).json({ error: "Upload failed" });
+    console.error("S3 upload error:", err);
+    return res.status(500).json({ error: "Upload to S3 failed" });
   }
 
-  // Save metadata to Firebase /files
-  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${encodeURIComponent(storagePath)}`;
-  const fileRef = db.ref("files").push();
-  const fileData = {
+  const ts = nowMs();
+  const fileRecord = {
     name:        file.originalname,
     type:        file.mimetype,
     size:        file.size,
-    storagePath, // keep storage path for signed URL generation
-    url:         publicUrl,
-    uploadedBy:  uid,
-    uploadedAt:  Date.now()
+    storagePath,
+    uploadedBy:  decoded.uid,
+    uploadedAt:  ts,
   };
+
+  // Save metadata to Firebase
   try {
-    await fileRef.set(fileData);
+    await db.ref(`files/${fileId}`).set(fileRecord);
+    await db.ref(`logs/${"-" + newId()}`).set({
+      action: "file_upload", uid: decoded.uid, email: "", name: "",
+      timestamp: ts, fileName: file.originalname, fileId, fileSize: file.size,
+    });
   } catch (err) {
     console.error("Firebase write error:", err);
-    return res.status(500).json({ error: "Metadata save failed" });
+    // S3 upload succeeded — still return fileId so admin knows it landed
   }
 
-  // Activity log
-  db.ref("logs").push({
-    action:    "file_upload",
-    uid,
-    email:     "",
-    name:      "",
-    timestamp: Date.now(),
-    fileName:  file.originalname,
-    fileId:    fileRef.key,
-    fileSize:  file.size
-  }).catch(() => {});
-
-  return res.json({ fileId: fileRef.key, url: publicUrl, storagePath });
+  return res.json({ fileId, storagePath });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-// CHUNKED UPLOAD ENDPOINTS  (for files > 100 MB)
-//
-// Flow:
-//   1. Client slices the file into 5 MB chunks.
-//   2. For each chunk: POST /files/upload-chunk  { uploadId, chunkIndex, totalChunks, file }
-//      → server writes the chunk to a temp dir on disk (never fully in RAM).
-//   3. After all chunks arrive: POST /files/upload-merge  { uploadId, filename, mimetype, totalChunks }
-//      → server concatenates chunks, streams the result to Supabase, then cleans up.
-// ════════════════════════════════════════════════════════════════════════════
-
-// Multer instance that writes chunks to disk (not memory)
-const chunkUpload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => {
-      // Each upload gets its own temp subdirectory named by uploadId
-      const dir = path.join(os.tmpdir(), "fileaccess_chunks", req.body.uploadId || "unknown");
-      fs.mkdirSync(dir, { recursive: true });
-      cb(null, dir);
-    },
-    filename: (req, file, cb) => {
-      // Name each chunk file by its index so we can reassemble in order
-      const idx = parseInt(req.body.chunkIndex, 10);
-      cb(null, `chunk_${String(idx).padStart(6, "0")}`);
-    }
-  }),
-  limits: { fileSize: 10 * 1024 * 1024 } // 10 MB max per chunk request (chunks are 5 MB)
-});
-
-// ── POST /files/upload-chunk ──────────────────────────────────────────────
-// Receives one chunk. Body fields: uploadId, chunkIndex, totalChunks
+// ── POST /files/upload-chunk  (one chunk at a time, stored on Render's tmp) ──
 app.post("/files/upload-chunk", chunkUpload.single("file"), async (req, res) => {
   const decoded = await verifyToken(req, res);
   if (!decoded) return;
-  const uid = decoded.uid;
-
-  try {
-    const adminSnap = await db.ref(`admins/${uid}`).once("value");
-    if (!adminSnap.exists()) return res.status(403).json({ error: "Admin only" });
-  } catch {
-    return res.status(500).json({ error: "DB error" });
-  }
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
 
   const { uploadId, chunkIndex, totalChunks } = req.body;
   if (!uploadId || chunkIndex === undefined || !totalChunks) {
     return res.status(400).json({ error: "Missing uploadId, chunkIndex, or totalChunks" });
   }
-  if (!req.file) {
-    return res.status(400).json({ error: "No chunk data received" });
-  }
+  if (!req.file) return res.status(400).json({ error: "No chunk data received" });
 
-  // Chunk was already written to disk by multer — nothing else to do here.
   return res.json({ ok: true, chunkIndex: parseInt(chunkIndex, 10) });
 });
 
-// ── POST /files/upload-merge ──────────────────────────────────────────────
-// Merges all chunks, streams to Supabase, saves metadata, cleans up temp files.
-// Body (JSON): { uploadId, filename, mimetype, totalChunks }
+// ── POST /files/upload-merge  (assemble chunks → S3) ────────────────────────
 app.post("/files/upload-merge", async (req, res) => {
   const decoded = await verifyToken(req, res);
   if (!decoded) return;
-  const uid = decoded.uid;
-
-  try {
-    const adminSnap = await db.ref(`admins/${uid}`).once("value");
-    if (!adminSnap.exists()) return res.status(403).json({ error: "Admin only" });
-  } catch {
-    return res.status(500).json({ error: "DB error" });
-  }
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
 
   const { uploadId, filename, mimetype, totalChunks } = req.body;
   if (!uploadId || !filename || !mimetype || !totalChunks) {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  const ALLOWED_MIMES = [
-    "application/pdf","application/epub+zip",
-    "image/png","image/jpeg","image/gif","image/webp","image/svg+xml",
-    "text/html","text/plain","text/markdown","text/csv",
-    "video/mp4","video/webm","audio/mpeg","audio/wav",
-    "model/stl","application/octet-stream",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/zip","application/x-rar-compressed"
-  ];
-  if (!ALLOWED_MIMES.includes(mimetype)) {
-    return res.status(400).json({ error: "File type not allowed" });
+  const n        = parseInt(totalChunks, 10);
+  const chunkDir = path.join(os.tmpdir(), "fileaccess_chunks", uploadId);
+
+  // Verify all chunks exist
+  for (let i = 0; i < n; i++) {
+    const p = path.join(chunkDir, `chunk_${String(i).padStart(6, "0")}`);
+    if (!fs.existsSync(p)) return res.status(400).json({ error: `Missing chunk ${i}` });
   }
 
-  const chunkDir    = path.join(os.tmpdir(), "fileaccess_chunks", uploadId);
-  const mergedPath  = path.join(os.tmpdir(), "fileaccess_chunks", `${uploadId}_merged`);
-  const numChunks   = parseInt(totalChunks, 10);
+  const fileId      = newId();
+  const safeName    = sanitizeFilename(filename);
+  const storagePath = `${fileId}_${safeName}`;
+  const key         = s3Key(storagePath);
 
-  // Verify all chunks exist before we start writing
-  for (let i = 0; i < numChunks; i++) {
-    const chunkPath = path.join(chunkDir, `chunk_${String(i).padStart(6, "0")}`);
-    if (!fs.existsSync(chunkPath)) {
-      return res.status(400).json({ error: `Missing chunk ${i}` });
-    }
+  // Stream all chunks into a single Buffer then upload
+  // (For very large files this could be replaced with S3 multipart upload)
+  let totalSize = 0;
+  const parts   = [];
+  for (let i = 0; i < n; i++) {
+    const buf = fs.readFileSync(path.join(chunkDir, `chunk_${String(i).padStart(6, "0")}`));
+    totalSize += buf.length;
+    parts.push(buf);
   }
+  const combined = Buffer.concat(parts);
 
-  // Concatenate chunks into a single temp file
+  // Clean up temp chunks
+  fs.rmSync(chunkDir, { recursive: true, force: true });
+
   try {
-    const out = fs.createWriteStream(mergedPath);
-    await new Promise((resolve, reject) => {
-      out.on("error", reject);
-      (async () => {
-        for (let i = 0; i < numChunks; i++) {
-          const chunkPath = path.join(chunkDir, `chunk_${String(i).padStart(6, "0")}`);
-          await new Promise((res2, rej2) => {
-            const inp = fs.createReadStream(chunkPath);
-            inp.on("error", rej2);
-            inp.on("end", res2);
-            inp.pipe(out, { end: false });
-          });
-        }
-        out.end();
-      })().catch(reject);
-      out.on("finish", resolve);
-    });
+    await s3.send(new PutObjectCommand({
+      Bucket:      S3_BUCKET,
+      Key:         key,
+      Body:        combined,
+      ContentType: mimetype,
+    }));
   } catch (err) {
-    console.error("Chunk merge error:", err);
-    return res.status(500).json({ error: "Failed to merge chunks" });
+    console.error("S3 merge upload error:", err);
+    return res.status(500).json({ error: "S3 upload failed" });
   }
 
-  // Get final file size
-  const fileSize = fs.statSync(mergedPath).size;
-
-  // Stream the merged file to Supabase
-  const storagePath = `${Date.now()}_${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-  try {
-    const fileStream = fs.createReadStream(mergedPath);
-    const supaRes = await fetch(
-      `${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${encodeURIComponent(storagePath)}`,
-      {
-        method: "POST",
-        headers: {
-          ...supabaseHeaders(),
-          "Content-Type": mimetype,
-          "Content-Length": String(fileSize),
-          "x-upsert": "false"
-        },
-        body: fileStream
-      }
-    );
-    if (!supaRes.ok) {
-      const err = await supaRes.text();
-      console.error("Supabase chunked upload error:", err);
-      return res.status(500).json({ error: "Upload to storage failed" });
-    }
-  } catch (err) {
-    console.error("Supabase stream error:", err);
-    return res.status(500).json({ error: "Upload to storage failed" });
-  } finally {
-    // Clean up temp files regardless of outcome
-    try { fs.rmSync(path.join(os.tmpdir(), "fileaccess_chunks", uploadId), { recursive: true, force: true }); } catch {}
-    try { fs.unlinkSync(mergedPath); } catch {}
-  }
-
-  // Save metadata to Firebase
-  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${encodeURIComponent(storagePath)}`;
-  const fileRef   = db.ref("files").push();
-  const fileData  = {
+  const ts = nowMs();
+  const fileRecord = {
     name:        filename,
     type:        mimetype,
-    size:        fileSize,
+    size:        totalSize,
     storagePath,
-    url:         publicUrl,
-    uploadedBy:  uid,
-    uploadedAt:  Date.now()
+    uploadedBy:  decoded.uid,
+    uploadedAt:  ts,
   };
+
   try {
-    await fileRef.set(fileData);
+    await db.ref(`files/${fileId}`).set(fileRecord);
+    await db.ref(`logs/${"-" + newId()}`).set({
+      action: "file_upload", uid: decoded.uid, email: "", name: "",
+      timestamp: ts, fileName: filename, fileId, fileSize: totalSize,
+    });
   } catch (err) {
     console.error("Firebase write error:", err);
-    return res.status(500).json({ error: "Metadata save failed" });
   }
 
-  // Activity log
-  db.ref("logs").push({
-    action:    "file_upload",
-    uid,
-    email:     "",
-    name:      "",
-    timestamp: Date.now(),
-    fileName:  filename,
-    fileId:    fileRef.key,
-    fileSize
-  }).catch(() => {});
-
-  return res.json({ fileId: fileRef.key, url: publicUrl, storagePath });
+  return res.json({ fileId, storagePath });
 });
 
-// ── DELETE /files/:fileId ─────────────────────────────────────────────────
-// Admin-only: deletes from Supabase + Firebase
+// ── DELETE /files/:fileId ────────────────────────────────────────────────────
 app.delete("/files/:fileId", async (req, res) => {
   const decoded = await verifyToken(req, res);
   if (!decoded) return;
-  const uid    = decoded.uid;
-  const fileId = req.params.fileId;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
 
-  // Check admin
+  const { fileId } = req.params;
+
+  // Get storagePath from Firebase
+  let storagePath;
   try {
-    const adminSnap = await db.ref(`admins/${uid}`).once("value");
-    if (!adminSnap.exists()) return res.status(403).json({ error: "Admin only" });
+    const snap = await db.ref(`files/${fileId}/storagePath`).get();
+    storagePath = snap.val();
   } catch {
-    return res.status(500).json({ error: "DB error" });
+    return res.status(500).json({ error: "Database error" });
   }
+  if (!storagePath) return res.status(404).json({ error: "File not found" });
 
-  // Get file metadata
-  let fileData;
+  // Delete from S3
   try {
-    const snap = await db.ref(`files/${fileId}`).once("value");
-    if (!snap.exists()) return res.status(404).json({ error: "File not found" });
-    fileData = snap.val();
-  } catch {
-    return res.status(500).json({ error: "DB error" });
-  }
-
-  // Delete from Supabase — use raw storagePath to avoid double-encoding.
-  // Legacy fallback: decode from URL if storagePath is missing.
-  const storagePath = fileData.storagePath || (() => {
-    const marker = `/object/public/${SUPABASE_BUCKET}/`;
-    const idx = (fileData.url || "").indexOf(marker);
-    return idx !== -1 ? decodeURIComponent(fileData.url.slice(idx + marker.length)) : "";
-  })();
-
-  if (storagePath) {
-    try {
-      await fetch(
-        `${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${encodeURIComponent(storagePath)}`,
-        { method: "DELETE", headers: supabaseHeaders() }
-      );
-    } catch (err) {
-      console.warn("Supabase delete warning:", err.message);
-      // non-fatal — continue with Firebase cleanup
-    }
-  }
-
-  // Delete from Firebase (files + access + products.fileIds)
-  const updates = { [`files/${fileId}`]: null };
-  try {
-    const [accessSnap, productsSnap] = await Promise.all([
-      db.ref("access").once("value"),
-      db.ref("products").once("value")
-    ]);
-    if (accessSnap.exists()) {
-      Object.keys(accessSnap.val()).forEach(u => {
-        if (accessSnap.val()[u][fileId]) updates[`access/${u}/${fileId}`] = null;
-      });
-    }
-    if (productsSnap.exists()) {
-      Object.entries(productsSnap.val()).forEach(([pk, p]) => {
-        if (Array.isArray(p.fileIds) && p.fileIds.includes(fileId)) {
-          updates[`products/${pk}/fileIds`] = p.fileIds.filter(id => id !== fileId);
-        }
-      });
-    }
-    await db.ref().update(updates);
+    await s3.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: s3Key(storagePath) }));
   } catch (err) {
-    return res.status(500).json({ error: "Firebase cleanup failed" });
+    console.error("S3 delete error:", err);
+    // Non-fatal — continue to clean up Firebase
   }
 
-  // Log
-  db.ref("logs").push({
-    action: "file_delete", uid, timestamp: Date.now(),
-    fileName: fileData.name, fileId
-  }).catch(() => {});
+  // Remove from Firebase: files record, access grants referencing this file,
+  // and remove fileId from any products that list it
+  try {
+    await db.ref(`files/${fileId}`).remove();
 
-  return res.json({ ok: true });
+    // Remove from access grants
+    const accessSnap = await db.ref("access").get();
+    const accessData = accessSnap.val() || {};
+    const updates    = {};
+    for (const uid of Object.keys(accessData)) {
+      if (accessData[uid][fileId]) {
+        updates[`access/${uid}/${fileId}`] = null;
+      }
+    }
+
+    // Remove fileId from products
+    const prodSnap = await db.ref("products").get();
+    const products = prodSnap.val() || {};
+    for (const [pid, prod] of Object.entries(products)) {
+      if (Array.isArray(prod.fileIds) && prod.fileIds.includes(fileId)) {
+        updates[`products/${pid}/fileIds`] = prod.fileIds.filter(id => id !== fileId);
+      }
+    }
+
+    if (Object.keys(updates).length > 0) await db.ref().update(updates);
+
+    await db.ref(`logs/${"-" + newId()}`).set({
+      action: "file_delete", uid: decoded.uid, timestamp: nowMs(), fileId,
+    });
+  } catch (err) {
+    console.error("Firebase cleanup error:", err);
+  }
+
+  res.json({ ok: true });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
 // ECPAY ENDPOINTS
 // ════════════════════════════════════════════════════════════════════════════
 
-// ── ECPay CheckMacValue verification ──────────────────────────────────────
 function verifyCheckMacValue(params) {
   const hashKey = process.env.ECPAY_HASH_KEY;
   const hashIV  = process.env.ECPAY_HASH_IV;
-  if (!hashKey || !hashIV) { console.error("ECPAY keys not set"); return false; }
+  if (!hashKey || !hashIV) return false;
   const received = params.CheckMacValue;
   if (!received) return false;
 
   const sorted = Object.keys(params)
     .filter(k => k !== "CheckMacValue")
     .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
-    .map(k => `${k}=${params[k]}`)
-    .join("&");
+    .map(k => `${k}=${params[k]}`).join("&");
 
-  const raw = `HashKey=${hashKey}&${sorted}&HashIV=${hashIV}`;
-  const encoded = encodeURIComponent(raw)
-    .toLowerCase()
+  const raw     = `HashKey=${hashKey}&${sorted}&HashIV=${hashIV}`;
+  const encoded = encodeURIComponent(raw).toLowerCase()
     .replace(/%20/g, "+").replace(/%21/g, "!").replace(/%27/g, "'")
     .replace(/%28/g, "(").replace(/%29/g, ")").replace(/%2a/g, "*");
 
   return crypto.createHash("sha256").update(encoded).digest("hex").toUpperCase() === received;
 }
 
-// ── POST /ecpay/callback ───────────────────────────────────────────────────
 app.post("/ecpay/callback", async (req, res) => {
   const params = req.body;
-
-  console.log("ECPay callback:", {
-    MerchantTradeNo: params.MerchantTradeNo,
-    RtnCode: params.RtnCode,
-    PaymentType: params.PaymentType
-  });
+  console.log("ECPay callback:", { MerchantTradeNo: params.MerchantTradeNo, RtnCode: params.RtnCode });
 
   if (!verifyCheckMacValue(params)) {
     console.error("CheckMacValue failed");
@@ -592,41 +518,37 @@ app.post("/ecpay/callback", async (req, res) => {
 
   const tradeNo = params.MerchantTradeNo || "";
 
-  // ── Idempotency: prevent double-processing on ECPay retry ─────────────────
+  // Idempotency check
   let tradeData;
   try {
-    const mapSnap = await db.ref(`tradeMap/${tradeNo}`).once("value");
-    if (!mapSnap.exists()) { console.error("tradeMap not found:", tradeNo); return res.send("0|Trade not found"); }
-    tradeData = mapSnap.val();
-    if (tradeData.processed) {
-      console.log("Already processed, skipping:", tradeNo);
-      return res.send("1|OK");
-    }
+    const snap = await db.ref(`trade_map/${tradeNo}`).get();
+    tradeData  = snap.val();
+    if (!tradeData) return res.send("0|Trade not found");
+    if (tradeData.processed) return res.send("1|OK");
   } catch (err) {
-    console.error("tradeMap read error:", err);
+    console.error("trade_map read error:", err);
     return res.send("0|DB read error");
   }
 
   const { uid, productKey } = tradeData;
   if (!uid || !productKey) return res.send("0|Missing uid or productKey");
 
-  // Mark as processed immediately (idempotency lock)
+  // Mark processed immediately
   try {
-    await db.ref(`tradeMap/${tradeNo}/processed`).set(true);
-  } catch { /* non-fatal, continue */ }
+    await db.ref(`trade_map/${tradeNo}/processed`).set(true);
+  } catch { /* non-fatal */ }
 
   // Load product
   let product;
   try {
-    const snap = await db.ref(`products/${productKey}`).once("value");
-    if (!snap.exists()) { console.error("Product not found:", productKey); return res.send("0|Product not found"); }
-    product = snap.val();
+    const snap = await db.ref(`products/${productKey}`).get();
+    product    = snap.val();
+    if (!product) return res.send("0|Product not found");
   } catch (err) {
-    console.error("Firebase read error:", err);
+    console.error("Product read error:", err);
     return res.send("0|DB read error");
   }
 
-  // Grant access
   const fileIds      = product.fileIds || [];
   const durationDays = product.durationDays || null;
   const now          = Date.now();
@@ -639,33 +561,32 @@ app.post("/ecpay/callback", async (req, res) => {
     updates[`access/${uid}/${fileId}`] = entry;
   }
 
-  const purchaseKey = db.ref("purchases").push().key;
+  const purchaseKey = "-" + crypto.randomBytes(12).toString("hex");
   updates[`purchases/${uid}/${purchaseKey}`] = {
-    merchantTradeNo: tradeNo, productKey,
+    merchantTradeNo: tradeNo, productKey, uid,
     productName: product.name || "", fileIds,
     amount: params.TradeAmt || 0, paymentType: params.PaymentType || "",
     paymentDate: params.PaymentDate || "", purchasedAt: now,
-    expiresAt: expiresAt || null
+    expiresAt: expiresAt || null,
   };
 
-  const logKey = db.ref("logs").push().key;
+  const logKey = "-" + crypto.randomBytes(12).toString("hex");
   updates[`logs/${logKey}`] = {
     action: "purchase", uid, email: "", name: "", timestamp: now,
-    productName: product.name || "", fileIds, tradeNo, amount: params.TradeAmt || 0
+    productName: product.name || "", fileIds, tradeNo, amount: params.TradeAmt || 0,
   };
 
   try {
     await db.ref().update(updates);
     console.log(`✓ Access granted: uid=${uid}, files=${fileIds.join(",")}`);
   } catch (err) {
-    console.error("Firebase write error:", err);
+    console.error("Multi-update error:", err);
     return res.send("0|DB write error");
   }
 
   return res.send("1|OK");
 });
 
-// ── POST /ecpay/create-order ───────────────────────────────────────────────
 app.post("/ecpay/create-order", async (req, res) => {
   const { productKey, idToken } = req.body;
   if (!productKey || !idToken) return res.status(400).json({ error: "Missing productKey or idToken" });
@@ -684,27 +605,27 @@ app.post("/ecpay/create-order", async (req, res) => {
 
   let product;
   try {
-    const snap = await db.ref(`products/${productKey}`).once("value");
-    if (!snap.exists()) return res.status(404).json({ error: "Product not found" });
-    product = snap.val();
-  } catch { return res.status(500).json({ error: "DB error" }); }
+    const snap = await db.ref(`products/${productKey}`).get();
+    product    = snap.val();
+    if (!product) return res.status(404).json({ error: "Product not found" });
+  } catch {
+    return res.status(500).json({ error: "Database error" });
+  }
 
-  // Use 5 cryptographically random hex chars (not timestamp % 100000 which cycles every ~28h
-  // and can collide for the same user+product pair within that window).
-  const randSuffix = crypto.randomBytes(3).toString("hex").slice(0, 5); // 5 hex chars
-  const shortPK    = productKey.replace(/[^A-Za-z0-9]/g, "").slice(0, 5).padEnd(5, "0");
-  const shortUID   = uid.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).padEnd(10, "0");
-  const merchantTradeNo = `${shortPK}${shortUID}${randSuffix}`; // 5+10+5 = 20 chars max
+  const randSuffix      = crypto.randomBytes(3).toString("hex").slice(0, 5);
+  const shortPK         = productKey.replace(/[^A-Za-z0-9]/g, "").slice(0, 5).padEnd(5, "0");
+  const shortUID        = uid.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).padEnd(10, "0");
+  const merchantTradeNo = `${shortPK}${shortUID}${randSuffix}`;
 
   try {
-    await db.ref(`tradeMap/${merchantTradeNo}`).set({ uid, productKey, createdAt: Date.now() });
-  } catch(e) { /* non-fatal */ }
+    await db.ref(`trade_map/${merchantTradeNo}`).set({ uid, productKey, createdAt: Date.now(), processed: false });
+  } catch { /* non-fatal */ }
 
   const serverUrl = process.env.SERVER_URL || `https://${req.headers.host}`;
   const siteUrl   = process.env.SITE_URL   || allowedOrigin;
 
   const now_tw = new Date(Date.now() + 8 * 60 * 60 * 1000);
-  const pad = n => String(n).padStart(2, "0");
+  const pad    = n => String(n).padStart(2, "0");
   const tradeDate = `${now_tw.getUTCFullYear()}/${pad(now_tw.getUTCMonth()+1)}/${pad(now_tw.getUTCDate())} ${pad(now_tw.getUTCHours())}:${pad(now_tw.getUTCMinutes())}:${pad(now_tw.getUTCSeconds())}`;
 
   const safeName = (product.name || "File Access").replace(/[#%&+]/g, "").slice(0, 200);

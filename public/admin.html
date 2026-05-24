@@ -434,7 +434,7 @@
       <div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
         <div>
           <h2>Storage Usage</h2>
-          <p class="text-muted">Live Supabase storage breakdown. Free tier limit: 1 GB.</p>
+          <p class="text-muted">Local Windows storage breakdown. Limit = your disk space.</p>
         </div>
         <button class="btn btn-ghost btn-sm" id="storageRefreshBtn" onclick="loadStorage()" style="display:flex;align-items:center;gap:0.4rem;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
@@ -449,8 +449,8 @@
           <div id="storageUsed" style="font-size:1.6rem;font-weight:700;color:var(--color-primary);">—</div>
         </div>
         <div class="card" style="padding:1.25rem;text-align:center;">
-          <div class="text-muted text-sm" style="margin-bottom:0.35rem;">Free Tier Limit</div>
-          <div style="font-size:1.6rem;font-weight:700;color:var(--color-text-muted);">1 GB</div>
+          <div class="text-muted text-sm" style="margin-bottom:0.35rem;">Disk Limit</div>
+          <div style="font-size:1.6rem;font-weight:700;color:var(--color-text-muted);">Your disk</div>
         </div>
         <div class="card" style="padding:1.25rem;text-align:center;">
           <div class="text-muted text-sm" style="margin-bottom:0.35rem;">Remaining</div>
@@ -619,9 +619,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { firebaseConfig, dbGet, dbSet, dbDelete, dbPatch, dbPush } from "./js/config.js";
-
-  const RENDER_SERVER_URL = "https://fileaccess-ecpay.onrender.com";
+  import { firebaseConfig, dbGet, dbSet, dbDelete, dbPatch, dbPush, RENDER_SERVER_URL } from "./js/config.js";
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
@@ -1894,7 +1892,9 @@
   // STORAGE
   // ════════════════════════════════════════════════════════════════════════
 
-  const STORAGE_LIMIT_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB free tier
+  // No fixed cloud limit — show relative usage against a display ceiling of 100 GB.
+  // The bar just gives a visual sense of growth; actual limit is your disk.
+  const STORAGE_LIMIT_BYTES = 100 * 1024 * 1024 * 1024; // 100 GB display ceiling
 
   function fmtBytes(bytes) {
     if (bytes === 0) return "0 B";
@@ -1934,7 +1934,7 @@
       if (!filesVal) {
         emptyEl.classList.remove("hidden");
         document.getElementById("storageUsed").textContent      = "0 B";
-        document.getElementById("storageRemaining").textContent = fmtBytes(STORAGE_LIMIT_BYTES);
+        document.getElementById("storageRemaining").textContent = "∞ (disk)";
         document.getElementById("storageFileCount").textContent = "0";
         document.getElementById("storagePercent").textContent   = "0%";
         return;
@@ -1951,7 +1951,7 @@
 
       // Update summary cards
       document.getElementById("storageUsed").textContent      = fmtBytes(totalBytes);
-      document.getElementById("storageRemaining").textContent = fmtBytes(remaining);
+      document.getElementById("storageRemaining").textContent = "∞ (disk)";
       document.getElementById("storageFileCount").textContent = files.length;
       document.getElementById("storagePercent").textContent   = usedPct.toFixed(1) + "%";
       document.getElementById("storageTableMeta").textContent = `${files.length} file${files.length !== 1 ? "s" : ""}`;

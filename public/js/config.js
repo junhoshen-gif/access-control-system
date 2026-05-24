@@ -1,12 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Firebase Configuration
-// Replace these values with your actual Firebase project settings.
-// Find them in: Firebase Console → Project Settings → Your Apps → SDK setup
+// Firebase Configuration  (used for Authentication only)
+// All database/storage operations now go through the Render server → Windows EXE.
 // ─────────────────────────────────────────────────────────────────────────────
 export const firebaseConfig = {
   apiKey:            "AIzaSyBmFB_qE4BYU3HA1bruC8nm0P1pnRFy7gM",
   authDomain:        "access-control-system-335f5.firebaseapp.com",
-  databaseURL:       "https://access-control-system-335f5-default-rtdb.firebaseio.com",
   projectId:         "access-control-system-335f5",
   storageBucket:     "access-control-system-335f5.appspot.com",
   messagingSenderId: "551173243790",
@@ -14,9 +12,12 @@ export const firebaseConfig = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Render server URL  (all DB + file operations go through here)
+// ─────────────────────────────────────────────────────────────────────────────
+export const RENDER_SERVER_URL = "https://fileaccess-ecpay.onrender.com";
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Safari-compatible fetch timeout helper
-// AbortSignal.timeout() is only available in Safari 16.4+; this polyfill works
-// back to Safari 12 using AbortController + setTimeout.
 // ─────────────────────────────────────────────────────────────────────────────
 function fetchWithTimeout(url, options, ms) {
   const controller = new AbortController();
@@ -26,105 +27,94 @@ function fetchWithTimeout(url, options, ms) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Firebase REST helper — bypasses SDK WebSocket entirely (Safari-safe)
-// Safari blocks authenticated WebSocket connections; plain HTTPS always works.
-// Usage: await dbGet(auth, "admins/uid123")  → returns the value or null
+// DB helpers  — now proxy through Render server → Windows EXE
+//
+// All calls require a Firebase ID token for auth.
+// The Render server verifies the token, then forwards to the Windows EXE.
+//
+// API mirrors the old Firebase REST shape so admin.html needs minimal changes:
+//   dbGet(auth, "files")               → GET  /db/files
+//   dbGet(auth, "admins/uid")          → GET  /db/admins/uid
+//   dbSet(auth, "users/uid", {...})    → PUT  /db/users/uid
+//   dbDelete(auth, "logs")             → DELETE /db/logs
+//   dbPatch(auth, "", {updates})       → POST /db/   (multi-path)
+//   dbPush(auth, "logs", {...})        → POST /db/logs
 // ─────────────────────────────────────────────────────────────────────────────
-export async function dbGet(auth, path) {
-  const DB_URL = "https://access-control-system-335f5-default-rtdb.firebaseio.com";
-  let token = null;
+
+async function getIdToken(auth) {
   try {
     const user = auth.currentUser;
-    if (user) token = await user.getIdToken();
+    if (user) return await user.getIdToken();
   } catch (_) {}
-
-  const url = `${DB_URL}/${path}.json${token ? `?auth=${token}` : ""}`;
-  const res = await fetchWithTimeout(url, {}, 10000);
-  if (!res.ok) throw new Error(`DB REST ${res.status}: ${await res.text()}`);
-  return await res.json(); // null if node doesn't exist
+  return null;
 }
 
-// REST DELETE — removes a node from the database
-export async function dbDelete(auth, path) {
-  const DB_URL = "https://access-control-system-335f5-default-rtdb.firebaseio.com";
-  let token = null;
-  try {
-    const user = auth.currentUser;
-    if (user) token = await user.getIdToken();
-  } catch (_) {}
-
-  const url = `${DB_URL}/${path}.json${token ? `?auth=${token}` : ""}`;
-  const res = await fetchWithTimeout(url, { method: "DELETE" }, 10000);
-  if (!res.ok) throw new Error(`DB REST DELETE ${res.status}: ${await res.text()}`);
-  return await res.json();
+export async function dbGet(auth, dbPath) {
+  const token = await getIdToken(auth);
+  const url   = `${RENDER_SERVER_URL}/db/${dbPath}`;
+  const res   = await fetchWithTimeout(url, {
+    headers: token ? { "Authorization": `Bearer ${token}` } : {}
+  }, 15000);
+  if (!res.ok) throw new Error(`DB GET ${dbPath} → ${res.status}: ${await res.text()}`);
+  return res.json();
 }
 
-// REST PATCH — merges/updates specific fields at a path
-export async function dbPatch(auth, path, value) {
-  const DB_URL = "https://access-control-system-335f5-default-rtdb.firebaseio.com";
-  let token = null;
-  try {
-    const user = auth.currentUser;
-    if (user) token = await user.getIdToken();
-  } catch (_) {}
+export async function dbDelete(auth, dbPath) {
+  const token = await getIdToken(auth);
+  const url   = `${RENDER_SERVER_URL}/db/${dbPath}`;
+  const res   = await fetchWithTimeout(url, {
+    method: "DELETE",
+    headers: token ? { "Authorization": `Bearer ${token}` } : {}
+  }, 15000);
+  if (!res.ok) throw new Error(`DB DELETE ${dbPath} → ${res.status}`);
+  return res.json();
+}
 
-  const url = `${DB_URL}/${path}.json${token ? `?auth=${token}` : ""}`;
+export async function dbPatch(auth, dbPath, value) {
+  const token = await getIdToken(auth);
+  // Empty path = multi-path update → POST /db/
+  const url = dbPath
+    ? `${RENDER_SERVER_URL}/db/${dbPath}`
+    : `${RENDER_SERVER_URL}/db/`;
+  const method = dbPath ? "PATCH" : "POST";
   const res = await fetchWithTimeout(url, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { "Authorization": `Bearer ${token}` } : {})
+    },
     body: JSON.stringify(value)
-  }, 10000);
-  if (!res.ok) throw new Error(`DB REST PATCH ${res.status}: ${await res.text()}`);
-  return await res.json();
+  }, 15000);
+  if (!res.ok) throw new Error(`DB PATCH ${dbPath} → ${res.status}`);
+  return res.json();
 }
 
-// REST POST — pushes a new child node (like Firebase push())
-export async function dbPush(auth, path, value) {
-  const DB_URL = "https://access-control-system-335f5-default-rtdb.firebaseio.com";
-  let token = null;
-  try {
-    const user = auth.currentUser;
-    if (user) token = await user.getIdToken();
-  } catch (_) {}
-
-  const url = `${DB_URL}/${path}.json${token ? `?auth=${token}` : ""}`;
-  const res = await fetchWithTimeout(url, {
+export async function dbPush(auth, dbPath, value) {
+  const token = await getIdToken(auth);
+  const url   = `${RENDER_SERVER_URL}/db/${dbPath}`;
+  const res   = await fetchWithTimeout(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { "Authorization": `Bearer ${token}` } : {})
+    },
     body: JSON.stringify(value)
-  }, 10000);
-  if (!res.ok) throw new Error(`DB REST POST ${res.status}: ${await res.text()}`);
-  return await res.json(); // returns { name: "-Nxxx..." } (the new key)
+  }, 15000);
+  if (!res.ok) throw new Error(`DB POST ${dbPath} → ${res.status}`);
+  return res.json(); // returns { name: "-abc123..." }
 }
 
-// REST PUT — bypasses SDK WebSocket for writes too
-export async function dbSet(auth, path, value) {
-  const DB_URL = "https://access-control-system-335f5-default-rtdb.firebaseio.com";
-  let token = null;
-  try {
-    const user = auth.currentUser;
-    if (user) token = await user.getIdToken();
-  } catch (_) {}
-
-  const url = `${DB_URL}/${path}.json${token ? `?auth=${token}` : ""}`;
-  const res = await fetchWithTimeout(url, {
+export async function dbSet(auth, dbPath, value) {
+  const token = await getIdToken(auth);
+  const url   = `${RENDER_SERVER_URL}/db/${dbPath}`;
+  const res   = await fetchWithTimeout(url, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { "Authorization": `Bearer ${token}` } : {})
+    },
     body: JSON.stringify(value)
-  }, 10000);
-  if (!res.ok) throw new Error(`DB REST PUT ${res.status}: ${await res.text()}`);
-  return await res.json();
+  }, 15000);
+  if (!res.ok) throw new Error(`DB PUT ${dbPath} → ${res.status}`);
+  return res.json();
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Supabase Configuration
-// Find these in: Supabase Dashboard → Project Settings → API
-//   supabaseUrl   → "Project URL"
-//   supabaseKey   → "anon / public" key  (safe to expose in browser)
-// bucketName: the name of the Storage bucket you create in Supabase
-// ─────────────────────────────────────────────────────────────────────────────
-export const supabaseConfig = {
-  supabaseUrl: "https://afzkjvtbrjhorspenfzy.supabase.co",
-  supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmemtqdnRicmpob3JzcGVuZnp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwOTA5OTUsImV4cCI6MjA5NDY2Njk5NX0.u5qsoBWqtpGVoa_c1S8N6bUWz5L9jS7gdfqugvd5u1g",
-  bucketName:  "fileaccess"
-};
