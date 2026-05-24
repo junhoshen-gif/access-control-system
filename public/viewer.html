@@ -16,7 +16,9 @@
       --text:      #f1f5f9;
       --muted:     #94a3b8;
       --accent:    #2563eb;
+      --accent2:   #3b82f6;
       --error:     #ef4444;
+      --success:   #22c55e;
     }
 
     html, body {
@@ -24,12 +26,12 @@
       background: var(--bg);
       color: var(--text);
       font-family: Inter, system-ui, sans-serif;
-      overflow: hidden; /* prevent body scroll — viewer scrolls internally */
+      overflow: hidden;
       user-select: none;
       -webkit-user-select: none;
     }
 
-    /* ── Top bar ─────────────────────────────────────────────────────────── */
+    /* ── Top bar ─────────────────────────────────────────────── */
     #topbar {
       position: fixed;
       top: 0; left: 0; right: 0;
@@ -93,7 +95,7 @@
     #pdfControls button:hover { background: var(--accent); }
     #zoomLabel { font-size: 0.82rem; color: var(--muted); min-width: 3rem; text-align: center; }
 
-    /* ── Main viewer area ────────────────────────────────────────────────── */
+    /* ── Main viewer area ────────────────────────────────────── */
     #viewerArea {
       position: fixed;
       top: 52px; left: 0; right: 0; bottom: 0;
@@ -105,42 +107,187 @@
       padding: 1.5rem 1rem 3rem;
     }
 
-    /* ── Loading / error states ──────────────────────────────────────────── */
-    #statusBox {
+    /* ── Loading screen ──────────────────────────────────────── */
+    #loadingScreen {
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 1rem;
+      gap: 2rem;
       height: 100%;
-      color: var(--muted);
-      font-size: 0.9rem;
+      width: 100%;
+      max-width: 440px;
+      margin: auto;
+    }
+
+    #loadingIcon {
+      width: 56px; height: 56px;
+      border-radius: 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+    }
+
+    #loadingTitle {
+      font-size: 1.05rem;
+      font-weight: 600;
       text-align: center;
     }
-    .spinner {
-      width: 36px; height: 36px;
-      border: 3px solid var(--border);
-      border-top-color: var(--accent);
+
+    /* Progress bar container */
+    #progressWrap {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+    }
+
+    /* Individual step */
+    .progress-step {
+      display: flex;
+      align-items: center;
+      gap: 0.875rem;
+    }
+
+    .step-icon {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 0.8rem;
+      transition: all 0.3s ease;
+      color: var(--muted);
+    }
+    .step-icon.active {
+      border-color: var(--accent2);
+      background: rgba(59,130,246,0.12);
+      color: var(--accent2);
+    }
+    .step-icon.done {
+      border-color: var(--success);
+      background: rgba(34,197,94,0.12);
+      color: var(--success);
+    }
+    .step-icon.error {
+      border-color: var(--error);
+      background: rgba(239,68,68,0.12);
+      color: var(--error);
+    }
+
+    /* Spinning ring for active step */
+    .step-spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(59,130,246,0.25);
+      border-top-color: var(--accent2);
       border-radius: 50%;
       animation: spin 0.7s linear infinite;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── PDF canvas pages ────────────────────────────────────────────────── */
+    .step-text {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+    .step-label {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text);
+      transition: color 0.2s;
+    }
+    .step-sublabel {
+      font-size: 0.75rem;
+      color: var(--muted);
+      min-height: 1em;
+      transition: all 0.2s;
+    }
+    .progress-step.pending .step-label { color: var(--muted); }
+
+    /* Bar track between steps */
+    .step-track {
+      margin-left: 15px;
+      width: 2px;
+      height: 18px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .step-track .fill {
+      width: 100%;
+      height: 0%;
+      background: var(--accent2);
+      border-radius: 2px;
+      transition: height 0.4s ease;
+    }
+    .step-track.filled .fill { height: 100%; }
+
+    /* Download progress sub-bar */
+    #downloadBar {
+      width: 100%;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 0.3rem;
+    }
+    #downloadBarFill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border-radius: 2px;
+      transition: width 0.2s ease;
+    }
+
+    /* ── Error state ─────────────────────────────────────────── */
+    #errorBox {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.2rem;
+      text-align: center;
+      max-width: 520px;
+      margin: auto;
+    }
+    #errorBox.visible { display: flex; }
+    #errorTitle { font-size: 1rem; font-weight: 600; color: var(--error); }
+    #errorDetail {
+      font-size: 0.8rem;
+      color: var(--muted);
+      background: var(--surface);
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      width: 100%;
+      text-align: left;
+      white-space: pre-wrap;
+    }
+    #errorBackBtn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1.4rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-family: inherit;
+    }
+    #errorBackBtn:hover { background: var(--accent2); }
+
+    /* ── PDF canvas pages ────────────────────────────────────── */
     .pdf-page-wrap {
       position: relative;
       margin-bottom: 1rem;
       box-shadow: 0 4px 24px rgba(0,0,0,0.5);
       border-radius: 4px;
       overflow: hidden;
-      line-height: 0; /* remove gap below canvas */
+      line-height: 0;
     }
-    .pdf-page-wrap canvas {
-      display: block;
-      max-width: 100%;
-    }
+    .pdf-page-wrap canvas { display: block; max-width: 100%; }
 
-    /* Watermark overlay sits on top of each canvas */
     .wm-canvas {
       position: absolute;
       inset: 0;
@@ -148,7 +295,7 @@
       z-index: 10;
     }
 
-    /* ── Image viewer ────────────────────────────────────────────────────── */
+    /* ── Image viewer ────────────────────────────────────────── */
     #imgWrap {
       position: relative;
       display: inline-block;
@@ -164,7 +311,37 @@
       border-radius: 8px;
     }
 
-    /* ── Print guard: hide everything while printing ─────────────────────── */
+    /* ── Toast notification ──────────────────────────────────── */
+    #toastContainer {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      pointer-events: none;
+    }
+
+    .toast {
+      background: #1e293b;
+      color: #f8fafc;
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      animation: toastIn 0.18s ease;
+      border: 1px solid rgba(239,68,68,0.3);
+    }
+    .toast.fade-out { animation: toastOut 0.18s ease forwards; }
+
+    /* ── Print guard ─────────────────────────────────────────── */
     @media print {
       body::before {
         content: "Printing is not allowed.";
@@ -176,11 +353,15 @@
       }
       #topbar, #viewerArea { display: none !important; }
     }
+
+    @keyframes spin     { to { transform: rotate(360deg); } }
+    @keyframes toastIn  { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes toastOut { from { opacity:1; transform:translateY(0); } to { opacity:0; transform:translateY(8px); } }
   </style>
 </head>
 <body>
 
-<!-- Top bar -->
+<!-- ── Top bar ──────────────────────────────────────────────── -->
 <div id="topbar">
   <button id="backBtn" onclick="goBack()">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -198,52 +379,208 @@
   </div>
 </div>
 
-<!-- Content area -->
+<!-- ── Viewer area ───────────────────────────────────────────── -->
 <div id="viewerArea">
-  <div id="statusBox">
-    <div class="spinner"></div>
-    <p id="statusMsg">Authenticating…</p>
+
+  <!-- Loading screen with step-by-step progress -->
+  <div id="loadingScreen">
+    <div id="loadingIcon">📄</div>
+    <div id="loadingTitle">Opening file…</div>
+
+    <div id="progressWrap">
+
+      <!-- Step 1: Authenticate -->
+      <div class="progress-step pending" id="step1">
+        <div class="step-icon" id="step1Icon">1</div>
+        <div class="step-text">
+          <div class="step-label">Authenticating</div>
+          <div class="step-sublabel" id="step1Sub">Verifying your session…</div>
+        </div>
+      </div>
+      <div class="step-track" id="track1"><div class="fill"></div></div>
+
+      <!-- Step 2: Fetch signed URL -->
+      <div class="progress-step pending" id="step2">
+        <div class="step-icon" id="step2Icon">2</div>
+        <div class="step-text">
+          <div class="step-label">Fetching secure link</div>
+          <div class="step-sublabel" id="step2Sub">Requesting access from server…</div>
+        </div>
+      </div>
+      <div class="step-track" id="track2"><div class="fill"></div></div>
+
+      <!-- Step 3: Download -->
+      <div class="progress-step pending" id="step3">
+        <div class="step-icon" id="step3Icon">3</div>
+        <div class="step-text">
+          <div class="step-label">Downloading file</div>
+          <div class="step-sublabel" id="step3Sub">Waiting…</div>
+          <div id="downloadBar" style="display:none;">
+            <div id="downloadBarFill"></div>
+          </div>
+        </div>
+      </div>
+      <div class="step-track" id="track3"><div class="fill"></div></div>
+
+      <!-- Step 4: Render -->
+      <div class="progress-step pending" id="step4">
+        <div class="step-icon" id="step4Icon">4</div>
+        <div class="step-text">
+          <div class="step-label">Rendering</div>
+          <div class="step-sublabel" id="step4Sub">Waiting…</div>
+        </div>
+      </div>
+
+    </div><!-- /progressWrap -->
+  </div><!-- /loadingScreen -->
+
+  <!-- Error state (hidden until needed) -->
+  <div id="errorBox">
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--error)" stroke-width="1.5">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="8" x2="12" y2="12"/>
+      <line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    <div id="errorTitle">Failed to load file</div>
+    <pre id="errorDetail"></pre>
+    <button id="errorBackBtn" onclick="goBack()">← Go back</button>
   </div>
-</div>
+
+</div><!-- /viewerArea -->
+
+<!-- Toast container -->
+<div id="toastContainer"></div>
 
 <script type="module">
 import { initializeApp }        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { firebaseConfig, RENDER_SERVER_URL } from "./js/config.js";
 
-// ── Constants ───────────────────────────────────────────────────────────────
-const PDFJS_CDN   = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs";
+// ── Constants ────────────────────────────────────────────────────────────────
+const PDFJS_CDN    = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs";
 const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs";
 
 // ── Parse query params ───────────────────────────────────────────────────────
-const params  = new URLSearchParams(location.search);
-const fileId  = params.get("fileId")  || "";
+const params   = new URLSearchParams(location.search);
+const fileId   = params.get("fileId")  || "";
 const fileName = decodeURIComponent(params.get("name") || "File");
 const fileType = decodeURIComponent(params.get("type") || "");
 
 document.getElementById("fileTitle").textContent = fileName;
 
-// ── Firebase auth ─────────────────────────────────────────────────────────
+// Guess file icon from type
+function fileIcon(type, name) {
+  if (type === "application/pdf") return "📄";
+  if (type.startsWith("image/"))  return "🖼️";
+  if (type.startsWith("video/"))  return "🎬";
+  if (type.startsWith("audio/"))  return "🎵";
+  if (type.startsWith("text/"))   return "📝";
+  return "📁";
+}
+document.getElementById("loadingIcon").textContent = fileIcon(fileType, fileName);
+
+// ── Progress step helpers ────────────────────────────────────────────────────
+function stepActive(n, subMsg) {
+  const step = document.getElementById(`step${n}`);
+  const icon = document.getElementById(`step${n}Icon`);
+  const sub  = document.getElementById(`step${n}Sub`);
+  step.classList.remove("pending");
+  icon.classList.add("active");
+  icon.innerHTML = `<div class="step-spinner"></div>`;
+  if (subMsg !== undefined) sub.textContent = subMsg;
+}
+
+function stepDone(n, subMsg) {
+  const step = document.getElementById(`step${n}`);
+  const icon = document.getElementById(`step${n}Icon`);
+  const sub  = document.getElementById(`step${n}Sub`);
+  step.classList.remove("pending");
+  icon.classList.remove("active");
+  icon.classList.add("done");
+  icon.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`;
+  if (subMsg !== undefined) sub.textContent = subMsg;
+  // Fill the track after this step
+  const track = document.getElementById(`track${n}`);
+  if (track) track.classList.add("filled");
+}
+
+function stepError(n, subMsg) {
+  const icon = document.getElementById(`step${n}Icon`);
+  const sub  = document.getElementById(`step${n}Sub`);
+  icon.classList.remove("active");
+  icon.classList.add("error");
+  icon.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+  if (subMsg !== undefined) sub.textContent = subMsg;
+}
+
+function setDownloadProgress(pct) {
+  const bar  = document.getElementById("downloadBar");
+  const fill = document.getElementById("downloadBarFill");
+  bar.style.display = "block";
+  fill.style.width  = `${Math.min(100, pct)}%`;
+}
+
+function hideLoading() {
+  document.getElementById("loadingScreen").style.display = "none";
+}
+
+function showError(msg) {
+  hideLoading();
+  const box = document.getElementById("errorBox");
+  document.getElementById("errorDetail").textContent = msg;
+  box.classList.add("visible");
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let _toastTimer = null;
+function showToast(msg) {
+  const container = document.getElementById("toastContainer");
+  container.innerHTML = "";
+  clearTimeout(_toastTimer);
+
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.innerHTML = `
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" style="flex-shrink:0">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="8" x2="12" y2="12"/>
+      <line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    ${escHtml(msg)}`;
+  container.appendChild(toast);
+
+  _toastTimer = setTimeout(() => {
+    toast.classList.add("fade-out");
+    setTimeout(() => { container.innerHTML = ""; }, 200);
+  }, 2800);
+}
+
+// ── Firebase auth ────────────────────────────────────────────────────────────
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
+stepActive(1, "Checking login…");
+
 onAuthStateChanged(auth, async user => {
   if (!user) {
-    // Not logged in — redirect to login
-    window.location.href = "login.html";
+    stepError(1, "Not logged in");
+    setTimeout(() => { window.location.href = "login.html"; }, 800);
     return;
   }
   if (!fileId) {
-    showError("No file specified.");
+    stepError(1, "No file specified");
+    showError("No file ID was provided in the URL.");
     return;
   }
-  setStatus("Fetching secure link…");
+  stepDone(1, `Signed in as ${user.email || user.displayName}`);
   await loadFile(user);
 });
 
-// ── Main load flow ────────────────────────────────────────────────────────
+// ── Main load flow ────────────────────────────────────────────────────────────
 async function loadFile(user) {
-  // Step 1: get signed URL from Render server
+
+  // Step 2 — get signed URL
+  stepActive(2, "Contacting server…");
   let signedUrl;
   try {
     const idToken = await user.getIdToken(true);
@@ -256,88 +593,138 @@ async function loadFile(user) {
       throw new Error(body.error || `Server error ${resp.status}`);
     }
     ({ signedUrl } = await resp.json());
+    stepDone(2, "Secure link received");
   } catch (err) {
-    showError(`Could not get file link: ${err.message}`);
+    stepError(2, err.message);
+    showError(`Could not get file link:\n${err.message}`);
     return;
   }
 
-  // Step 2: fetch bytes from S3
-  setStatus("Downloading file…");
+  // Step 3 — download file with progress tracking
+  stepActive(3, "Connecting to storage…");
   let blob;
   try {
     const resp = await fetch(signedUrl);
-    if (!resp.ok) throw new Error(`S3 error ${resp.status}`);
-    blob = await resp.blob();
+    if (!resp.ok) throw new Error(`Storage error ${resp.status}`);
+
+    const contentLength = Number(resp.headers.get("Content-Length") || 0);
+
+    if (contentLength > 0 && resp.body) {
+      // Stream with progress
+      const reader = resp.body.getReader();
+      const chunks = [];
+      let received = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        const pct = (received / contentLength) * 100;
+        setDownloadProgress(pct);
+        document.getElementById("step3Sub").textContent =
+          `${formatBytes(received)} / ${formatBytes(contentLength)}`;
+      }
+
+      const allChunks = new Uint8Array(received);
+      let offset = 0;
+      for (const chunk of chunks) { allChunks.set(chunk, offset); offset += chunk.length; }
+      blob = new Blob([allChunks]);
+    } else {
+      // Fallback: no Content-Length — animate indeterminate bar
+      animateIndeterminate();
+      blob = await resp.blob();
+    }
+    setDownloadProgress(100);
+    stepDone(3, `${formatBytes(blob.size)} downloaded`);
   } catch (err) {
-    showError(`Could not download file: ${err.message}\n\nOrigin: ${location.origin}`);
+    stepError(3, err.message);
+    showError(`Could not download file:\n${err.message}`);
     return;
   }
 
-  // Step 3: render
-  const area = document.getElementById("viewerArea");
-  area.innerHTML = ""; // clear spinner
-
+  // Step 4 — render
+  stepActive(4, "Preparing viewer…");
   const type = fileType || blob.type;
 
-  if (type === "application/pdf") {
-    document.getElementById("pdfControls").style.display = "flex";
-    await renderPdf(blob, area, user.email || user.displayName || "");
-  } else if (type.startsWith("image/")) {
-    renderImage(blob, area, user.email || user.displayName || "");
-  } else if (type.startsWith("video/")) {
-    renderVideo(blob, area);
-  } else if (type.startsWith("audio/")) {
-    renderAudio(blob, area, fileName);
-  } else if (type.startsWith("text/")) {
-    await renderText(blob, area);
-  } else {
-    showError(`Cannot preview this file type (${type || "unknown"}).\nAsk an admin to download it for you.`);
+  try {
+    if (type === "application/pdf") {
+      document.getElementById("pdfControls").style.display = "flex";
+      await renderPdf(blob, user.email || user.displayName || "");
+    } else if (type.startsWith("image/")) {
+      renderImage(blob, user.email || user.displayName || "");
+    } else if (type.startsWith("video/")) {
+      renderVideo(blob);
+    } else if (type.startsWith("audio/")) {
+      renderAudio(blob, fileName);
+    } else if (type.startsWith("text/")) {
+      await renderText(blob);
+    } else {
+      throw new Error(`Cannot preview this file type (${type || "unknown"}).\nAsk an admin to share a viewable format.`);
+    }
+  } catch (err) {
+    stepError(4, err.message.split("\n")[0]);
+    showError(err.message);
+    return;
   }
+
+  stepDone(4, "Ready");
+  hideLoading();
+  document.title = `${fileName} – FileAccess`;
 }
 
-// ── PDF renderer (pdf.js, canvas-based) ──────────────────────────────────
-let pdfDoc    = null;
-let pdfScale  = 1.5;
-let pdfArea   = null;
-let wmEmail   = "";
+// ── Indeterminate bar animation ───────────────────────────────────────────────
+let _indTimer = null;
+function animateIndeterminate() {
+  const fill = document.getElementById("downloadBarFill");
+  document.getElementById("downloadBar").style.display = "block";
+  let pct = 0;
+  _indTimer = setInterval(() => {
+    pct = pct >= 90 ? 90 : pct + 1.5;
+    fill.style.width = pct + "%";
+  }, 120);
+}
 
-async function renderPdf(blob, area, email) {
-  pdfArea  = area;
-  wmEmail  = email;
+// ── PDF renderer ─────────────────────────────────────────────────────────────
+let pdfDoc   = null;
+let pdfScale = 1.5;
+let pdfArea  = null;
+let wmEmail  = "";
 
-  setStatus("Loading PDF engine…");
+async function renderPdf(blob, email) {
+  wmEmail = email;
+  const area = ensureContentArea();
+  pdfArea = area;
 
-  // Dynamically import pdf.js from CDN
+  document.getElementById("step4Sub").textContent = "Loading PDF engine…";
+
   let pdfjsLib;
   try {
     pdfjsLib = await import(PDFJS_CDN);
     pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
   } catch (err) {
-    showError(`Could not load PDF engine: ${err.message}`);
-    return;
+    throw new Error(`Could not load PDF engine: ${err.message}`);
   }
 
-  setStatus("Rendering PDF…");
-
+  document.getElementById("step4Sub").textContent = "Parsing document…";
   const arrayBuffer = await blob.arrayBuffer();
   try {
     pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   } catch (err) {
-    showError(`Could not parse PDF: ${err.message}`);
-    return;
+    throw new Error(`Could not parse PDF: ${err.message}`);
   }
 
   const total = pdfDoc.numPages;
   document.getElementById("pageInfo").textContent = `${total} page${total !== 1 ? "s" : ""}`;
-  document.title = `${fileName} – FileAccess`;
+  document.getElementById("step4Sub").textContent = `Rendering ${total} page${total !== 1 ? "s" : ""}…`;
 
-  area.innerHTML = "";
   for (let i = 1; i <= total; i++) {
-    await renderPage(pdfjsLib, pdfDoc, i, area, email);
+    await renderPdfPage(pdfjsLib, pdfDoc, i, area, email);
+    document.getElementById("step4Sub").textContent = `Page ${i} / ${total}`;
   }
 }
 
-async function renderPage(pdfjsLib, doc, pageNum, area, email) {
+async function renderPdfPage(pdfjsLib, doc, pageNum, area, email) {
   const page     = await doc.getPage(pageNum);
   const viewport = page.getViewport({ scale: pdfScale });
 
@@ -353,33 +740,29 @@ async function renderPage(pdfjsLib, doc, pageNum, area, email) {
   area.appendChild(wrap);
 
   await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-
-  // Watermark on top
   applyWatermark(wrap, canvas.width, canvas.height, email);
 }
 
-// ── Zoom controls (re-renders all pages) ─────────────────────────────────
+// ── Zoom controls ─────────────────────────────────────────────────────────────
 window.zoomIn    = () => setZoom(pdfScale + 0.25);
 window.zoomOut   = () => setZoom(Math.max(0.5, pdfScale - 0.25));
 window.zoomReset = () => setZoom(1.5);
 
 async function setZoom(scale) {
-  if (!pdfDoc) return;
+  if (!pdfDoc || !pdfArea) return;
   pdfScale = scale;
   document.getElementById("zoomLabel").textContent = Math.round(scale * 100 / 1.5 * 100) + "%";
-
-  // Re-render all pages at new scale
   const { default: pdfjsLib } = await import(PDFJS_CDN).catch(() => ({}));
   if (!pdfjsLib) return;
-
   pdfArea.innerHTML = "";
   for (let i = 1; i <= pdfDoc.numPages; i++) {
-    await renderPage(pdfjsLib, pdfDoc, i, pdfArea, wmEmail);
+    await renderPdfPage(pdfjsLib, pdfDoc, i, pdfArea, wmEmail);
   }
 }
 
-// ── Image renderer ────────────────────────────────────────────────────────
-function renderImage(blob, area, email) {
+// ── Image renderer ────────────────────────────────────────────────────────────
+function renderImage(blob, email) {
+  const area = ensureContentArea();
   const url  = URL.createObjectURL(blob);
   const wrap = document.createElement("div");
   wrap.id = "imgWrap";
@@ -397,21 +780,23 @@ function renderImage(blob, area, email) {
   area.appendChild(wrap);
 }
 
-// ── Video renderer ────────────────────────────────────────────────────────
-function renderVideo(blob, area) {
+// ── Video renderer ────────────────────────────────────────────────────────────
+function renderVideo(blob) {
+  const area  = ensureContentArea();
   const url   = URL.createObjectURL(blob);
   const video = document.createElement("video");
-  video.src             = url;
-  video.controls        = true;
-  video.controlsList    = "nodownload";
+  video.src                   = url;
+  video.controls              = true;
+  video.controlsList          = "nodownload nofullscreen";
   video.disablePictureInPicture = true;
-  video.style.cssText   = "max-width:min(900px,100%);max-height:calc(100vh - 100px);border-radius:8px;display:block;box-shadow:0 4px 24px rgba(0,0,0,0.5);";
+  video.style.cssText = "max-width:min(900px,100%);max-height:calc(100vh - 100px);border-radius:8px;display:block;box-shadow:0 4px 24px rgba(0,0,0,0.5);";
   video.onended = () => URL.revokeObjectURL(url);
   area.appendChild(video);
 }
 
-// ── Audio renderer ────────────────────────────────────────────────────────
-function renderAudio(blob, area, name) {
+// ── Audio renderer ────────────────────────────────────────────────────────────
+function renderAudio(blob, name) {
+  const area  = ensureContentArea();
   const url   = URL.createObjectURL(blob);
   const wrap  = document.createElement("div");
   wrap.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:1.5rem;padding:4rem 2rem;";
@@ -425,8 +810,9 @@ function renderAudio(blob, area, name) {
   area.appendChild(wrap);
 }
 
-// ── Text renderer ─────────────────────────────────────────────────────────
-async function renderText(blob, area) {
+// ── Text renderer ─────────────────────────────────────────────────────────────
+async function renderText(blob) {
+  const area = ensureContentArea();
   const text = await blob.text();
   const pre  = document.createElement("pre");
   pre.style.cssText = "background:var(--surface);padding:1.5rem;border-radius:8px;font-size:0.85rem;line-height:1.6;max-width:860px;width:100%;white-space:pre-wrap;word-break:break-word;color:var(--text);";
@@ -434,17 +820,29 @@ async function renderText(blob, area) {
   area.appendChild(pre);
 }
 
-// ── Watermark ─────────────────────────────────────────────────────────────
+// ── Content area helper ───────────────────────────────────────────────────────
+function ensureContentArea() {
+  let el = document.getElementById("contentArea");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "contentArea";
+    el.style.cssText = "display:flex;flex-direction:column;align-items:center;width:100%;";
+    document.getElementById("viewerArea").appendChild(el);
+  }
+  return el;
+}
+
+// ── Watermark ─────────────────────────────────────────────────────────────────
 function applyWatermark(container, w, h, email) {
   if (!email) return;
   const wm  = document.createElement("canvas");
   wm.className = "wm-canvas";
   wm.width  = w || 800;
   wm.height = h || 600;
-  wm.style.opacity = "0.15";
+  wm.style.opacity = "0.13";
 
-  const ctx  = wm.getContext("2d");
-  ctx.font   = "bold 15px Inter, system-ui, sans-serif";
+  const ctx = wm.getContext("2d");
+  ctx.font  = "bold 15px Inter, system-ui, sans-serif";
   ctx.fillStyle = "#ffffff";
   ctx.save();
   ctx.translate(w / 2, h / 2);
@@ -465,28 +863,11 @@ function applyWatermark(container, w, h, email) {
   container.appendChild(wm);
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────
-function setStatus(msg) {
-  const box = document.getElementById("statusBox");
-  if (box) {
-    box.querySelector("#statusMsg").textContent = msg;
-    // Make sure it's visible
-    document.getElementById("viewerArea").innerHTML = "";
-    document.getElementById("viewerArea").appendChild(box);
-  }
-}
-
-function showError(msg) {
-  const area = document.getElementById("viewerArea");
-  area.innerHTML = `
-    <div id="statusBox">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--error)" stroke-width="1.5">
-        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-      </svg>
-      <p style="color:var(--error);font-weight:500;">Failed to load file</p>
-      <pre style="font-size:0.78rem;color:var(--muted);max-width:520px;white-space:pre-wrap;text-align:left;background:var(--surface);padding:0.75rem 1rem;border-radius:8px;">${escHtml(msg)}</pre>
-      <button onclick="goBack()" style="background:var(--accent);color:#fff;border:none;padding:0.5rem 1.2rem;border-radius:6px;cursor:pointer;font-size:0.9rem;">← Go back</button>
-    </div>`;
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function formatBytes(b) {
+  if (b < 1024)       return `${b} B`;
+  if (b < 1048576)    return `${(b/1024).toFixed(1)} KB`;
+  return `${(b/1048576).toFixed(1)} MB`;
 }
 
 function escHtml(s) {
@@ -495,25 +876,81 @@ function escHtml(s) {
 
 window.goBack = () => history.length > 1 ? history.back() : (location.href = "index.html");
 
-// ── Protection: block right-click, print shortcuts, drag ─────────────────
-document.addEventListener("contextmenu", e => e.preventDefault());
+// ── PROTECTION LAYER ─────────────────────────────────────────────────────────
 
+// 1. Block right-click
+document.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  e.stopPropagation();
+  showToast("Right-click is disabled on this page.");
+  return false;
+});
+
+// 2. Block keyboard shortcuts — devtools, print, save, view-source, copy, drag
 document.addEventListener("keydown", e => {
   const ctrl = e.ctrlKey || e.metaKey;
-  if (
-    (ctrl && (e.key === "p" || e.key === "s" || e.key === "S")) ||
-    (ctrl && e.shiftKey && (e.key === "i" || e.key === "j")) ||
-    e.key === "F12"
-  ) {
-    e.preventDefault();
+
+  const rules = [
+    { test: e.key === "F12",                                     msg: "Developer tools are disabled." },
+    { test: ctrl && e.shiftKey && e.key === "I",                 msg: "Developer tools are disabled." },
+    { test: ctrl && e.shiftKey && e.key === "J",                 msg: "Developer tools are disabled." },
+    { test: ctrl && e.shiftKey && e.key === "C",                 msg: "Developer tools are disabled." },
+    { test: ctrl && e.key === "p",                               msg: "Printing is not allowed." },
+    { test: ctrl && e.key === "P",                               msg: "Printing is not allowed." },
+    { test: ctrl && (e.key === "s" || e.key === "S"),            msg: "Saving is not allowed." },
+    { test: ctrl && e.key === "u",                               msg: "Viewing source is not allowed." },
+    { test: ctrl && (e.key === "c" || e.key === "C"),            msg: "Copying is not allowed." },
+    { test: ctrl && (e.key === "a" || e.key === "A"),            msg: "Select all is not allowed." },
+  ];
+
+  for (const rule of rules) {
+    if (rule.test) {
+      e.preventDefault();
+      e.stopPropagation();
+      showToast(rule.msg);
+      return false;
+    }
   }
+}, true);
+
+// 3. Block drag-to-save
+document.addEventListener("dragstart", e => {
+  e.preventDefault();
+  showToast("Dragging content off this page is not allowed.");
+  return false;
 });
 
-document.addEventListener("dragstart", e => e.preventDefault());
-
-window.addEventListener("beforeprint", () => {
-  // CSS @media print already hides everything — this just blocks programmatic print
+// 4. Block text selection
+document.addEventListener("selectstart", e => {
+  e.preventDefault();
+  return false;
 });
+
+// 5. Block print via system dialog
+window.addEventListener("beforeprint", e => {
+  document.body.style.visibility = "hidden";
+  showToast("Printing is not allowed.");
+});
+window.addEventListener("afterprint", () => {
+  document.body.style.visibility = "";
+});
+
+// 6. Detect devtools open (size heuristic) and show warning overlay
+(function devtoolsGuard() {
+  const threshold = 160;
+  let warned = false;
+  setInterval(() => {
+    const devOpen =
+      (window.outerWidth  - window.innerWidth  > threshold) ||
+      (window.outerHeight - window.innerHeight > threshold);
+    if (devOpen && !warned) {
+      warned = true;
+      showToast("Developer tools are not allowed.");
+    }
+    if (!devOpen) warned = false;
+  }, 1000);
+})();
+
 </script>
 </body>
 </html>
