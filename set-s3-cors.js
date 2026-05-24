@@ -19,11 +19,18 @@ const {
 // ── Config — edit these or set as env vars ────────────────────────────────
 const AWS_ACCESS_KEY_ID     = process.env.AWS_ACCESS_KEY_ID     || "YOUR_ACCESS_KEY";
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY || "YOUR_SECRET_KEY";
-const AWS_REGION            = process.env.AWS_REGION            || "us-east-1";
-const S3_BUCKET             = process.env.S3_BUCKET             || "your-bucket-name";
+const AWS_REGION            = process.env.AWS_REGION            || "YOUR_REGION";
+const S3_BUCKET             = process.env.S3_BUCKET             || "YOUR_BUCKET_NAME";
 
-// Your Firebase Hosting URL — browsers from here need to PUT to S3
-const ALLOWED_ORIGIN = process.env.SITE_URL || "https://access-control-system-335f5.web.app";
+// Firebase projects are served from BOTH *.web.app AND *.firebaseapp.com.
+// Both origins must be listed or S3 will block the browser's direct fetch()
+// of presigned GET URLs (causing "Failed to fetch" / "Could not load PDF").
+const ALLOWED_ORIGINS = process.env.SITE_URL
+  ? [process.env.SITE_URL]
+  : [
+      "https://access-control-system-335f5.web.app",
+      "https://access-control-system-335f5.firebaseapp.com",
+    ];
 // ─────────────────────────────────────────────────────────────────────────
 
 const s3 = new S3Client({
@@ -37,7 +44,7 @@ const corsConfig = {
       // Allow the browser to PUT files directly and GET signed URLs
       AllowedHeaders: ["*"],
       AllowedMethods: ["PUT", "GET", "HEAD"],
-      AllowedOrigins: [ALLOWED_ORIGIN],
+      AllowedOrigins: ALLOWED_ORIGINS,
       ExposeHeaders:  ["ETag"],
       MaxAgeSeconds:  3600,
     },
@@ -46,7 +53,7 @@ const corsConfig = {
 
 async function main() {
   console.log(`Setting CORS on bucket: ${S3_BUCKET}`);
-  console.log(`Allowed origin: ${ALLOWED_ORIGIN}\n`);
+  console.log(`Allowed origins: ${ALLOWED_ORIGINS.join(", ")}\n`);
 
   // Apply CORS
   await s3.send(new PutBucketCorsCommand({

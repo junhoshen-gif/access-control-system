@@ -76,8 +76,22 @@ app.use(helmet({
   contentSecurityPolicy: false,
 }));
 
-const allowedOrigin = process.env.SITE_URL || "https://access-control-system-335f5.web.app";
-app.use(cors({ origin: allowedOrigin }));
+// Firebase projects are served from BOTH *.web.app AND *.firebaseapp.com.
+// Allow both so the browser can reach /files/signed-url from either domain.
+const allowedOrigins = process.env.SITE_URL
+  ? [process.env.SITE_URL]
+  : [
+      "https://access-control-system-335f5.web.app",
+      "https://access-control-system-335f5.firebaseapp.com",
+    ];
+const allowedOrigin = allowedOrigins[0]; // kept for reference in ecpay routes
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow requests with no origin (server-to-server, curl) and listed origins
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin ${origin} not allowed`));
+  }
+}));
 
 app.use(express.urlencoded({ extended: true, limit: "10kb" }));
 app.use(express.json({ limit: "10kb" }));
