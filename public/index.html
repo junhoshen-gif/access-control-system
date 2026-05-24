@@ -342,31 +342,27 @@
   }
 
   // File type definitions (mirrors admin.html)
-  // viewer:"reader" → opens reader.html (PDF / EPUB); all others use the modal.
   const FILE_TYPES = {
-    "application/pdf":      { label:"PDF",  icon:"📄", viewer:"reader"   },
-    "application/epub+zip": { label:"EPUB", icon:"📖", viewer:"reader"   },
-    "image/png":            { label:"PNG",  icon:"🖼️", viewer:"image"    },
-    "image/jpeg":           { label:"JPEG", icon:"🖼️", viewer:"image"    },
-    "image/gif":            { label:"GIF",  icon:"🖼️", viewer:"image"    },
-    "image/webp":           { label:"WEBP", icon:"🖼️", viewer:"image"    },
-    "image/svg+xml":        { label:"SVG",  icon:"🎨", viewer:"image"    },
-    "text/html":            { label:"HTML", icon:"🌐", viewer:"html"     },
-    "text/plain":           { label:"TXT",  icon:"📝", viewer:"text"     },
-    "text/markdown":        { label:"MD",   icon:"📝", viewer:"text"     },
-    "text/csv":             { label:"CSV",  icon:"📊", viewer:"text"     },
-    "video/mp4":            { label:"MP4",  icon:"🎬", viewer:"video"    },
-    "video/webm":           { label:"WEBM", icon:"🎬", viewer:"video"    },
-    "audio/mpeg":           { label:"MP3",  icon:"🎵", viewer:"audio"    },
-    "audio/wav":            { label:"WAV",  icon:"🎵", viewer:"audio"    },
-    "model/stl":            { label:"STL",  icon:"🧊", viewer:"download" },
+    "application/pdf":   { label:"PDF",  icon:"📄", viewer:"pdf"      },
+    "image/png":         { label:"PNG",  icon:"🖼️", viewer:"image"    },
+    "image/jpeg":        { label:"JPEG", icon:"🖼️", viewer:"image"    },
+    "image/gif":         { label:"GIF",  icon:"🖼️", viewer:"image"    },
+    "image/webp":        { label:"WEBP", icon:"🖼️", viewer:"image"    },
+    "image/svg+xml":     { label:"SVG",  icon:"🎨", viewer:"image"    },
+    "text/html":         { label:"HTML", icon:"🌐", viewer:"html"     },
+    "text/plain":        { label:"TXT",  icon:"📝", viewer:"text"     },
+    "text/markdown":     { label:"MD",   icon:"📝", viewer:"text"     },
+    "text/csv":          { label:"CSV",  icon:"📊", viewer:"text"     },
+    "video/mp4":         { label:"MP4",  icon:"🎬", viewer:"video"    },
+    "video/webm":        { label:"WEBM", icon:"🎬", viewer:"video"    },
+    "audio/mpeg":        { label:"MP3",  icon:"🎵", viewer:"audio"    },
+    "audio/wav":         { label:"WAV",  icon:"🎵", viewer:"audio"    },
+    "model/stl":         { label:"STL",  icon:"🧊", viewer:"download" },
   };
 
   function getTypeDef(type, name) {
     if (FILE_TYPES[type]) return FILE_TYPES[type];
     const ext = name?.split(".").pop()?.toLowerCase();
-    if (ext === "epub") return { label:"EPUB", icon:"📖", viewer:"reader"   };
-    if (ext === "pdf")  return { label:"PDF",  icon:"📄", viewer:"reader"   };
     if (ext === "stl" || ext === "obj") return { label: ext.toUpperCase(), icon:"🧊", viewer:"download" };
     if (ext === "md")  return { label:"MD",   icon:"📝", viewer:"text" };
     if (ext === "htm") return { label:"HTML",  icon:"🌐", viewer:"html" };
@@ -378,7 +374,7 @@
 
   function getFilterCategory(f) {
     const def = getTypeDef(f.type, f.name);
-    if (def.viewer === "reader" || def.viewer === "text" || f.type?.includes("document")) return "doc";
+    if (def.viewer === "pdf" || def.viewer === "text" || f.type?.includes("document")) return "doc";
     if (def.viewer === "image") return "image";
     if (def.viewer === "video" || def.viewer === "audio") return "media";
     return "other";
@@ -424,18 +420,6 @@
   }
 
   async function openViewer(fileId, name, type) {
-    // PDF / EPUB → open full-screen reader page
-    const def = getTypeDef(type, name);
-    if (def.viewer === "reader") {
-      const params = new URLSearchParams({
-        fileId,
-        name:  name,
-        type:  type || "",
-      });
-      window.location.href = `reader.html?${params.toString()}`;
-      return;
-    }
-
     document.getElementById("viewerTitle").textContent = name;
     const file = allFiles.find(f => f.id === fileId);
     document.getElementById("viewerMeta").textContent =
@@ -464,9 +448,12 @@
     // Log the file view (fire-and-forget)
     writeLog("file_view", { fileName: name, fileId });
 
-    const modalDef = getTypeDef(type, name);
+    const def  = getTypeDef(type, name);
     let inner = "";
-    switch (modalDef.viewer) {
+    switch (def.viewer) {
+      case "pdf":
+        inner = `<iframe src="${signedUrl}#toolbar=0&navpanes=0" class="file-viewer-frame"></iframe>`;
+        break;
       case "image":
         inner = `<div class="image-viewer"><img src="${signedUrl}" alt="${escHtml(name)}" /></div>`;
         break;
@@ -489,7 +476,7 @@
       case "download":
       default:
         inner = `<div class="image-viewer" style="flex-direction:column;gap:1.5rem;">
-          <div style="font-size:4rem">${modalDef.icon}</div>
+          <div style="font-size:4rem">${def.icon}</div>
           <p style="font-weight:500;font-size:1.1rem">${escHtml(name)}</p>
           <a href="${signedUrl}" download="${escHtml(name)}" class="btn btn-primary btn-sm" style="margin-top:0.5rem;">⬇ 下載</a>
         </div>`;
@@ -499,7 +486,7 @@
     body.innerHTML = `<div class="viewer-wrap">${inner}</div>`;
 
     // Apply watermark overlay for viewable content types (deters screenshots)
-    if (["image", "html", "text", "video"].includes(modalDef.viewer) &&
+    if (["pdf", "image", "html", "text", "video"].includes(def.viewer) &&
         typeof window.applyViewerWatermark === "function") {
       const viewerWrap = body.querySelector(".viewer-wrap");
       if (viewerWrap) {
