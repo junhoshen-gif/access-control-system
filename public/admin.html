@@ -82,7 +82,7 @@
       <div id="uploadAlert" class="alert hidden"></div>
       <div class="upload-zone" id="uploadZone">
         <input type="file" id="fileInput"
-          accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.svg,.html,.htm,.stl,.obj,.mp4,.webm,.mp3,.wav,.txt,.md,.docx,.xlsx,.csv,.zip,.rar"
+          accept=".pdf,.epub,.png,.jpg,.jpeg,.gif,.webp,.svg,.html,.htm,.stl,.obj,.mp4,.webm,.mp3,.wav,.txt,.md,.docx,.xlsx,.csv,.zip,.rar"
           multiple hidden/>
         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         <p><strong>Click to choose</strong> or drag & drop</p>
@@ -644,7 +644,8 @@
     "image/webp": { label:"WEBP", icon:"🖼️", color:"#8B5CF6", viewer:"image" },
     "image/svg+xml": { label:"SVG", icon:"🎨", color:"#EC4899", viewer:"image" },
     // Documents
-    "application/pdf": { label:"PDF", icon:"📄", color:"#EF4444", viewer:"pdf" },
+    "application/pdf":      { label:"PDF",  icon:"📄", color:"#EF4444", viewer:"reader" },
+    "application/epub+zip": { label:"EPUB", icon:"📖", color:"#7C3AED", viewer:"reader" },
     "text/html":       { label:"HTML", icon:"🌐", color:"#F59E0B", viewer:"html" },
     "text/plain":      { label:"TXT",  icon:"📝", color:"#64748B", viewer:"text" },
     "text/markdown":   { label:"MD",   icon:"📝", color:"#64748B", viewer:"text" },
@@ -666,7 +667,7 @@
   };
 
   const ALLOWED_EXTENSIONS = [
-    ".pdf",".png",".jpg",".jpeg",".gif",".webp",".svg",
+    ".pdf",".epub",".png",".jpg",".jpeg",".gif",".webp",".svg",
     ".html",".htm",".stl",".obj",
     ".mp4",".webm",".mp3",".wav",
     ".txt",".md",".docx",".xlsx",".csv",
@@ -677,6 +678,8 @@
     if (FILE_TYPES[mimeType]) return FILE_TYPES[mimeType];
     // Fallback by extension
     const ext = filename?.split(".").pop()?.toLowerCase();
+    if (ext === "epub") return { label:"EPUB", icon:"📖", color:"#7C3AED", viewer:"reader" };
+    if (ext === "pdf")  return { label:"PDF",  icon:"📄", color:"#EF4444", viewer:"reader" };
     if (ext === "stl" || ext === "obj") return { label: ext.toUpperCase(), icon:"🧊", color:"#0EA5E9", viewer:"stl" };
     if (ext === "md")  return { label:"MD",  icon:"📝", color:"#64748B", viewer:"text" };
     if (ext === "htm") return { label:"HTML", icon:"🌐", color:"#F59E0B", viewer:"html" };

@@ -342,27 +342,31 @@
   }
 
   // File type definitions (mirrors admin.html)
+  // viewer:"reader" → opens reader.html (PDF / EPUB); all others use the modal.
   const FILE_TYPES = {
-    "application/pdf":   { label:"PDF",  icon:"📄", viewer:"pdf"      },
-    "image/png":         { label:"PNG",  icon:"🖼️", viewer:"image"    },
-    "image/jpeg":        { label:"JPEG", icon:"🖼️", viewer:"image"    },
-    "image/gif":         { label:"GIF",  icon:"🖼️", viewer:"image"    },
-    "image/webp":        { label:"WEBP", icon:"🖼️", viewer:"image"    },
-    "image/svg+xml":     { label:"SVG",  icon:"🎨", viewer:"image"    },
-    "text/html":         { label:"HTML", icon:"🌐", viewer:"html"     },
-    "text/plain":        { label:"TXT",  icon:"📝", viewer:"text"     },
-    "text/markdown":     { label:"MD",   icon:"📝", viewer:"text"     },
-    "text/csv":          { label:"CSV",  icon:"📊", viewer:"text"     },
-    "video/mp4":         { label:"MP4",  icon:"🎬", viewer:"video"    },
-    "video/webm":        { label:"WEBM", icon:"🎬", viewer:"video"    },
-    "audio/mpeg":        { label:"MP3",  icon:"🎵", viewer:"audio"    },
-    "audio/wav":         { label:"WAV",  icon:"🎵", viewer:"audio"    },
-    "model/stl":         { label:"STL",  icon:"🧊", viewer:"download" },
+    "application/pdf":      { label:"PDF",  icon:"📄", viewer:"reader"   },
+    "application/epub+zip": { label:"EPUB", icon:"📖", viewer:"reader"   },
+    "image/png":            { label:"PNG",  icon:"🖼️", viewer:"image"    },
+    "image/jpeg":           { label:"JPEG", icon:"🖼️", viewer:"image"    },
+    "image/gif":            { label:"GIF",  icon:"🖼️", viewer:"image"    },
+    "image/webp":           { label:"WEBP", icon:"🖼️", viewer:"image"    },
+    "image/svg+xml":        { label:"SVG",  icon:"🎨", viewer:"image"    },
+    "text/html":            { label:"HTML", icon:"🌐", viewer:"html"     },
+    "text/plain":           { label:"TXT",  icon:"📝", viewer:"text"     },
+    "text/markdown":        { label:"MD",   icon:"📝", viewer:"text"     },
+    "text/csv":             { label:"CSV",  icon:"📊", viewer:"text"     },
+    "video/mp4":            { label:"MP4",  icon:"🎬", viewer:"video"    },
+    "video/webm":           { label:"WEBM", icon:"🎬", viewer:"video"    },
+    "audio/mpeg":           { label:"MP3",  icon:"🎵", viewer:"audio"    },
+    "audio/wav":            { label:"WAV",  icon:"🎵", viewer:"audio"    },
+    "model/stl":            { label:"STL",  icon:"🧊", viewer:"download" },
   };
 
   function getTypeDef(type, name) {
     if (FILE_TYPES[type]) return FILE_TYPES[type];
     const ext = name?.split(".").pop()?.toLowerCase();
+    if (ext === "epub") return { label:"EPUB", icon:"📖", viewer:"reader"   };
+    if (ext === "pdf")  return { label:"PDF",  icon:"📄", viewer:"reader"   };
     if (ext === "stl" || ext === "obj") return { label: ext.toUpperCase(), icon:"🧊", viewer:"download" };
     if (ext === "md")  return { label:"MD",   icon:"📝", viewer:"text" };
     if (ext === "htm") return { label:"HTML",  icon:"🌐", viewer:"html" };
@@ -374,7 +378,7 @@
 
   function getFilterCategory(f) {
     const def = getTypeDef(f.type, f.name);
-    if (def.viewer === "pdf" || def.viewer === "text" || f.type?.includes("document")) return "doc";
+    if (def.viewer === "reader" || def.viewer === "text" || f.type?.includes("document")) return "doc";
     if (def.viewer === "image") return "image";
     if (def.viewer === "video" || def.viewer === "audio") return "media";
     return "other";
@@ -420,6 +424,18 @@
   }
 
   async function openViewer(fileId, name, type) {
+    // PDF / EPUB → open full-screen reader page
+    const def = getTypeDef(type, name);
+    if (def.viewer === "reader") {
+      const params = new URLSearchParams({
+        fileId,
+        name:  encodeURIComponent(name),
+        type:  encodeURIComponent(type || ""),
+      });
+      window.location.href = `reader.html?${params.toString()}`;
+      return;
+    }
+
     document.getElementById("viewerTitle").textContent = name;
     const file = allFiles.find(f => f.id === fileId);
     document.getElementById("viewerMeta").textContent =
