@@ -822,27 +822,36 @@
 
   window.removeFromQueue = (i) => { pendingFiles.splice(i, 1); renderQueue(); };
 
+  // Files ≤ this threshold go via the simple single-request upload.
+  // Files above it are split into CHUNK_SIZE pieces and reassembled server-side.
+  const CHUNKED_THRESHOLD = 100 * 1024 * 1024; // 100 MB
+  const CHUNK_SIZE        =   5 * 1024 * 1024; //   5 MB per chunk
+
   window.startUpload = async () => {
     if (pendingFiles.length === 0) return;
     document.getElementById("startUploadBtn").disabled = true;
     let successCount = 0;
     for (let i = 0; i < pendingFiles.length; i++) {
-      const file = pendingFiles[i];
+      const file     = pendingFiles[i];
       const statusEl = document.getElementById(`qstatus-${i}`);
       statusEl.textContent = "Uploading…";
-      statusEl.className = "queue-status status-uploading";
+      statusEl.className   = "queue-status status-uploading";
       try {
-        // Upload via server proxy (server handles Supabase, returns fileId + url)
-        const result = await uploadViaServer(file);
+        let result;
+        if (file.size > CHUNKED_THRESHOLD) {
+          result = await uploadViaChunks(file, statusEl);
+        } else {
+          result = await uploadViaServer(file);
+        }
         const fileData = { name: file.name, type: file.type || "application/octet-stream", size: file.size, url: result.url, storagePath: result.storagePath, uploadedBy: currentUser.uid, uploadedAt: Date.now() };
         statusEl.textContent = "Done ✓";
-        statusEl.className = "queue-status status-done";
+        statusEl.className   = "queue-status status-done";
         successCount++;
         allFiles[result.fileId] = fileData;
       } catch (err) {
         console.error(err);
         statusEl.textContent = "Failed ✗";
-        statusEl.className = "queue-status status-error";
+        statusEl.className   = "queue-status status-error";
       }
     }
     document.getElementById("startUploadBtn").disabled = false;
@@ -853,21 +862,79 @@
     }
   };
 
-  // Upload via server proxy (server verifies admin token + handles Supabase upload)
+  // ── Small-file path (unchanged) ───────────────────────────────────────────
   async function uploadViaServer(file) {
-    const idToken = await currentUser.getIdToken(true);
+    const idToken  = await currentUser.getIdToken(true);
     const formData = new FormData();
     formData.append("file", file);
     const resp = await fetch(`${RENDER_SERVER_URL}/files/upload`, {
-      method: "POST",
+      method:  "POST",
       headers: { "Authorization": `Bearer ${idToken}` },
-      body: formData
+      body:    formData
     });
     if (!resp.ok) {
       const e = await resp.json().catch(() => ({}));
       throw new Error(e.error || "Upload failed");
     }
     return await resp.json(); // { fileId, url, storagePath }
+  }
+
+  // ── Large-file path: split → upload chunks → merge ────────────────────────
+  async function uploadViaChunks(file, statusEl) {
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    // Unique ID for this upload session so the server can group the chunks
+    const uploadId    = `${Date.now()}_${crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`;
+
+    for (let i = 0; i < totalChunks; i++) {
+      const start     = i * CHUNK_SIZE;
+      const end       = Math.min(start + CHUNK_SIZE, file.size);
+      const chunkBlob = file.slice(start, end);
+
+      // Refresh token every 10 chunks (long uploads may outlast the 1-hour token)
+      const idToken  = (i % 10 === 0) ? await currentUser.getIdToken(true) : await currentUser.getIdToken();
+
+      const formData = new FormData();
+      formData.append("uploadId",    uploadId);
+      formData.append("chunkIndex",  String(i));
+      formData.append("totalChunks", String(totalChunks));
+      formData.append("file",        chunkBlob, file.name);
+
+      const resp = await fetch(`${RENDER_SERVER_URL}/files/upload-chunk`, {
+        method:  "POST",
+        headers: { "Authorization": `Bearer ${idToken}` },
+        body:    formData
+      });
+      if (!resp.ok) {
+        const e = await resp.json().catch(() => ({}));
+        throw new Error(e.error || `Chunk ${i} upload failed`);
+      }
+
+      // Update status label with live progress
+      const pct = Math.round(((i + 1) / totalChunks) * 90); // 0–90% while uploading chunks
+      statusEl.textContent = `Uploading… ${pct}%`;
+    }
+
+    // All chunks received — ask server to merge and push to Supabase
+    statusEl.textContent = "Merging…";
+    const idToken  = await currentUser.getIdToken();
+    const mergeResp = await fetch(`${RENDER_SERVER_URL}/files/upload-merge`, {
+      method:  "POST",
+      headers: {
+        "Authorization": `Bearer ${idToken}`,
+        "Content-Type":  "application/json"
+      },
+      body: JSON.stringify({
+        uploadId,
+        filename:    file.name,
+        mimetype:    file.type || "application/octet-stream",
+        totalChunks: String(totalChunks)
+      })
+    });
+    if (!mergeResp.ok) {
+      const e = await mergeResp.json().catch(() => ({}));
+      throw new Error(e.error || "Merge failed");
+    }
+    return await mergeResp.json(); // { fileId, url, storagePath }
   }
 
   // ── Files Table ───────────────────────────────────────────────────────────

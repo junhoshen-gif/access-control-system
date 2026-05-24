@@ -24,6 +24,9 @@ const rateLimit   = require("express-rate-limit");
 const helmet      = require("helmet");
 const multer      = require("multer");
 const fetch       = require("node-fetch");
+const fs          = require("fs");
+const path        = require("path");
+const os          = require("os");
 
 // ── Firebase init ──────────────────────────────────────────────────────────
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || "{}");
@@ -36,6 +39,10 @@ const db = admin.database();
 // ── Express ────────────────────────────────────────────────────────────────
 const app  = express();
 const PORT = process.env.PORT || 10000;
+
+// ── Trust Render's reverse proxy so express-rate-limit reads the real client IP ──
+// Render terminates TLS and forwards requests via a single trusted proxy hop.
+app.set("trust proxy", 1);
 
 // ── Security headers (Helmet) ──────────────────────────────────────────────
 app.use(helmet({
@@ -66,7 +73,7 @@ const ecpayLimiter = rateLimit({
 });
 const fileLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 60,  // generous for file operations
+  max: 300, // raised: chunked uploads can produce ~100 requests per large file
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later." }
@@ -260,6 +267,199 @@ app.post("/files/upload", upload.single("file"), async (req, res) => {
     fileName:  file.originalname,
     fileId:    fileRef.key,
     fileSize:  file.size
+  }).catch(() => {});
+
+  return res.json({ fileId: fileRef.key, url: publicUrl, storagePath });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHUNKED UPLOAD ENDPOINTS  (for files > 100 MB)
+//
+// Flow:
+//   1. Client slices the file into 5 MB chunks.
+//   2. For each chunk: POST /files/upload-chunk  { uploadId, chunkIndex, totalChunks, file }
+//      → server writes the chunk to a temp dir on disk (never fully in RAM).
+//   3. After all chunks arrive: POST /files/upload-merge  { uploadId, filename, mimetype, totalChunks }
+//      → server concatenates chunks, streams the result to Supabase, then cleans up.
+// ════════════════════════════════════════════════════════════════════════════
+
+// Multer instance that writes chunks to disk (not memory)
+const chunkUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      // Each upload gets its own temp subdirectory named by uploadId
+      const dir = path.join(os.tmpdir(), "fileaccess_chunks", req.body.uploadId || "unknown");
+      fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      // Name each chunk file by its index so we can reassemble in order
+      const idx = parseInt(req.body.chunkIndex, 10);
+      cb(null, `chunk_${String(idx).padStart(6, "0")}`);
+    }
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 } // 10 MB max per chunk request (chunks are 5 MB)
+});
+
+// ── POST /files/upload-chunk ──────────────────────────────────────────────
+// Receives one chunk. Body fields: uploadId, chunkIndex, totalChunks
+app.post("/files/upload-chunk", chunkUpload.single("file"), async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  const uid = decoded.uid;
+
+  try {
+    const adminSnap = await db.ref(`admins/${uid}`).once("value");
+    if (!adminSnap.exists()) return res.status(403).json({ error: "Admin only" });
+  } catch {
+    return res.status(500).json({ error: "DB error" });
+  }
+
+  const { uploadId, chunkIndex, totalChunks } = req.body;
+  if (!uploadId || chunkIndex === undefined || !totalChunks) {
+    return res.status(400).json({ error: "Missing uploadId, chunkIndex, or totalChunks" });
+  }
+  if (!req.file) {
+    return res.status(400).json({ error: "No chunk data received" });
+  }
+
+  // Chunk was already written to disk by multer — nothing else to do here.
+  return res.json({ ok: true, chunkIndex: parseInt(chunkIndex, 10) });
+});
+
+// ── POST /files/upload-merge ──────────────────────────────────────────────
+// Merges all chunks, streams to Supabase, saves metadata, cleans up temp files.
+// Body (JSON): { uploadId, filename, mimetype, totalChunks }
+app.post("/files/upload-merge", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  const uid = decoded.uid;
+
+  try {
+    const adminSnap = await db.ref(`admins/${uid}`).once("value");
+    if (!adminSnap.exists()) return res.status(403).json({ error: "Admin only" });
+  } catch {
+    return res.status(500).json({ error: "DB error" });
+  }
+
+  const { uploadId, filename, mimetype, totalChunks } = req.body;
+  if (!uploadId || !filename || !mimetype || !totalChunks) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  const ALLOWED_MIMES = [
+    "application/pdf","application/epub+zip",
+    "image/png","image/jpeg","image/gif","image/webp","image/svg+xml",
+    "text/html","text/plain","text/markdown","text/csv",
+    "video/mp4","video/webm","audio/mpeg","audio/wav",
+    "model/stl","application/octet-stream",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/zip","application/x-rar-compressed"
+  ];
+  if (!ALLOWED_MIMES.includes(mimetype)) {
+    return res.status(400).json({ error: "File type not allowed" });
+  }
+
+  const chunkDir    = path.join(os.tmpdir(), "fileaccess_chunks", uploadId);
+  const mergedPath  = path.join(os.tmpdir(), "fileaccess_chunks", `${uploadId}_merged`);
+  const numChunks   = parseInt(totalChunks, 10);
+
+  // Verify all chunks exist before we start writing
+  for (let i = 0; i < numChunks; i++) {
+    const chunkPath = path.join(chunkDir, `chunk_${String(i).padStart(6, "0")}`);
+    if (!fs.existsSync(chunkPath)) {
+      return res.status(400).json({ error: `Missing chunk ${i}` });
+    }
+  }
+
+  // Concatenate chunks into a single temp file
+  try {
+    const out = fs.createWriteStream(mergedPath);
+    await new Promise((resolve, reject) => {
+      out.on("error", reject);
+      (async () => {
+        for (let i = 0; i < numChunks; i++) {
+          const chunkPath = path.join(chunkDir, `chunk_${String(i).padStart(6, "0")}`);
+          await new Promise((res2, rej2) => {
+            const inp = fs.createReadStream(chunkPath);
+            inp.on("error", rej2);
+            inp.on("end", res2);
+            inp.pipe(out, { end: false });
+          });
+        }
+        out.end();
+      })().catch(reject);
+      out.on("finish", resolve);
+    });
+  } catch (err) {
+    console.error("Chunk merge error:", err);
+    return res.status(500).json({ error: "Failed to merge chunks" });
+  }
+
+  // Get final file size
+  const fileSize = fs.statSync(mergedPath).size;
+
+  // Stream the merged file to Supabase
+  const storagePath = `${Date.now()}_${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+  try {
+    const fileStream = fs.createReadStream(mergedPath);
+    const supaRes = await fetch(
+      `${SUPABASE_URL}/storage/v1/object/${SUPABASE_BUCKET}/${encodeURIComponent(storagePath)}`,
+      {
+        method: "POST",
+        headers: {
+          ...supabaseHeaders(),
+          "Content-Type": mimetype,
+          "Content-Length": String(fileSize),
+          "x-upsert": "false"
+        },
+        body: fileStream
+      }
+    );
+    if (!supaRes.ok) {
+      const err = await supaRes.text();
+      console.error("Supabase chunked upload error:", err);
+      return res.status(500).json({ error: "Upload to storage failed" });
+    }
+  } catch (err) {
+    console.error("Supabase stream error:", err);
+    return res.status(500).json({ error: "Upload to storage failed" });
+  } finally {
+    // Clean up temp files regardless of outcome
+    try { fs.rmSync(path.join(os.tmpdir(), "fileaccess_chunks", uploadId), { recursive: true, force: true }); } catch {}
+    try { fs.unlinkSync(mergedPath); } catch {}
+  }
+
+  // Save metadata to Firebase
+  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${SUPABASE_BUCKET}/${encodeURIComponent(storagePath)}`;
+  const fileRef   = db.ref("files").push();
+  const fileData  = {
+    name:        filename,
+    type:        mimetype,
+    size:        fileSize,
+    storagePath,
+    url:         publicUrl,
+    uploadedBy:  uid,
+    uploadedAt:  Date.now()
+  };
+  try {
+    await fileRef.set(fileData);
+  } catch (err) {
+    console.error("Firebase write error:", err);
+    return res.status(500).json({ error: "Metadata save failed" });
+  }
+
+  // Activity log
+  db.ref("logs").push({
+    action:    "file_upload",
+    uid,
+    email:     "",
+    name:      "",
+    timestamp: Date.now(),
+    fileName:  filename,
+    fileId:    fileRef.key,
+    fileSize
   }).catch(() => {});
 
   return res.json({ fileId: fileRef.key, url: publicUrl, storagePath });
