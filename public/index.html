@@ -93,10 +93,69 @@
       </button>
     </div>
     <div class="modal-body" id="viewerBody">
-      <!-- PDF or image renders here -->
+      <!-- Content rendered here by openViewer / openProductPreview -->
     </div>
   </div>
 </div>
+
+<!-- Viewer progress + protection styles (injected once, shared by both viewer functions) -->
+<style>
+  /* ── Modal viewer progress bar ─────────────────────────────────────────── */
+  .mv-loading {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 1.5rem;
+    padding: 2.5rem 2rem; min-height: 340px;
+  }
+  .mv-loading-icon { font-size: 2.5rem; line-height: 1; }
+  .mv-loading-title { font-size: 0.95rem; font-weight: 600; color: var(--color-text); }
+  .mv-steps { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 0.9rem; }
+
+  .mv-step { display: flex; align-items: center; gap: 0.75rem; }
+  .mv-step-icon {
+    width: 28px; height: 28px; border-radius: 50%; border: 2px solid #CBD5E1;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; font-size: 0.72rem; color: #94A3B8;
+    transition: all 0.25s;
+  }
+  .mv-step-icon.mv-active  { border-color: #3B82F6; background: #EFF6FF; color: #2563EB; }
+  .mv-step-icon.mv-done    { border-color: #22C55E; background: #F0FDF4; color: #16A34A; }
+  .mv-step-icon.mv-err     { border-color: #EF4444; background: #FEF2F2; color: #EF4444; }
+  .mv-step-spin {
+    width: 12px; height: 12px;
+    border: 2px solid rgba(37,99,235,.25); border-top-color: #2563EB;
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+  }
+  .mv-step-text { display: flex; flex-direction: column; gap: 0.1rem; }
+  .mv-step-label  { font-size: 0.82rem; font-weight: 500; color: var(--color-text); }
+  .mv-step-sub    { font-size: 0.72rem; color: var(--color-muted); min-height: 1em; }
+  .mv-step.mv-pending .mv-step-label { color: var(--color-muted); }
+
+  .mv-track { margin-left: 13px; width: 2px; height: 14px; background: #E2E8F0; border-radius: 2px; overflow: hidden; }
+  .mv-track .mv-fill { width: 100%; height: 0%; background: #3B82F6; transition: height 0.35s ease; }
+  .mv-track.mv-filled .mv-fill { height: 100%; }
+
+  .mv-dl-bar { width: 100%; height: 3px; background: #E2E8F0; border-radius: 2px; overflow: hidden; margin-top: 0.25rem; display: none; }
+  .mv-dl-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#2563EB,#3B82F6); border-radius: 2px; transition: width 0.18s ease; }
+
+  /* error state inside modal */
+  .mv-error {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 0.85rem; padding: 2rem; text-align: center;
+  }
+  .mv-error-title { font-size: 0.9rem; font-weight: 600; color: #EF4444; }
+  .mv-error-detail {
+    font-size: 0.78rem; color: var(--color-muted); background: #F8FAFC;
+    padding: 0.65rem 0.9rem; border-radius: 6px; white-space: pre-wrap;
+    text-align: left; width: 100%; max-width: 440px;
+  }
+
+  /* PDF pages inside modal */
+  .mv-pdf-page { position: relative; margin-bottom: 0.75rem; line-height: 0; border-radius: 4px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+  .mv-pdf-page canvas { display: block; max-width: 100%; }
+  .mv-pdf-wrap { display: flex; flex-direction: column; align-items: center; padding: 1rem; background: #F1F5F9; }
+  .mv-wm { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+  .mv-preview-note { font-size: 0.8rem; color: var(--color-muted); text-align: center; padding: 0.5rem 0 0.25rem; }
+</style>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -314,40 +373,289 @@
     }
   }
 
-  // ── PDF viewer — fetch bytes → blob URL → iframe (no CDN, no X-Frame-Options) ─
-  // Fetching the PDF via fetch() and creating a blob: URL means the iframe's src
-  // is same-origin, so the browser never checks X-Frame-Options on it.
-  // A previous blobUrl is revoked on each call to avoid memory leaks.
-  let _pdfBlobUrl = null;
+  // ── Shared modal viewer engine ──────────────────────────────────────────────
+  // Renders any blob inside #viewerBody with the same step-progress UI as viewer.html.
+  // Steps:  1=auth/link  2=download  3=render
+  // Call mvStep*(n, msg) helpers to drive the UI, then mvRender*(blob, ...) to show content.
 
-  async function renderPdfPreview(container, pdfUrl, pageLimit) {
-    // Revoke previous blob to free memory
-    if (_pdfBlobUrl) { URL.revokeObjectURL(_pdfBlobUrl); _pdfBlobUrl = null; }
+  const PDFJS_CDN    = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs";
+  const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs";
 
-    const pageNote = pageLimit
-      ? `<p style="text-align:center;color:var(--color-text-muted);font-size:0.85rem;margin:0 0 0.75rem;">Preview: first ${pageLimit} pages only · Purchase to read the full content</p>`
-      : "";
+  // Build the progress HTML for N steps inside viewerBody
+  function mvBuildUI(body, icon, steps) {
+    const stepsHtml = steps.map((label, i) => {
+      const n = i + 1;
+      const track = n < steps.length
+        ? `<div class="mv-track" id="mv-track${n}"><div class="mv-fill"></div></div>` : "";
+      return `
+        <div class="mv-step mv-pending" id="mv-step${n}">
+          <div class="mv-step-icon" id="mv-icon${n}">${n}</div>
+          <div class="mv-step-text">
+            <div class="mv-step-label">${escHtml(label)}</div>
+            <div class="mv-step-sub" id="mv-sub${n}"></div>
+            ${n === 2 ? `<div class="mv-dl-bar" id="mv-dlbar"><div class="mv-dl-bar-fill" id="mv-dlbarfill"></div></div>` : ""}
+          </div>
+        </div>${track}`;
+    }).join("");
+    body.innerHTML = `
+      <div class="mv-loading">
+        <div class="mv-loading-icon">${icon}</div>
+        <div id="mv-steps" class="mv-steps">${stepsHtml}</div>
+      </div>`;
+  }
 
-    container.innerHTML = pageNote + `<div style="text-align:center;padding:1rem;"><div class="spinner"></div><p style="font-size:0.85rem;color:var(--color-text-muted);">Downloading PDF…</p></div>`;
+  function mvActive(n, sub) {
+    const step = document.getElementById(`mv-step${n}`);
+    const icon = document.getElementById(`mv-icon${n}`);
+    const subEl = document.getElementById(`mv-sub${n}`);
+    if (!step) return;
+    step.classList.remove("mv-pending");
+    icon.classList.add("mv-active");
+    icon.innerHTML = `<div class="mv-step-spin"></div>`;
+    if (sub != null && subEl) subEl.textContent = sub;
+  }
 
-    try {
-      const resp = await fetch(pdfUrl);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  function mvDone(n, sub) {
+    const step = document.getElementById(`mv-step${n}`);
+    const icon = document.getElementById(`mv-icon${n}`);
+    const subEl = document.getElementById(`mv-sub${n}`);
+    const track = document.getElementById(`mv-track${n}`);
+    if (!step) return;
+    step.classList.remove("mv-pending");
+    icon.classList.remove("mv-active");
+    icon.classList.add("mv-done");
+    icon.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`;
+    if (sub != null && subEl) subEl.textContent = sub;
+    if (track) track.classList.add("mv-filled");
+  }
+
+  function mvErr(n, sub) {
+    const icon = document.getElementById(`mv-icon${n}`);
+    const subEl = document.getElementById(`mv-sub${n}`);
+    if (!icon) return;
+    icon.classList.remove("mv-active");
+    icon.classList.add("mv-err");
+    icon.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+    if (sub != null && subEl) subEl.textContent = sub;
+  }
+
+  function mvSetDlProgress(pct) {
+    const bar  = document.getElementById("mv-dlbar");
+    const fill = document.getElementById("mv-dlbarfill");
+    if (!bar || !fill) return;
+    bar.style.display = "block";
+    fill.style.width  = `${Math.min(100, pct)}%`;
+  }
+
+  function mvSetSub(n, msg) {
+    const el = document.getElementById(`mv-sub${n}`);
+    if (el) el.textContent = msg;
+  }
+
+  function mvShowError(body, msg) {
+    body.innerHTML = `
+      <div class="mv-error">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <div class="mv-error-title">Failed to load</div>
+        <pre class="mv-error-detail">${escHtml(msg)}</pre>
+      </div>`;
+  }
+
+  // Fetch blob with streaming progress (step 2)
+  async function mvFetchBlob(url) {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Storage error ${resp.status}`);
+    const contentLength = Number(resp.headers.get("Content-Length") || 0);
+    if (contentLength > 0 && resp.body) {
+      const reader = resp.body.getReader();
+      const chunks = [];
+      let received = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        mvSetDlProgress((received / contentLength) * 100);
+        mvSetSub(2, `${mvFmtBytes(received)} / ${mvFmtBytes(contentLength)}`);
+      }
+      const all = new Uint8Array(received);
+      let off = 0;
+      for (const c of chunks) { all.set(c, off); off += c.length; }
+      return new Blob([all]);
+    } else {
+      // Indeterminate
+      let pct = 0;
+      const t = setInterval(() => { pct = Math.min(88, pct + 2); mvSetDlProgress(pct); }, 150);
       const blob = await resp.blob();
-      _pdfBlobUrl = URL.createObjectURL(blob);
-
-      const iframe = document.createElement("iframe");
-      iframe.src = _pdfBlobUrl;
-      iframe.style.cssText = "width:100%;height:70vh;border:none;border-radius:8px;display:block;";
-
-      // Replace spinner with iframe
-      const existing = container.querySelector("div");
-      if (existing) existing.remove();
-      container.appendChild(iframe);
-    } catch (err) {
-      console.error("PDF load error:", err);
-      container.innerHTML += `<p style="color:var(--color-error);text-align:center;">Could not load PDF: ${err.message}</p>`;
+      clearInterval(t);
+      return blob;
     }
+  }
+
+  function mvFmtBytes(b) {
+    if (b < 1024) return `${b} B`;
+    if (b < 1048576) return `${(b/1024).toFixed(1)} KB`;
+    return `${(b/1048576).toFixed(1)} MB`;
+  }
+
+  // Render content into a target container div
+  async function mvRenderContent(container, blob, fileType, fileName, watermarkEmail, pageLimit) {
+    const type = fileType || blob.type;
+
+    if (type === "application/pdf") {
+      await mvRenderPdf(container, blob, watermarkEmail, pageLimit);
+    } else if (type.startsWith("image/")) {
+      mvRenderImage(container, blob, watermarkEmail);
+    } else if (type.startsWith("video/")) {
+      mvRenderVideo(container, blob);
+    } else if (type.startsWith("audio/")) {
+      mvRenderAudio(container, blob, fileName);
+    } else if (type.startsWith("text/")) {
+      await mvRenderText(container, blob);
+    } else {
+      throw new Error(`Cannot preview this file type: ${type || "unknown"}`);
+    }
+  }
+
+  async function mvRenderPdf(container, blob, email, pageLimit) {
+    let pdfjsLib;
+    try {
+      pdfjsLib = await import(PDFJS_CDN);
+      pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
+    } catch (e) { throw new Error(`PDF engine failed to load: ${e.message}`); }
+
+    const arrayBuffer = await blob.arrayBuffer();
+    let pdf;
+    try { pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise; }
+    catch (e) { throw new Error(`Could not parse PDF: ${e.message}`); }
+
+    const total = pageLimit ? Math.min(pdf.numPages, pageLimit) : pdf.numPages;
+
+    const wrap = document.createElement("div");
+    wrap.className = "mv-pdf-wrap";
+
+    if (pageLimit && pdf.numPages > pageLimit) {
+      const note = document.createElement("p");
+      note.className = "mv-preview-note";
+      note.textContent = `Preview: first ${pageLimit} of ${pdf.numPages} pages · Purchase to read all`;
+      wrap.appendChild(note);
+    }
+
+    container.appendChild(wrap);
+
+    for (let i = 1; i <= total; i++) {
+      mvSetSub(3, `Rendering page ${i} / ${total}…`);
+      const page     = await pdf.getPage(i);
+      const scale    = Math.min(1.5, (container.clientWidth - 32) / page.getViewport({ scale: 1 }).width);
+      const viewport = page.getViewport({ scale: scale > 0 ? scale : 1.5 });
+
+      const pageDiv = document.createElement("div");
+      pageDiv.className = "mv-pdf-page";
+      const canvas = document.createElement("canvas");
+      canvas.width  = viewport.width;
+      canvas.height = viewport.height;
+      pageDiv.appendChild(canvas);
+      wrap.appendChild(pageDiv);
+
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+
+      if (email) {
+        const wm = document.createElement("canvas");
+        wm.className = "mv-wm";
+        wm.width  = canvas.width;
+        wm.height = canvas.height;
+        wm.style.opacity = "0.12";
+        const ctx = wm.getContext("2d");
+        ctx.font = "bold 13px Inter,system-ui,sans-serif";
+        ctx.fillStyle = "#000";
+        ctx.save();
+        ctx.translate(canvas.width/2, canvas.height/2);
+        ctx.rotate(-30 * Math.PI / 180);
+        ctx.translate(-canvas.width/2, -canvas.height/2);
+        const stepX = 240, stepY = 100;
+        for (let y = -canvas.height; y < canvas.width + canvas.height; y += stepY)
+          for (let x = -canvas.width; x < canvas.width + canvas.height; x += stepX)
+            ctx.fillText(`🔒 ${email}`, x, y);
+        ctx.restore();
+        pageDiv.appendChild(wm);
+      }
+    }
+  }
+
+  function mvRenderImage(container, blob, email) {
+    const url  = URL.createObjectURL(blob);
+    const wrap = document.createElement("div");
+    wrap.className = "image-viewer";
+    wrap.style.position = "relative";
+    const img = document.createElement("img");
+    img.src      = url;
+    img.draggable = false;
+    img.style.pointerEvents = "none";
+    img.onload = () => {
+      if (email) {
+        const wm = document.createElement("canvas");
+        wm.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:10;opacity:0.12;";
+        wrap.appendChild(wm);
+        requestAnimationFrame(() => {
+          wm.width  = wrap.offsetWidth  || 800;
+          wm.height = wrap.offsetHeight || 600;
+          const ctx = wm.getContext("2d");
+          ctx.font = "bold 13px Inter,system-ui,sans-serif";
+          ctx.fillStyle = "#000";
+          ctx.save();
+          ctx.translate(wm.width/2, wm.height/2);
+          ctx.rotate(-30 * Math.PI / 180);
+          ctx.translate(-wm.width/2, -wm.height/2);
+          for (let y = -wm.height; y < wm.width + wm.height; y += 100)
+            for (let x = -wm.width; x < wm.width + wm.height; x += 240)
+              ctx.fillText(`🔒 ${email}`, x, y);
+          ctx.restore();
+        });
+      }
+      URL.revokeObjectURL(url);
+    };
+    wrap.appendChild(img);
+    container.appendChild(wrap);
+  }
+
+  function mvRenderVideo(container, blob) {
+    const url   = URL.createObjectURL(blob);
+    const wrap  = document.createElement("div");
+    wrap.className = "media-viewer";
+    const video = document.createElement("video");
+    video.src                    = url;
+    video.controls               = true;
+    video.controlsList           = "nodownload nofullscreen";
+    video.disablePictureInPicture = true;
+    video.onended = () => URL.revokeObjectURL(url);
+    wrap.appendChild(video);
+    container.appendChild(wrap);
+  }
+
+  function mvRenderAudio(container, blob, name) {
+    const url  = URL.createObjectURL(blob);
+    const wrap = document.createElement("div");
+    wrap.className = "media-viewer audio-viewer";
+    wrap.innerHTML = `<div style="font-size:3.5rem">🎵</div><p style="margin:1rem 0 1.5rem;font-weight:500">${escHtml(name)}</p>`;
+    const audio = document.createElement("audio");
+    audio.src          = url;
+    audio.controls     = true;
+    audio.controlsList = "nodownload";
+    audio.onended      = () => URL.revokeObjectURL(url);
+    wrap.appendChild(audio);
+    container.appendChild(wrap);
+  }
+
+  async function mvRenderText(container, blob) {
+    const text = await blob.text();
+    const wrap = document.createElement("div");
+    wrap.className = "text-viewer";
+    const pre = document.createElement("pre");
+    pre.textContent = text;
+    wrap.appendChild(pre);
+    container.appendChild(wrap);
   }
 
   // ── Product preview modal ───────────────────────────────────────────────────
@@ -359,27 +667,53 @@
     const body  = document.getElementById("viewerBody");
 
     document.getElementById("viewerTitle").textContent = `預覽：${p.name}`;
-    body.innerHTML = `<div style="text-align:center;padding:2rem;"><div class="spinner"></div><p>載入中…</p></div>`;
+    document.getElementById("viewerMeta").textContent  = "";
     modal.classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+
+    const icon = "📄";
+    mvBuildUI(body, icon, ["Fetching preview link", "Downloading", "Rendering"]);
+    mvActive(1, "Contacting server…");
+
+    let signedUrl, pageLimit, fileType;
+    try {
+      const url  = `${ECPAY_SERVER_URL}/files/preview-url?fileId=${encodeURIComponent(p.previewFileId)}${p.previewPages ? `&pages=${p.previewPages}` : ""}`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("無法取得預覽連結");
+      ({ signedUrl, pageLimit, fileType } = await resp.json());
+      mvDone(1, "Link received");
+    } catch (err) {
+      mvErr(1, err.message);
+      mvShowError(body, err.message);
+      return;
+    }
+
+    mvActive(2, "Connecting…");
+    let blob;
+    try {
+      blob = await mvFetchBlob(signedUrl);
+      mvSetDlProgress(100);
+      mvDone(2, `${mvFmtBytes(blob.size)} downloaded`);
+    } catch (err) {
+      mvErr(2, err.message);
+      mvShowError(body, err.message);
+      return;
+    }
+
+    mvActive(3, "Preparing…");
+    // Clear loading UI and replace with content container
+    body.innerHTML = "";
+    const contentDiv = document.createElement("div");
+    contentDiv.style.cssText = "width:100%;min-height:300px;overflow:auto;";
+    body.appendChild(contentDiv);
 
     try {
-      const url   = `${ECPAY_SERVER_URL}/files/preview-url?fileId=${encodeURIComponent(p.previewFileId)}${p.previewPages ? `&pages=${p.previewPages}` : ""}`;
-      const resp  = await fetch(url);
-      if (!resp.ok) throw new Error("無法取得預覽連結");
-      const { signedUrl, pageLimit, fileType } = await resp.json();
-
-      if (fileType === "application/pdf") {
-        const pageNote = pageLimit
-          ? `<p style="text-align:center;color:var(--color-text-muted);font-size:0.85rem;margin:0 0 0.75rem;">Preview: first ${pageLimit} pages only · Purchase to read the full content</p>`
-          : "";
-        body.innerHTML = pageNote + `<iframe src="${signedUrl}" style="width:100%;height:70vh;border:none;border-radius:8px;display:block;"></iframe>`;
-      } else if (fileType?.startsWith("image/")) {
-        body.innerHTML = `<img src="${signedUrl}" style="max-width:100%;max-height:70vh;border-radius:8px;display:block;margin:auto;" />`;
-      } else {
-        body.innerHTML = `<div style="text-align:center;padding:2rem;"><a href="${signedUrl}" target="_blank" rel="noopener" class="btn btn-primary">開啟預覽檔案</a></div>`;
-      }
-    } catch(err) {
-      body.innerHTML = `<p style="color:var(--color-error);text-align:center;">${escHtml(err.message)}</p>`;
+      // Re-show a minimal step 3 indicator while rendering
+      body.insertAdjacentHTML("afterbegin", `<div id="mv-render-note" style="font-size:0.78rem;color:var(--color-muted);text-align:center;padding:0.4rem 0;"><span id="mv-sub3">Rendering…</span></div>`);
+      await mvRenderContent(contentDiv, blob, fileType, p.name || "", "", pageLimit);
+      document.getElementById("mv-render-note")?.remove();
+    } catch (err) {
+      mvShowError(body, err.message);
     }
   };
 
@@ -533,11 +867,22 @@
       file?.expiresAt ? `Access expires ${formatDate(file.expiresAt)}` : "";
 
     const body = document.getElementById("viewerBody");
-    body.innerHTML = `<div class="viewer-wrap"><div class="empty-state"><div class="spinner"></div><p>載入中…</p></div></div>`;
     document.getElementById("viewerModal").classList.remove("hidden");
     document.body.style.overflow = "hidden";
 
-    // Get a fresh 15-minute signed URL from server (server verifies access)
+    // Determine icon from type
+    function viewerIcon(t, n) {
+      if (t === "application/pdf")  return "📄";
+      if (t?.startsWith("image/")) return "🖼️";
+      if (t?.startsWith("video/")) return "🎬";
+      if (t?.startsWith("audio/")) return "🎵";
+      if (t?.startsWith("text/"))  return "📝";
+      return "📁";
+    }
+    mvBuildUI(body, viewerIcon(type, name), ["Fetching secure link", "Downloading", "Rendering"]);
+
+    // Step 1 — get signed URL
+    mvActive(1, "Contacting server…");
     let signedUrl;
     try {
       const idToken = await currentUserObj.getIdToken();
@@ -545,66 +890,60 @@
         `${ECPAY_SERVER_URL}/files/signed-url?fileId=${encodeURIComponent(fileId)}`,
         { headers: { "Authorization": `Bearer ${idToken}` } }
       );
-      if (!resp.ok) throw new Error((await resp.json()).error || resp.statusText);
+      if (!resp.ok) throw new Error((await resp.json().catch(()=>({}))).error || resp.statusText);
       ({ signedUrl } = await resp.json());
+      mvDone(1, "Secure link received");
     } catch (err) {
-      body.innerHTML = `<div class="viewer-wrap"><div class="image-viewer"><p class="text-error">無法載入檔案：${escHtml(err.message)}</p></div></div>`;
+      mvErr(1, err.message);
+      mvShowError(body, `無法載入檔案：${err.message}`);
       return;
     }
 
-    // Log the file view (fire-and-forget)
+    // Log (fire-and-forget)
     writeLog("file_view", { fileName: name, fileId });
 
-    const def  = getTypeDef(type, name);
+    const def = getTypeDef(type, name);
 
-    if (def.viewer === "pdf") {
-      // Browser built-in PDF viewer via direct iframe → signed S3 URL
-      body.innerHTML = `<div class="viewer-wrap"><iframe src="${signedUrl}" style="width:100%;height:70vh;border:none;border-radius:8px;display:block;"></iframe></div>`;
+    // Non-previewable types — show a "contact admin" message (no download link)
+    if (def.viewer === "download") {
+      body.innerHTML = `
+        <div class="image-viewer" style="flex-direction:column;gap:1rem;min-height:260px;">
+          <div style="font-size:3.5rem">${def.icon}</div>
+          <p style="font-weight:500;font-size:1rem">${escHtml(name)}</p>
+          <p style="color:var(--color-muted);font-size:0.85rem;">This file type cannot be previewed in-browser.<br>Contact an admin to access this file.</p>
+        </div>`;
       return;
     }
 
-    let inner = "";
-    switch (def.viewer) {
-      case "image":
-        inner = `<div class="image-viewer"><img src="${signedUrl}" alt="${escHtml(name)}" /></div>`;
-        break;
-      case "video":
-        inner = `<div class="media-viewer"><video controls controlsList="nodownload" src="${signedUrl}"></video></div>`;
-        break;
-      case "audio":
-        inner = `<div class="media-viewer audio-viewer"><div style="font-size:4rem">🎵</div><p style="margin:1rem 0 1.5rem;font-weight:500">${escHtml(name)}</p><audio controls controlsList="nodownload" src="${signedUrl}"></audio></div>`;
-        break;
-      case "html":
-        inner = `<iframe src="${signedUrl}" class="file-viewer-frame" sandbox="allow-scripts allow-same-origin"></iframe>`;
-        break;
-      case "text":
-        try {
-          const r = await fetch(signedUrl);
-          const text = await r.text();
-          inner = `<div class="text-viewer"><pre>${escHtml(text)}</pre></div>`;
-        } catch { inner = `<div class="image-viewer"><p>Could not load file content.</p></div>`; }
-        break;
-      case "download":
-      default:
-        inner = `<div class="image-viewer" style="flex-direction:column;gap:1.5rem;">
-          <div style="font-size:4rem">${def.icon}</div>
-          <p style="font-weight:500;font-size:1.1rem">${escHtml(name)}</p>
-          <a href="${signedUrl}" download="${escHtml(name)}" class="btn btn-primary btn-sm" style="margin-top:0.5rem;">⬇ 下載</a>
-        </div>`;
-        break;
+    // Step 2 — download blob with progress
+    mvActive(2, "Connecting…");
+    let blob;
+    try {
+      blob = await mvFetchBlob(signedUrl);
+      mvSetDlProgress(100);
+      mvDone(2, `${mvFmtBytes(blob.size)} downloaded`);
+    } catch (err) {
+      mvErr(2, err.message);
+      mvShowError(body, err.message);
+      return;
     }
 
-    body.innerHTML = `<div class="viewer-wrap">${inner}</div>`;
+    // Step 3 — render
+    mvActive(3, "Preparing…");
+    body.innerHTML = "";
+    const contentDiv = document.createElement("div");
+    contentDiv.style.cssText = "width:100%;min-height:300px;overflow:auto;";
+    body.appendChild(contentDiv);
 
-    // Apply watermark overlay for viewable content types (deters screenshots)
-    if (["pdf", "image", "html", "text", "video"].includes(def.viewer) &&
-        typeof window.applyViewerWatermark === "function") {
-      const viewerWrap = body.querySelector(".viewer-wrap");
-      if (viewerWrap) {
-        viewerWrap.style.position = "relative";
-        const canvas = window.applyViewerWatermark(currentUserEmail);
-        viewerWrap.appendChild(canvas);
-      }
+    // Thin rendering status bar
+    body.insertAdjacentHTML("afterbegin", `<div id="mv-render-note" style="font-size:0.78rem;color:var(--color-muted);text-align:center;padding:0.35rem 0;"><span id="mv-sub3">Rendering…</span></div>`);
+
+    try {
+      const fileType = type || blob.type;
+      await mvRenderContent(contentDiv, blob, fileType, name, currentUserEmail, null);
+      document.getElementById("mv-render-note")?.remove();
+    } catch (err) {
+      mvShowError(body, err.message);
     }
   }
 
