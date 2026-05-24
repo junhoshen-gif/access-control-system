@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Reader Debug</title>
+  <style>
+    body { font-family: monospace; padding: 2rem; background: #0f172a; color: #e2e8f0; margin: 0; }
+    h2 { color: #7dd3fc; margin: 0 0 1.5rem; }
+    .step { background: #1e293b; border-radius: 8px; padding: 1rem 1.2rem; margin-bottom: 1rem; border-left: 4px solid #334155; }
+    .step.ok   { border-color: #22c55e; }
+    .step.fail { border-color: #ef4444; }
+    .step.running { border-color: #f59e0b; }
+    .step-title { font-weight: bold; font-size: 0.95rem; margin-bottom: 0.3rem; color: #94a3b8; }
+    .step.ok   .step-title { color: #22c55e; }
+    .step.fail .step-title { color: #ef4444; }
+    .step.running .step-title { color: #f59e0b; }
+    .step-detail { font-size: 0.82rem; color: #94a3b8; word-break: break-all; white-space: pre-wrap; }
+    input, select { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 0.5rem 0.75rem; font-family: monospace; font-size: 0.9rem; width: 100%; box-sizing: border-box; margin-bottom: 0.75rem; }
+    button { background: #2563eb; color: white; border: none; border-radius: 6px; padding: 0.6rem 1.4rem; font-size: 0.95rem; cursor: pointer; margin-right: 0.5rem; }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #334155; cursor: not-allowed; }
+    label { font-size: 0.85rem; color: #94a3b8; display: block; margin-bottom: 0.3rem; }
+    #viewer { margin-top: 1.5rem; background: #1e293b; border-radius: 8px; min-height: 200px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    #viewer img  { max-width: 100%; max-height: 70vh; border-radius: 8px; display: block; }
+    #viewer iframe { width: 100%; height: 70vh; border: none; border-radius: 8px; display: block; }
+    #viewer video { max-width: 100%; max-height: 70vh; border-radius: 8px; display: block; }
+    .placeholder { color: #475569; font-size: 0.9rem; }
+    hr { border-color: #334155; margin: 1.5rem 0; }
+  </style>
+</head>
+<body>
+
+<h2>🔬 File Reader — Step-by-step Debug</h2>
+
+<label>Server URL</label>
+<input id="serverUrl" value="https://fileaccess-ecpay.onrender.com" />
+
+<label>File ID (from Firebase — paste from admin panel)</label>
+<input id="fileId" placeholder="e.g. a3f9c12b8e7d..." />
+
+<label>File type</label>
+<select id="fileType">
+  <option value="application/pdf">PDF</option>
+  <option value="image/jpeg">JPEG image</option>
+  <option value="image/png">PNG image</option>
+  <option value="video/mp4">MP4 video</option>
+</select>
+
+<button id="runBtn" onclick="runTest()">▶ Run Test</button>
+<button onclick="clearAll()">✕ Clear</button>
+
+<div id="steps"></div>
+
+<div id="viewer"><span class="placeholder">File will appear here after a successful test</span></div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { firebaseConfig } from "./js/config.js";
+
+  const app  = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+
+  // Wait for auth state before allowing test
+  let currentUser = null;
+  onAuthStateChanged(auth, user => {
+    currentUser = user;
+    if (user) {
+      addStep("✅ Step 0 — Firebase Auth", "ok",
+        `Signed in as: ${user.email || user.displayName}\nUID: ${user.uid}`);
+    } else {
+      addStep("❌ Step 0 — Firebase Auth", "fail",
+        "Not signed in. Open index.html first to log in, then come back here.");
+    }
+  });
+
+  window.runTest = async function() {
+    const serverUrl = document.getElementById("serverUrl").value.trim().replace(/\/$/, "");
+    const fileId    = document.getElementById("fileId").value.trim();
+    const fileType  = document.getElementById("fileType").value;
+
+    if (!fileId) { alert("Please enter a File ID"); return; }
+    if (!currentUser) { alert("Not signed in — open index.html first"); return; }
+
+    document.getElementById("runBtn").disabled = true;
+    // Clear previous test steps (keep step 0)
+    const allSteps = document.querySelectorAll(".step");
+    allSteps.forEach((s, i) => { if (i > 0) s.remove(); });
+    document.getElementById("viewer").innerHTML = `<span class="placeholder">Running…</span>`;
+
+    // ── Step 1: Get ID token ─────────────────────────────────────────────────
+    let idToken;
+    const s1 = addStep("⏳ Step 1 — Get Firebase ID token", "running", "Calling getIdToken()…");
+    try {
+      idToken = await currentUser.getIdToken(true);
+      setStep(s1, "ok", `✅ Step 1 — Got ID token`,
+        `Token length: ${idToken.length} chars\nFirst 40 chars: ${idToken.slice(0, 40)}…`);
+    } catch (err) {
+      setStep(s1, "fail", `❌ Step 1 — getIdToken() failed`, err.message);
+      document.getElementById("runBtn").disabled = false;
+      return;
+    }
+
+    // ── Step 2: Fetch signed URL from Render server ──────────────────────────
+    let signedUrl;
+    const endpoint = `${serverUrl}/files/signed-url?fileId=${encodeURIComponent(fileId)}`;
+    const s2 = addStep("⏳ Step 2 — Fetch signed URL from Render", "running",
+      `GET ${endpoint}`);
+    try {
+      const resp = await fetch(endpoint, {
+        headers: { "Authorization": `Bearer ${idToken}` }
+      });
+      const text = await resp.text();
+      if (!resp.ok) {
+        setStep(s2, "fail", `❌ Step 2 — Render server returned HTTP ${resp.status}`,
+          `URL: ${endpoint}\nStatus: ${resp.status} ${resp.statusText}\nBody: ${text}`);
+        document.getElementById("runBtn").disabled = false;
+        return;
+      }
+      const json = JSON.parse(text);
+      signedUrl = json.signedUrl;
+      if (!signedUrl) {
+        setStep(s2, "fail", `❌ Step 2 — No signedUrl in response`, `Response: ${text}`);
+        document.getElementById("runBtn").disabled = false;
+        return;
+      }
+      // Show the URL but truncate the query string for readability
+      const urlObj = new URL(signedUrl);
+      const shortUrl = `${urlObj.protocol}//${urlObj.hostname}${urlObj.pathname}?[signature omitted]`;
+      setStep(s2, "ok", `✅ Step 2 — Got signed URL`, `Host: ${urlObj.hostname}\nPath: ${urlObj.pathname}\nFull URL (for copy): ${signedUrl}`);
+    } catch (err) {
+      setStep(s2, "fail", `❌ Step 2 — fetch() threw an error`,
+        `This usually means CORS blocked the request to Render, or the server is down.\n\nError: ${err.name}: ${err.message}\nEndpoint: ${endpoint}`);
+      document.getElementById("runBtn").disabled = false;
+      return;
+    }
+
+    // ── Step 3: Fetch the actual file from S3 ───────────────────────────────
+    const s3step = addStep("⏳ Step 3 — Fetch file bytes from S3", "running",
+      `Fetching: ${signedUrl.split("?")[0]}…`);
+    let blobUrl;
+    try {
+      const resp = await fetch(signedUrl);
+      if (!resp.ok) {
+        const body = await resp.text();
+        setStep(s3step, "fail", `❌ Step 3 — S3 returned HTTP ${resp.status}`,
+          `Status: ${resp.status} ${resp.statusText}\nBody: ${body.slice(0, 500)}`);
+        document.getElementById("runBtn").disabled = false;
+        return;
+      }
+      const blob = await resp.blob();
+      blobUrl = URL.createObjectURL(blob);
+      setStep(s3step, "ok", `✅ Step 3 — File downloaded`,
+        `Size: ${(blob.size / 1024).toFixed(1)} KB\nMIME: ${blob.type || "(browser did not report MIME)"}`);
+    } catch (err) {
+      setStep(s3step, "fail", `❌ Step 3 — fetch() to S3 threw an error`,
+        `This usually means:\n  • S3 CORS does not allow this origin\n  • The signed URL expired\n  • Network blocked\n\nError: ${err.name}: ${err.message}\nOrigin: ${location.origin}`);
+      document.getElementById("runBtn").disabled = false;
+      return;
+    }
+
+    // ── Step 4: Render in viewer ─────────────────────────────────────────────
+    const s4 = addStep("⏳ Step 4 — Render in viewer", "running", "Injecting into DOM…");
+    const viewer = document.getElementById("viewer");
+    try {
+      if (fileType === "application/pdf") {
+        const iframe = document.createElement("iframe");
+        iframe.src = blobUrl;
+        viewer.innerHTML = "";
+        viewer.appendChild(iframe);
+      } else if (fileType.startsWith("image/")) {
+        viewer.innerHTML = `<img src="${blobUrl}" alt="loaded file" />`;
+      } else if (fileType.startsWith("video/")) {
+        viewer.innerHTML = `<video controls src="${blobUrl}"></video>`;
+      } else {
+        viewer.innerHTML = `<span class="placeholder">File type ${fileType} — <a href="${blobUrl}" target="_blank" style="color:#7dd3fc">open in new tab</a></span>`;
+      }
+      setStep(s4, "ok", `✅ Step 4 — Rendered successfully`, `blob: URL created and injected`);
+    } catch (err) {
+      setStep(s4, "fail", `❌ Step 4 — Render failed`, err.message);
+    }
+
+    document.getElementById("runBtn").disabled = false;
+  };
+
+  window.clearAll = function() {
+    document.querySelectorAll(".step").forEach((s, i) => { if (i > 0) s.remove(); });
+    document.getElementById("viewer").innerHTML = `<span class="placeholder">File will appear here after a successful test</span>`;
+  };
+
+  function addStep(title, state, detail) {
+    const div = document.createElement("div");
+    div.className = `step ${state}`;
+    div.innerHTML = `<div class="step-title">${title}</div><div class="step-detail">${escHtml(detail)}</div>`;
+    document.getElementById("steps").appendChild(div);
+    return div;
+  }
+
+  function setStep(div, state, title, detail) {
+    div.className = `step ${state}`;
+    div.querySelector(".step-title").textContent = title;
+    div.querySelector(".step-detail").textContent = detail;
+  }
+
+  function escHtml(s) {
+    return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+</script>
+</body>
+</html>
