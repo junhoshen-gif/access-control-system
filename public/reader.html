@@ -518,8 +518,8 @@
   function parseParams() {
     const p = new URLSearchParams(window.location.search);
     fileId   = p.get("fileId");
-    fileName = decodeURIComponent(p.get("name") || "");
-    fileType = decodeURIComponent(p.get("type") || "");
+    fileName = p.get("name") || "";
+    fileType = p.get("type") || "";
     if (!fileId) {
       showError("No file specified. <a href='index.html'>Go back</a>");
     }
@@ -553,7 +553,11 @@
     if (!fileId) return;
     elFileTitle.textContent = fileName || "Loading…";
     document.title = (fileName || "Reader") + " – FileAccess";
-    await fetchSignedUrl();
+    try {
+      await fetchSignedUrl();
+    } catch {
+      return; // error already shown by fetchSignedUrl
+    }
     initReader();
   });
 
@@ -592,7 +596,7 @@
       elSidebar.classList.remove("collapsed");
       loadEpub();
     } else {
-      showError("This file type is not supported by the reader. <a href='index.html'>Go back</a>");
+      showError(`Unsupported type: "${escHtml(fileType)}" / ext: "${escHtml(fileName?.split(".").pop())}" — <a href='index.html'>Go back</a>`);
     }
   }
 

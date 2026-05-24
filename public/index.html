@@ -429,8 +429,8 @@
     if (def.viewer === "reader") {
       const params = new URLSearchParams({
         fileId,
-        name:  encodeURIComponent(name),
-        type:  encodeURIComponent(type || ""),
+        name:  name,
+        type:  type || "",
       });
       window.location.href = `reader.html?${params.toString()}`;
       return;
