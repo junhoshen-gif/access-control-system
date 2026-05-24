@@ -464,12 +464,9 @@
     // Log the file view (fire-and-forget)
     writeLog("file_view", { fileName: name, fileId });
 
-    const def  = getTypeDef(type, name);
+    const modalDef = getTypeDef(type, name);
     let inner = "";
-    switch (def.viewer) {
-      case "pdf":
-        inner = `<iframe src="${signedUrl}#toolbar=0&navpanes=0" class="file-viewer-frame"></iframe>`;
-        break;
+    switch (modalDef.viewer) {
       case "image":
         inner = `<div class="image-viewer"><img src="${signedUrl}" alt="${escHtml(name)}" /></div>`;
         break;
@@ -492,7 +489,7 @@
       case "download":
       default:
         inner = `<div class="image-viewer" style="flex-direction:column;gap:1.5rem;">
-          <div style="font-size:4rem">${def.icon}</div>
+          <div style="font-size:4rem">${modalDef.icon}</div>
           <p style="font-weight:500;font-size:1.1rem">${escHtml(name)}</p>
           <a href="${signedUrl}" download="${escHtml(name)}" class="btn btn-primary btn-sm" style="margin-top:0.5rem;">⬇ 下載</a>
         </div>`;
@@ -502,7 +499,7 @@
     body.innerHTML = `<div class="viewer-wrap">${inner}</div>`;
 
     // Apply watermark overlay for viewable content types (deters screenshots)
-    if (["pdf", "image", "html", "text", "video"].includes(def.viewer) &&
+    if (["image", "html", "text", "video"].includes(modalDef.viewer) &&
         typeof window.applyViewerWatermark === "function") {
       const viewerWrap = body.querySelector(".viewer-wrap");
       if (viewerWrap) {
