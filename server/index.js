@@ -89,7 +89,7 @@ app.use(cors({
   origin: (origin, cb) => {
     // Allow requests with no origin (server-to-server, curl) and listed origins
     if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-    cb(new Error(`CORS: origin ${origin} not allowed`));
+    cb(null, false);
   }
 }));
 
