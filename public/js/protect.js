@@ -1,4 +1,5 @@
 /**
+ * 
  * FileAccess – Content Protection
  * - Blocks right-click, keyboard shortcuts, drag, print
  * - Shows a toast error message on every blocked attempt
