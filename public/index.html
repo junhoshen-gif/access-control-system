@@ -675,12 +675,15 @@
     mvBuildUI(body, icon, ["Fetching preview link", "Downloading", "Rendering"]);
     mvActive(1, "Contacting server…");
 
-    let signedUrl, pageLimit, fileType;
+    // Step 1 — fetch metadata / secure link
+    let meta, pageLimit, fileType;
     try {
-      const url  = `${ECPAY_SERVER_URL}/files/preview-url?fileId=${encodeURIComponent(p.previewFileId)}${p.previewPages ? `&pages=${p.previewPages}` : ""}`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error("無法取得預覽連結");
-      ({ signedUrl, pageLimit, fileType } = await resp.json());
+      const metaUrl  = `${ECPAY_SERVER_URL}/files/preview-url?fileId=${encodeURIComponent(p.previewFileId)}`;
+      const metaResp = await fetch(metaUrl);
+      if (!metaResp.ok) throw new Error("無法取得預覽連結");
+      meta      = await metaResp.json();
+      fileType  = meta.fileType;
+      pageLimit = p.previewPages ? parseInt(p.previewPages, 10) : meta.pageLimit;
       mvDone(1, "Link received");
     } catch (err) {
       mvErr(1, err.message);
@@ -688,10 +691,21 @@
       return;
     }
 
+    // Step 2 — download
     mvActive(2, "Connecting…");
     let blob;
     try {
-      blob = await mvFetchBlob(signedUrl);
+      if (fileType === "application/pdf" && pageLimit) {
+        // For PDFs with a page limit: ask the server to trim to N pages.
+        // The server downloads from S3, extracts pages, and returns a small PDF —
+        // so the client only receives the previewable pages, not the full file.
+        const previewUrl = `${ECPAY_SERVER_URL}/files/preview-pdf?fileId=${encodeURIComponent(p.previewFileId)}&pages=${pageLimit}`;
+        blob = await mvFetchBlob(previewUrl);
+      } else {
+        // For non-PDFs (images, audio, video, text) or PDFs without a page limit,
+        // download the full file via the original signed URL.
+        blob = await mvFetchBlob(meta.signedUrl);
+      }
       mvSetDlProgress(100);
       mvDone(2, `${mvFmtBytes(blob.size)} downloaded`);
     } catch (err) {

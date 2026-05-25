@@ -30,6 +30,7 @@ const multer    = require("multer");
 const fs        = require("fs");
 const path      = require("path");
 const os        = require("os");
+const { PDFDocument } = require("pdf-lib");
 const {
   S3Client,
   PutObjectCommand,
@@ -581,6 +582,75 @@ app.get("/files/preview-url", async (req, res) => {
     console.error("S3 preview URL error:", err);
     return res.status(500).json({ error: "Could not generate preview URL" });
   }
+});
+
+// ── GET /files/preview-pdf?fileId=xxx&pages=N ───────────────────────────────
+// Downloads the full PDF from S3, extracts the first N pages using pdf-lib,
+// and streams the trimmed PDF back to the client.
+// No auth required — same trust level as /files/preview-url.
+// Only works for PDF files; returns 415 for other types.
+app.get("/files/preview-pdf", async (req, res) => {
+  const fileId    = req.query.fileId;
+  const pageLimit = parseInt(req.query.pages, 10) || null;
+  if (!fileId) return res.status(400).json({ error: "Missing fileId" });
+
+  // Load file metadata
+  let storagePath, fileType;
+  try {
+    const snap = await db.ref(`files/${fileId}`).get();
+    const f    = snap.val();
+    if (!f) return res.status(404).json({ error: "File not found" });
+    storagePath = f.storagePath;
+    fileType    = f.type;
+  } catch {
+    return res.status(500).json({ error: "Database error" });
+  }
+
+  if (fileType !== "application/pdf") {
+    return res.status(415).json({ error: "preview-pdf only supports PDFs" });
+  }
+
+  // Fetch full PDF bytes from S3
+  let pdfBytes;
+  try {
+    const cmd  = new GetObjectCommand({ Bucket: S3_BUCKET, Key: s3Key(storagePath) });
+    const resp = await s3.send(cmd);
+    // Collect the S3 stream into a buffer
+    const chunks = [];
+    for await (const chunk of resp.Body) chunks.push(chunk);
+    pdfBytes = Buffer.concat(chunks);
+  } catch (err) {
+    console.error("S3 preview-pdf fetch error:", err);
+    return res.status(500).json({ error: "Could not fetch file from storage" });
+  }
+
+  // If no page limit, just proxy the original file
+  if (!pageLimit) {
+    res.set("Content-Type", "application/pdf");
+    res.set("Content-Disposition", "inline");
+    return res.send(pdfBytes);
+  }
+
+  // Extract first N pages with pdf-lib
+  let trimmedBytes;
+  try {
+    const srcDoc  = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    const outDoc  = await PDFDocument.create();
+    const total   = srcDoc.getPageCount();
+    const limit   = Math.min(pageLimit, total);
+    const indices = Array.from({ length: limit }, (_, i) => i); // [0, 1, …, limit-1]
+    const copied  = await outDoc.copyPages(srcDoc, indices);
+    for (const page of copied) outDoc.addPage(page);
+    trimmedBytes  = await outDoc.save();
+  } catch (err) {
+    console.error("pdf-lib page extraction error:", err);
+    return res.status(500).json({ error: "Could not extract preview pages" });
+  }
+
+  res.set("Content-Type", "application/pdf");
+  res.set("Content-Disposition", "inline");
+  res.set("Content-Length", trimmedBytes.byteLength);
+  return res.send(Buffer.from(trimmedBytes));
 });
 
 // ── GET /storage/stats ───────────────────────────────────────────────────────
