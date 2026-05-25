@@ -461,10 +461,11 @@ const PDFJS_CDN    = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.
 const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs";
 
 // ── Parse query params ───────────────────────────────────────────────────────
-const params   = new URLSearchParams(location.search);
-const fileId   = params.get("fileId")  || "";
-const fileName = decodeURIComponent(params.get("name") || "File");
-const fileType = decodeURIComponent(params.get("type") || "");
+const params    = new URLSearchParams(location.search);
+const fileId    = params.get("fileId")  || "";
+const fileName  = decodeURIComponent(params.get("name") || "File");
+const fileType  = decodeURIComponent(params.get("type") || "");
+const permanent = params.get("permanent") === "1"; // true = permanent access, no watermark
 
 document.getElementById("fileTitle").textContent = fileName;
 
@@ -604,37 +605,57 @@ async function loadFile(user) {
   stepActive(3, "Connecting to storage…");
   let blob;
   try {
-    const resp = await fetch(signedUrl);
-    if (!resp.ok) throw new Error(`Storage error ${resp.status}`);
+    const dlController = new AbortController();
+    const dlTimeout    = setTimeout(() => dlController.abort(), 60_000);
+
+    let resp;
+    try {
+      resp = await fetch(signedUrl, { signal: dlController.signal });
+    } catch (fetchErr) {
+      clearTimeout(dlTimeout);
+      if (fetchErr.name === "AbortError") throw new Error("Download timed out. Please try again.");
+      throw fetchErr;
+    }
+    if (!resp.ok) { clearTimeout(dlTimeout); throw new Error(`Storage error ${resp.status}`); }
 
     const contentLength = Number(resp.headers.get("Content-Length") || 0);
 
-    if (contentLength > 0 && resp.body) {
-      // Stream with progress
-      const reader = resp.body.getReader();
-      const chunks = [];
-      let received = 0;
+    try {
+      if (contentLength > 0 && resp.body) {
+        // Stream with progress
+        const reader = resp.body.getReader();
+        const chunks = [];
+        let received = 0;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.length;
-        const pct = (received / contentLength) * 100;
-        setDownloadProgress(pct);
-        document.getElementById("step3Sub").textContent =
-          `${formatBytes(received)} / ${formatBytes(contentLength)}`;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          const pct = (received / contentLength) * 100;
+          setDownloadProgress(pct);
+          document.getElementById("step3Sub").textContent =
+            `${formatBytes(received)} / ${formatBytes(contentLength)}`;
+        }
+
+        const allChunks = new Uint8Array(received);
+        let offset = 0;
+        for (const chunk of chunks) { allChunks.set(chunk, offset); offset += chunk.length; }
+        blob = new Blob([allChunks]);
+      } else {
+        // Fallback: no Content-Length — animate indeterminate bar
+        animateIndeterminate();
+        try {
+          blob = await resp.blob();
+        } finally {
+          // Always clear the indeterminate animation timer
+          if (_indTimer) { clearInterval(_indTimer); _indTimer = null; }
+        }
       }
-
-      const allChunks = new Uint8Array(received);
-      let offset = 0;
-      for (const chunk of chunks) { allChunks.set(chunk, offset); offset += chunk.length; }
-      blob = new Blob([allChunks]);
-    } else {
-      // Fallback: no Content-Length — animate indeterminate bar
-      animateIndeterminate();
-      blob = await resp.blob();
+    } finally {
+      clearTimeout(dlTimeout);
     }
+
     setDownloadProgress(100);
     stepDone(3, `${formatBytes(blob.size)} downloaded`);
   } catch (err) {
@@ -650,9 +671,9 @@ async function loadFile(user) {
   try {
     if (type === "application/pdf") {
       document.getElementById("pdfControls").style.display = "flex";
-      await renderPdf(blob, user.email || user.displayName || "");
+      await renderPdf(blob, permanent ? "" : (user.email || user.displayName || ""));
     } else if (type.startsWith("image/")) {
-      renderImage(blob, user.email || user.displayName || "");
+      renderImage(blob, permanent ? "" : (user.email || user.displayName || ""));
     } else if (type.startsWith("video/")) {
       renderVideo(blob);
     } else if (type.startsWith("audio/")) {

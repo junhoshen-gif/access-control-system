@@ -464,33 +464,55 @@
   }
 
   // Fetch blob with streaming progress (step 2)
+  // Uses a 60-second AbortController timeout to surface errors instead of hanging.
   async function mvFetchBlob(url) {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`Storage error ${resp.status}`);
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 60_000);
+
+    let resp;
+    try {
+      resp = await fetch(url, { signal: controller.signal });
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err.name === "AbortError") throw new Error("Download timed out. Please try again.");
+      throw err;
+    }
+
+    if (!resp.ok) {
+      clearTimeout(timeoutId);
+      throw new Error(`Storage error ${resp.status}`);
+    }
+
     const contentLength = Number(resp.headers.get("Content-Length") || 0);
-    if (contentLength > 0 && resp.body) {
-      const reader = resp.body.getReader();
-      const chunks = [];
-      let received = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.length;
-        mvSetDlProgress((received / contentLength) * 100);
-        mvSetSub(2, `${mvFmtBytes(received)} / ${mvFmtBytes(contentLength)}`);
+
+    try {
+      if (contentLength > 0 && resp.body) {
+        // Stream with progress tracking
+        const reader = resp.body.getReader();
+        const chunks = [];
+        let received = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          mvSetDlProgress((received / contentLength) * 100);
+          mvSetSub(2, `${mvFmtBytes(received)} / ${mvFmtBytes(contentLength)}`);
+        }
+        const all = new Uint8Array(received);
+        let off = 0;
+        for (const c of chunks) { all.set(c, off); off += c.length; }
+        return new Blob([all]);
+      } else {
+        // No Content-Length — animate indeterminate bar and use blob()
+        let pct = 0;
+        const t = setInterval(() => { pct = Math.min(88, pct + 2); mvSetDlProgress(pct); }, 150);
+        const blob = await resp.blob();
+        clearInterval(t);
+        return blob;
       }
-      const all = new Uint8Array(received);
-      let off = 0;
-      for (const c of chunks) { all.set(c, off); off += c.length; }
-      return new Blob([all]);
-    } else {
-      // Indeterminate
-      let pct = 0;
-      const t = setInterval(() => { pct = Math.min(88, pct + 2); mvSetDlProgress(pct); }, 150);
-      const blob = await resp.blob();
-      clearInterval(t);
-      return blob;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -983,7 +1005,8 @@
     const fileId = card.dataset.fileid;
     const f = allFiles.find(f => f.id === fileId);
     if (!f) return;
-    const url = `viewer.html?fileId=${encodeURIComponent(f.id)}&name=${encodeURIComponent(f.name)}&type=${encodeURIComponent(f.type || "")}`;
+    const permanent = !f.expiresAt;
+    const url = `viewer.html?fileId=${encodeURIComponent(f.id)}&name=${encodeURIComponent(f.name)}&type=${encodeURIComponent(f.type || "")}${permanent ? "&permanent=1" : ""}`;
     window.location.href = url;
   });
 
