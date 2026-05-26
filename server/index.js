@@ -868,6 +868,18 @@ app.post("/ecpay/callback", async (req, res) => {
         receiverName = uSnap.val() || uid.slice(0, 8);
       } catch { receiverName = uid.slice(0, 8); }
     }
+    // ECPay ReceiverName validation: Chinese 2-5 chars, English 4-10 chars (no spaces)
+    // Remove spaces for English names; if still invalid, fall back to a safe default
+    const isChinese = /[一-鿿]/.test(receiverName);
+    if (isChinese) {
+      // Keep only Chinese chars, limit to 5
+      receiverName = receiverName.replace(/[^一-鿿]/g, "").slice(0, 5);
+      if (receiverName.length < 2) receiverName = "買家";
+    } else {
+      // Remove spaces/special chars, keep alphanumeric, limit to 10
+      receiverName = receiverName.replace(/[^A-Za-z0-9]/g, "").slice(0, 10);
+      if (receiverName.length < 4) receiverName = "Buyer";
+    }
 
     const logisticsParams = {
       MerchantID:          process.env.ECPAY_LOGISTICS_MERCHANT_ID || process.env.ECPAY_MERCHANT_ID || "",
@@ -883,8 +895,8 @@ app.post("/ecpay/callback", async (req, res) => {
       SenderPhone:         process.env.SENDER_PHONE   || "",
       SenderZipCode:       process.env.SENDER_ZIPCODE || "",
       SenderAddress:       process.env.SENDER_ADDRESS || "",
-      ReceiverName:        receiverName.slice(0, 10),
-      ReceiverPhone:       (tradeData.receiverPhone || "").replace(/\D/g, "").slice(0, 20),
+      ReceiverName:        receiverName,
+      ReceiverCellPhone:   (tradeData.receiverPhone || "").replace(/\D/g, "").slice(0, 20),
       ReceiverZipCode:     "",
       ReceiverAddress:     store.CVSAddress || "",
       ReceiverStoreID:     store.CVSStoreID || "",
@@ -913,7 +925,7 @@ app.post("/ecpay/callback", async (req, res) => {
 
     const allPayLogisticsID = logisticsResult.AllPayLogisticsID || "";
     const cvsPaymentNo      = logisticsResult.CVSPaymentNo      || logisticsResult.CVSValidationNo || "";
-    const logisticsStatus   = logisticsResult.RtnCode === "1" ? "created" : `error: ${logisticsResult.RtnMsg || "unknown"}`;
+    const logisticsStatus   = logisticsResult.RtnCode === "1" ? "created" : `error: ${logisticsResult.RtnCode || ""} ${logisticsResult.RtnMsg || logisticsResult._raw || "unknown"}`.trim();
 
     // Save logistics info under the purchase and as a top-level admin-queryable record
     const logisticsData = {
