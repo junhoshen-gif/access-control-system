@@ -880,45 +880,55 @@
   };
 
   // ── On-page-load: handle return from store-select-return.html ──────────────
-  // index.html?action=checkout&tradeNo=xxx  → read store from sessionStorage
-  // and immediately trigger payment.
+  // index.html?action=checkout&tradeNo=xxx
+  // Triggered after the user returns from the ECPay CVS store picker.
+  // We do NOT use sessionStorage here because ECPay's map page POSTs the
+  // browser to a different origin (Render), wiping our sessionStorage.
+  // Instead we fetch productKey + storeInfo from Firebase via the server
+  // using the tradeNo, which was persisted there when we created the map session.
   async function handleCheckoutReturn() {
-    const urlParams   = new URLSearchParams(window.location.search);
+    const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get("action") !== "checkout") return;
-    const tradeNo     = urlParams.get("tradeNo");
-    if (!tradeNo)     return;
+    const tradeNo = urlParams.get("tradeNo");
+    if (!tradeNo) return;
 
-    // Clean URL immediately
+    // Clean URL immediately so a refresh doesn't re-trigger this
     window.history.replaceState({}, "", window.location.pathname);
 
-    let storeInfo;
-    try {
-      const raw = sessionStorage.getItem("ecpay_store_" + tradeNo);
-      if (!raw) throw new Error("找不到門市資訊，請重新選擇。");
-      storeInfo = JSON.parse(raw);
-      sessionStorage.removeItem("ecpay_store_" + tradeNo);
-    } catch (err) {
-      alert("無法讀取門市資訊：" + err.message);
-      return;
-    }
-
-    // Find the productKey from trade_map via the server isn't easy from the
-    // client, so we store it in sessionStorage alongside storeInfo.
-    const pkRaw = sessionStorage.getItem("ecpay_pk_" + tradeNo);
-    sessionStorage.removeItem("ecpay_pk_" + tradeNo);
-    if (!pkRaw) {
-      alert("找不到商品資訊，請重新購買。");
-      return;
-    }
-
-    // Show a brief full-page notice before redirect
+    // Show a full-page overlay while we fetch and redirect
     const notice = document.createElement("div");
-    notice.style.cssText = "position:fixed;inset:0;background:rgba(255,255,255,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:1rem;";
-    notice.innerHTML = `<div style="font-size:2.5rem">🏪</div><p style="font-weight:600;font-size:1rem">門市已選擇，正在跳轉付款…</p><p style="color:#64748B;font-size:0.85rem">${storeInfo.CVSStoreName || ""} ${storeInfo.CVSAddress || ""}</p>`;
+    notice.style.cssText = "position:fixed;inset:0;background:rgba(255,255,255,.97);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:1rem;";
+    notice.innerHTML = `
+      <div style="font-size:2.5rem">🏪</div>
+      <p style="font-weight:600;font-size:1rem;color:#1E293B;">門市已選擇，正在準備付款…</p>
+      <p id="noticeStoreName" style="color:#64748B;font-size:0.85rem;">載入中…</p>
+      <div style="width:24px;height:24px;border:2px solid #E2E8F0;border-top-color:#2563EB;border-radius:50%;animation:spin .7s linear infinite;"></div>`;
     document.body.appendChild(notice);
 
     try {
-      await createPaymentOrder(pkRaw, storeInfo);
+      // Fetch trade_map entry from Firebase via server proxy.
+      // trade_map is only readable by admins via /db/ proxy, but we can add a
+      // dedicated lightweight endpoint. Instead, use the simpler approach:
+      // read the storeInfo that was already saved to the trade_map by cvs-map-return,
+      // by calling a new server endpoint that returns only what this user's session needs.
+      const idToken  = await currentUserObj.getIdToken(true);
+      const resp     = await fetch(
+        `${ECPAY_SERVER_URL}/logistics/trade-info?tradeNo=${encodeURIComponent(tradeNo)}`,
+        { headers: { Authorization: `Bearer ${idToken}` } }
+      );
+      if (!resp.ok) {
+        const e = await resp.json().catch(() => ({}));
+        throw new Error(e.error || "無法取得訂單資訊，請重新購買。");
+      }
+      const { productKey, storeInfo } = await resp.json();
+
+      // Update the notice with store name
+      const nameEl = document.getElementById("noticeStoreName");
+      if (nameEl && storeInfo?.CVSStoreName) {
+        nameEl.textContent = `${storeInfo.CVSStoreName}  ${storeInfo.CVSAddress || ""}`;
+      }
+
+      await createPaymentOrder(productKey, storeInfo);
     } catch (err) {
       document.body.removeChild(notice);
       alert("無法建立訂單：" + err.message);
