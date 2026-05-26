@@ -1213,22 +1213,36 @@ app.post("/logistics/cvs-map", async (req, res) => {
 });
 
 // ── POST /logistics/cvs-map-return ──────────────────────────────────────────
-// ECPay server-to-server POST after user picks a store.
-// Saves store info to Firebase under trade_map.
-// ECPay requires the plain-text response "1|OK".
-app.post("/logistics/cvs-map-return", async (req, res) => {
+// Handles two callers:
+//   1. ECPay server-to-server POST  → save store info, reply "1|OK"
+//   2. ECPay browser GET redirect   → (sandbox quirk) save store info, redirect
+//      the user's browser to store-select-return.html with the store params
+//      appended as query string so the page can read them.
+async function handleCvsMapReturn(req, res) {
+  // ECPay sends params via POST body (server callback) or GET query (browser redirect)
+  const p = req.method === "GET" ? req.query : req.body;
   const {
     MerchantTradeNo, CVSStoreID, CVSStoreName,
     CVSAddress, CVSOutSide, LogisticsSubType,
-  } = req.body;
+    ExtraData,
+  } = p;
 
-  if (!MerchantTradeNo || !CVSStoreID) {
-    console.error("cvs-map-return: missing MerchantTradeNo or CVSStoreID");
+  // ExtraData echoes back the merchantTradeNo we set on the map request —
+  // use it as fallback if MerchantTradeNo itself is missing (sandbox sometimes omits it)
+  const tradeNo = MerchantTradeNo || ExtraData || "";
+
+  if (!tradeNo || !CVSStoreID) {
+    console.error("cvs-map-return: missing tradeNo or CVSStoreID", p);
+    if (req.method === "GET") {
+      const siteUrl = process.env.SITE_URL || "";
+      return res.redirect(`${siteUrl}/index.html?error=store_missing`);
+    }
     return res.send("0|Missing params");
   }
 
+  // Save store info to Firebase
   try {
-    await db.ref(`trade_map/${MerchantTradeNo}`).update({
+    await db.ref(`trade_map/${tradeNo}`).update({
       storeSelected: true,
       storeInfo: {
         CVSStoreID,
@@ -1238,14 +1252,39 @@ app.post("/logistics/cvs-map-return", async (req, res) => {
         LogisticsSubType: LogisticsSubType || "",
       },
     });
+    console.log(`✓ Store selected: tradeNo=${tradeNo} storeId=${CVSStoreID} (${CVSStoreName})`);
   } catch (err) {
     console.error("cvs-map-return DB write error:", err);
+    if (req.method === "GET") {
+      const siteUrl = process.env.SITE_URL || "";
+      return res.redirect(`${siteUrl}/index.html?error=db_error`);
+    }
     return res.send("0|DB error");
   }
 
-  console.log(`✓ Store selected: tradeNo=${MerchantTradeNo} storeId=${CVSStoreID} (${CVSStoreName})`);
+  if (req.method === "GET") {
+    // Browser was redirected here directly (ECPay sandbox quirk).
+    // Forward to store-select-return.html with the store params as query string
+    // so the client JS can read them from the URL just like normal.
+    const siteUrl = process.env.SITE_URL || "";
+    const qs = new URLSearchParams({
+      MerchantTradeNo: tradeNo,
+      CVSStoreID,
+      CVSStoreName:     CVSStoreName     || "",
+      CVSAddress:       CVSAddress       || "",
+      CVSOutSide:       CVSOutSide       || "0",
+      LogisticsSubType: LogisticsSubType || "",
+      ExtraData:        tradeNo,
+    }).toString();
+    return res.redirect(`${siteUrl}/store-select-return.html?${qs}`);
+  }
+
+  // Server-to-server POST — ECPay requires this exact plain-text response
   return res.send("1|OK");
-});
+}
+
+app.post("/logistics/cvs-map-return", handleCvsMapReturn);
+app.get("/logistics/cvs-map-return",  handleCvsMapReturn);
 
 // ── GET /logistics/orders  (admin only) ──────────────────────────────────────
 // Returns all logistics orders, newest first.
