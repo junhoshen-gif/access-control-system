@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>門市選擇中… – FileAccess</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <style>
+    body { display:flex; align-items:center; justify-content:center; min-height:100vh; background:var(--color-bg,#F8FAFC); }
+    .redirect-card {
+      background:#fff; border:1px solid #E2E8F0; border-radius:14px;
+      padding:2.5rem 2rem; text-align:center; max-width:360px; width:90%;
+      box-shadow:0 4px 24px rgba(0,0,0,.07);
+    }
+    .redirect-icon { font-size:2.8rem; margin-bottom:1rem; }
+    .redirect-title { font-size:1.05rem; font-weight:600; color:#1E293B; margin-bottom:0.4rem; }
+    .redirect-sub   { font-size:0.85rem; color:#64748B; margin-bottom:1.5rem; }
+    .store-info-box {
+      background:#F0FDF4; border:1px solid #BBF7D0; border-radius:8px;
+      padding:0.85rem 1rem; margin-bottom:1.25rem; text-align:left;
+    }
+    .store-info-box .store-label { font-size:0.72rem; color:#16A34A; font-weight:600; text-transform:uppercase; letter-spacing:.05em; }
+    .store-info-box .store-name  { font-size:0.95rem; font-weight:600; color:#1E293B; margin-top:0.15rem; }
+    .store-info-box .store-addr  { font-size:0.8rem; color:#64748B; margin-top:0.1rem; }
+    .spinner { display:inline-block; width:20px; height:20px; border:2px solid #E2E8F0; border-top-color:#2563EB; border-radius:50%; animation:spin .7s linear infinite; vertical-align:middle; margin-right:6px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .error-box { background:#FEF2F2; border:1px solid #FECACA; border-radius:8px; padding:1rem; color:#DC2626; font-size:0.85rem; }
+  </style>
+</head>
+<body>
+<div class="redirect-card">
+  <div class="redirect-icon">🏪</div>
+  <div class="redirect-title" id="cardTitle">門市已選擇！</div>
+  <div class="redirect-sub" id="cardSub">正在準備付款頁面…</div>
+  <div id="storeInfoBox" class="store-info-box" style="display:none;">
+    <div class="store-label">取貨門市</div>
+    <div class="store-name" id="dispStoreName"></div>
+    <div class="store-addr" id="dispStoreAddr"></div>
+  </div>
+  <div id="statusLine" style="font-size:0.83rem;color:#64748B;">
+    <span class="spinner"></span>正在跳轉到付款頁面…
+  </div>
+  <div id="errorBox" class="error-box" style="display:none;"></div>
+</div>
+
+<script>
+(function () {
+  // ── Parse all query params from the URL ────────────────────────────────
+  // ECPay appends store info as URL query params to the ClientReplyURL.
+  const params = {};
+  new URLSearchParams(window.location.search).forEach((v, k) => { params[k] = v; });
+
+  const merchantTradeNo = params.ExtraData || params.MerchantTradeNo || "";
+  const storeId         = params.CVSStoreID    || "";
+  const storeName       = params.CVSStoreName  || "";
+  const storeAddr       = params.CVSAddress    || "";
+  const logisticsSubType = params.LogisticsSubType || "";
+
+  function showError(msg) {
+    document.getElementById("cardTitle").textContent = "發生錯誤";
+    document.getElementById("cardSub").textContent   = "請返回重試";
+    document.getElementById("statusLine").style.display = "none";
+    const eb = document.getElementById("errorBox");
+    eb.style.display = "block";
+    eb.textContent   = msg;
+  }
+
+  if (!merchantTradeNo || !storeId) {
+    showError("未收到門市資訊 (MerchantTradeNo 或 CVSStoreID 缺失)。請返回重試。");
+    return;
+  }
+
+  // Show store info to the user while we redirect
+  if (storeName) {
+    document.getElementById("storeInfoBox").style.display = "block";
+    document.getElementById("dispStoreName").textContent  = storeName;
+    document.getElementById("dispStoreAddr").textContent  = storeAddr;
+  }
+
+  // Persist the store selection into sessionStorage so index.html can read it
+  const storeInfo = { CVSStoreID: storeId, CVSStoreName: storeName, CVSAddress: storeAddr, LogisticsSubType: logisticsSubType };
+  try {
+    sessionStorage.setItem("ecpay_store_" + merchantTradeNo, JSON.stringify(storeInfo));
+  } catch (e) {
+    showError("無法儲存門市資訊：" + e.message);
+    return;
+  }
+
+  // Redirect back to index.html with the tradeNo so buyProduct() can continue
+  const target = "index.html?action=checkout&tradeNo=" + encodeURIComponent(merchantTradeNo);
+  setTimeout(() => { window.location.href = target; }, 1200);
+})();
+</script>
+</body>
+</html>

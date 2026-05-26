@@ -82,9 +82,25 @@
       setPersistence
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
     import { firebaseConfig } from "./js/config.js";
+    import { getDatabase, ref, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
+    const db   = getDatabase(app);
+
+    // Write/update user profile on every sign-in (non-destructive update)
+    async function saveUserProfile(user) {
+      try {
+        const updates = {
+          email:       user.email || "",
+          displayName: user.displayName || "",
+          lastLoginAt: Date.now(),
+        };
+        await update(ref(db, `users/${user.uid}`), updates);
+      } catch (e) {
+        console.warn("saveUserProfile failed:", e);
+      }
+    }
 
     // ── Helpers (defined synchronously so they're available immediately) ────────
     function showError(msg) {
@@ -122,7 +138,8 @@
       const email = document.getElementById("email").value;
       const password = document.getElementById("password").value;
       try {
-        await signInWithEmailAndPassword(auth, email, password);
+        const cred = await signInWithEmailAndPassword(auth, email, password);
+        await saveUserProfile(cred.user);
         window.location.href = "index.html";
       } catch (err) {
         showError(friendlyError(err.code));
@@ -137,7 +154,8 @@
       // Safari blocks popups from non-user-gesture contexts; try popup first,
       // then silently fall back to redirect flow
       try {
-        await signInWithPopup(auth, provider);
+        const googleCred = await signInWithPopup(auth, provider);
+        await saveUserProfile(googleCred.user);
         window.location.href = "index.html";
       } catch (err) {
         if (err.code === "auth/popup-blocked" ||
@@ -184,6 +202,7 @@
       try {
         const result = await getRedirectResult(auth);
         if (result?.user) {
+          await saveUserProfile(result.user);
           window.location.href = "index.html";
           return; // page is navigating, leave spinner visible
         }

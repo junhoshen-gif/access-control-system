@@ -850,11 +850,127 @@ app.post("/ecpay/callback", async (req, res) => {
     return res.send("0|DB write error");
   }
 
+  // ── Physical product: create logistics order with ECPay ──────────────────
+  if (product.hasPhysical && tradeData.storeInfo) {
+    const store        = tradeData.storeInfo;
+    const useSandbox   = product.logisticsSandbox !== false;
+
+    // Build a Taiwan-time date string for the logistics order
+    const logNowTw  = new Date(now + 8 * 60 * 60 * 1000);
+    const logPad    = n => String(n).padStart(2, "0");
+    const logDate   = `${logNowTw.getUTCFullYear()}/${logPad(logNowTw.getUTCMonth()+1)}/${logPad(logNowTw.getUTCDate())} ${logPad(logNowTw.getUTCHours())}:${logPad(logNowTw.getUTCMinutes())}:${logPad(logNowTw.getUTCSeconds())}`;
+
+    // Load buyer display name from Firebase if not in tradeData
+    let receiverName = tradeData.receiverName || "";
+    if (!receiverName) {
+      try {
+        const uSnap  = await db.ref(`users/${uid}/displayName`).get();
+        receiverName = uSnap.val() || uid.slice(0, 8);
+      } catch { receiverName = uid.slice(0, 8); }
+    }
+
+    const logisticsParams = {
+      MerchantID:          process.env.ECPAY_LOGISTICS_MERCHANT_ID || process.env.ECPAY_MERCHANT_ID || "",
+      MerchantTradeNo:     tradeNo,
+      MerchantTradeDate:   logDate,
+      LogisticsType:       "CVS",
+      LogisticsSubType:    store.LogisticsSubType || "UNIMART",
+      GoodsAmount:         String(Math.round(product.priceNTD || 0)),
+      CollectionAmount:    "0",
+      IsCollection:        "N",
+      GoodsName:           (product.name || "商品").replace(/[^a-zA-Z0-9一-鿿\s]/g, "").slice(0, 50),
+      SenderName:          process.env.SENDER_NAME    || "",
+      SenderPhone:         process.env.SENDER_PHONE   || "",
+      SenderZipCode:       process.env.SENDER_ZIPCODE || "",
+      SenderAddress:       process.env.SENDER_ADDRESS || "",
+      ReceiverName:        receiverName.slice(0, 10),
+      ReceiverPhone:       (tradeData.receiverPhone || "").replace(/\D/g, "").slice(0, 20),
+      ReceiverZipCode:     "",
+      ReceiverAddress:     store.CVSAddress || "",
+      ReceiverStoreID:     store.CVSStoreID || "",
+      ReturnStoreID:       "",
+      ServerReplyURL:      `${process.env.SERVER_URL || ""}/logistics/status-callback`,
+      ClientReplyURL:      `${process.env.SITE_URL   || ""}/index.html`,
+      Remark:              "",
+      PlatformID:          "",
+      Temperature:         "0001",
+      Distance:            "00",
+      Specification:       "0001",
+      ScheduledPickupTime: "1",
+      ScheduledDeliveryTime: "1",
+      ScheduledDeliveryDate: "0",
+      PackageCount:        "1",
+    };
+
+    let logisticsResult;
+    try {
+      logisticsResult = await callEcpayLogistics("/Express/Create", logisticsParams, useSandbox);
+    } catch (err) {
+      console.error("Logistics Create error:", err.message);
+      // Non-fatal: payment succeeded, just log the failure
+      logisticsResult = { RtnCode: "0", RtnMsg: err.message };
+    }
+
+    const allPayLogisticsID = logisticsResult.AllPayLogisticsID || "";
+    const cvsPaymentNo      = logisticsResult.CVSPaymentNo      || logisticsResult.CVSValidationNo || "";
+    const logisticsStatus   = logisticsResult.RtnCode === "1" ? "created" : `error: ${logisticsResult.RtnMsg || "unknown"}`;
+
+    // Save logistics info under the purchase and as a top-level admin-queryable record
+    const logisticsData = {
+      allPayLogisticsID,
+      cvsPaymentNo,
+      status:          logisticsStatus,
+      storeName:       store.CVSStoreName     || "",
+      storeAddress:    store.CVSAddress       || "",
+      storeId:         store.CVSStoreID       || "",
+      logisticsSubType: store.LogisticsSubType || "",
+      uid,
+      productKey,
+      productName:     product.name || "",
+      useSandbox,
+      createdAt:       now,
+    };
+
+    const logisticsPatchUpdates = {};
+    logisticsPatchUpdates[`purchases/${uid}/${purchaseKey}/logistics`] = logisticsData;
+    if (allPayLogisticsID) {
+      logisticsPatchUpdates[`logistics_orders/${allPayLogisticsID}`]   = logisticsData;
+    }
+
+    try {
+      await db.ref().update(logisticsPatchUpdates);
+      console.log(`✓ Logistics order created: ${allPayLogisticsID} CVSPaymentNo=${cvsPaymentNo}`);
+    } catch (err) {
+      console.error("Logistics DB write error:", err.message);
+    }
+  }
+
+  return res.send("1|OK");
+});
+
+// ── POST /logistics/status-callback ─────────────────────────────────────────
+// Optional: ECPay calls this when the goods status changes (e.g. picked up).
+// Updates Firebase with the latest status.
+app.post("/logistics/status-callback", async (req, res) => {
+  const { AllPayLogisticsID, GoodsStatus, RtnMsg, MerchantTradeNo } = req.body;
+  if (!AllPayLogisticsID) return res.send("0|Missing AllPayLogisticsID");
+
+  try {
+    await db.ref(`logistics_orders/${AllPayLogisticsID}`).update({
+      status:        GoodsStatus || RtnMsg || "updated",
+      lastCheckedAt: Date.now(),
+    });
+    console.log(`✓ Logistics status update: ${AllPayLogisticsID} → ${GoodsStatus}`);
+  } catch (err) {
+    console.error("logistics/status-callback DB error:", err.message);
+  }
+
   return res.send("1|OK");
 });
 
 app.post("/ecpay/create-order", async (req, res) => {
-  const { productKey, idToken } = req.body;
+  // storeInfo is present only for physical products (set after CVS map selection)
+  const { productKey, idToken, storeInfo } = req.body;
   if (!productKey || !idToken) return res.status(400).json({ error: "Missing productKey or idToken" });
 
   let uid;
@@ -884,7 +1000,14 @@ app.post("/ecpay/create-order", async (req, res) => {
   const merchantTradeNo = `${shortPK}${shortUID}${randSuffix}`;
 
   try {
-    await db.ref(`trade_map/${merchantTradeNo}`).set({ uid, productKey, createdAt: Date.now(), processed: false });
+    const tradeEntry = { uid, productKey, createdAt: Date.now(), processed: false };
+    // Persist store selection so the payment callback can create the logistics order
+    if (storeInfo && product.hasPhysical) {
+      tradeEntry.storeInfo     = storeInfo;
+      tradeEntry.receiverName  = storeInfo.receiverName  || "";
+      tradeEntry.receiverPhone = storeInfo.receiverPhone || "";
+    }
+    await db.ref(`trade_map/${merchantTradeNo}`).set(tradeEntry);
   } catch { /* non-fatal */ }
 
   const serverUrl = process.env.SERVER_URL || `https://${req.headers.host}`;
@@ -927,3 +1050,286 @@ app.post("/ecpay/create-order", async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`FileAccess server listening on port ${PORT}`));
+
+// ════════════════════════════════════════════════════════════════════════════
+// ECPAY C2C LOGISTICS
+// ════════════════════════════════════════════════════════════════════════════
+//
+// ECPay logistics uses MD5 (not SHA256 like the payment API).
+// Sandbox base: https://logistics-stage.ecpay.com.tw
+// Production:   https://logistics.ecpay.com.tw
+//
+// Required env vars (add to Render dashboard):
+//   ECPAY_LOGISTICS_HASH_KEY    – from ECPay backend → 物流介接資料
+//   ECPAY_LOGISTICS_HASH_IV     – same source
+//   ECPAY_LOGISTICS_MERCHANT_ID – usually same as payment MerchantID
+//   SENDER_NAME                 – your name / company (寄件人姓名)
+//   SENDER_PHONE                – your phone (寄件人電話)
+//   SENDER_ZIPCODE              – your postal code (寄件人郵遞區號)
+//   SENDER_ADDRESS              – your full address (寄件人地址)
+
+// ── Logistics rate limiter ───────────────────────────────────────────────────
+const logisticsLimiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false });
+app.use("/logistics/", logisticsLimiter);
+
+// ── MD5 CheckMacValue for logistics ─────────────────────────────────────────
+function buildLogisticsCheckMacValue(params, hashKey, hashIV) {
+  const sorted = Object.keys(params)
+    .filter(k => k !== "CheckMacValue")
+    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map(k => `${k}=${params[k]}`).join("&");
+
+  const raw     = `HashKey=${hashKey}&${sorted}&HashIV=${hashIV}`;
+  const encoded = encodeURIComponent(raw).toLowerCase()
+    .replace(/%20/g, "+").replace(/%21/g, "!").replace(/%27/g, "'")
+    .replace(/%28/g, "(").replace(/%29/g, ")").replace(/%2a/g, "*");
+
+  return crypto.createHash("md5").update(encoded).digest("hex").toUpperCase();
+}
+
+// ── POST to ECPay logistics API, returns parsed key=value response ───────────
+// ECPay returns URL-encoded pairs: "RtnCode=1&RtnMsg=OK&AllPayLogisticsID=..."
+async function callEcpayLogistics(path, params, useSandbox) {
+  const https = require("https");
+  const base  = useSandbox
+    ? "https://logistics-stage.ecpay.com.tw"
+    : "https://logistics.ecpay.com.tw";
+
+  const hashKey = process.env.ECPAY_LOGISTICS_HASH_KEY || "";
+  const hashIV  = process.env.ECPAY_LOGISTICS_HASH_IV  || "";
+  params.CheckMacValue = buildLogisticsCheckMacValue(params, hashKey, hashIV);
+
+  const body    = new URLSearchParams(params).toString();
+  const url     = new URL(path, base);
+  const options = {
+    method:   "POST",
+    hostname: url.hostname,
+    path:     url.pathname,
+    headers:  {
+      "Content-Type":   "application/x-www-form-urlencoded",
+      "Content-Length": Buffer.byteLength(body),
+    },
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (resp) => {
+      let data = "";
+      resp.on("data", chunk => { data += chunk; });
+      resp.on("end", () => {
+        try {
+          const parsed = {};
+          data.split("&").forEach(pair => {
+            const [k, ...rest] = pair.split("=");
+            if (k) parsed[decodeURIComponent(k)] = decodeURIComponent(rest.join("="));
+          });
+          resolve(parsed);
+        } catch {
+          resolve({ _raw: data });
+        }
+      });
+    });
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// ── POST /logistics/cvs-map ──────────────────────────────────────────────────
+// Step 1 of physical checkout: generates params for ECPay store-picker form.
+// The browser auto-submits the form → user picks a store on ECPay's map →
+// ECPay POSTs to /logistics/cvs-map-return (server) then redirects the browser
+// to /store-select-return.html (ClientReplyURL).
+//
+// Body: { productKey, idToken, receiverName, receiverPhone }
+app.post("/logistics/cvs-map", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+
+  const { productKey, receiverName, receiverPhone } = req.body;
+  if (!productKey)      return res.status(400).json({ error: "Missing productKey" });
+  if (!receiverName)    return res.status(400).json({ error: "Missing receiverName" });
+  if (!receiverPhone)   return res.status(400).json({ error: "Missing receiverPhone" });
+
+  // Confirm the product is physical
+  let product;
+  try {
+    const snap = await db.ref(`products/${productKey}`).get();
+    product    = snap.val();
+    if (!product)          return res.status(404).json({ error: "Product not found" });
+    if (!product.hasPhysical) return res.status(400).json({ error: "Product is not physical" });
+  } catch {
+    return res.status(500).json({ error: "Database error" });
+  }
+
+  // Generate a trade number for this store-selection session (same format as payments)
+  const randSuffix      = crypto.randomBytes(3).toString("hex").slice(0, 5);
+  const shortPK         = productKey.replace(/[^A-Za-z0-9]/g, "").slice(0, 5).padEnd(5, "0");
+  const shortUID        = decoded.uid.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).padEnd(10, "0");
+  const merchantTradeNo = `${shortPK}${shortUID}${randSuffix}`;
+
+  // Save to trade_map so /cvs-map-return and later /ecpay/create-order can find it
+  try {
+    await db.ref(`trade_map/${merchantTradeNo}`).set({
+      uid:           decoded.uid,
+      productKey,
+      receiverName,
+      receiverPhone,
+      createdAt:     Date.now(),
+      processed:     false,
+      storeSelected: false,
+    });
+  } catch (err) {
+    console.error("trade_map write error:", err);
+    return res.status(500).json({ error: "Database error" });
+  }
+
+  const serverUrl = process.env.SERVER_URL || `https://${req.headers.host}`;
+  const siteUrl   = process.env.SITE_URL   || allowedOrigin;
+
+  // ECPay CVSMap only supports one LogisticsSubType per redirect — use the first
+  const subTypes         = product.logisticsSubTypes || ["UNIMART"];
+  const logisticsSubType = subTypes[0];
+  const useSandbox       = product.logisticsSandbox !== false; // default sandbox for safety
+  const base             = useSandbox
+    ? "https://logistics-stage.ecpay.com.tw"
+    : "https://logistics.ecpay.com.tw";
+
+  const hashKey = process.env.ECPAY_LOGISTICS_HASH_KEY || "";
+  const hashIV  = process.env.ECPAY_LOGISTICS_HASH_IV  || "";
+
+  const mapParams = {
+    MerchantID:       process.env.ECPAY_LOGISTICS_MERCHANT_ID || process.env.ECPAY_MERCHANT_ID || "",
+    MerchantTradeNo:  merchantTradeNo,
+    LogisticsType:    "CVS",
+    LogisticsSubType: logisticsSubType,
+    IsCollection:     "N",
+    ServerReplyURL:   `${serverUrl}/logistics/cvs-map-return`,
+    ClientReplyURL:   `${siteUrl}/store-select-return.html`,
+    ExtraData:        merchantTradeNo,
+  };
+  mapParams.CheckMacValue = buildLogisticsCheckMacValue(mapParams, hashKey, hashIV);
+
+  return res.json({ ecpayUrl: `${base}/Express/map`, params: mapParams, merchantTradeNo });
+});
+
+// ── POST /logistics/cvs-map-return ──────────────────────────────────────────
+// ECPay server-to-server POST after user picks a store.
+// Saves store info to Firebase under trade_map.
+// ECPay requires the plain-text response "1|OK".
+app.post("/logistics/cvs-map-return", async (req, res) => {
+  const {
+    MerchantTradeNo, CVSStoreID, CVSStoreName,
+    CVSAddress, CVSOutSide, LogisticsSubType,
+  } = req.body;
+
+  if (!MerchantTradeNo || !CVSStoreID) {
+    console.error("cvs-map-return: missing MerchantTradeNo or CVSStoreID");
+    return res.send("0|Missing params");
+  }
+
+  try {
+    await db.ref(`trade_map/${MerchantTradeNo}`).update({
+      storeSelected: true,
+      storeInfo: {
+        CVSStoreID,
+        CVSStoreName:     CVSStoreName     || "",
+        CVSAddress:       CVSAddress       || "",
+        CVSOutSide:       CVSOutSide       || "0",
+        LogisticsSubType: LogisticsSubType || "",
+      },
+    });
+  } catch (err) {
+    console.error("cvs-map-return DB write error:", err);
+    return res.send("0|DB error");
+  }
+
+  console.log(`✓ Store selected: tradeNo=${MerchantTradeNo} storeId=${CVSStoreID} (${CVSStoreName})`);
+  return res.send("1|OK");
+});
+
+// ── GET /logistics/orders  (admin only) ──────────────────────────────────────
+// Returns all logistics orders, newest first.
+app.get("/logistics/orders", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  try {
+    const snap   = await db.ref("logistics_orders").get();
+    const raw    = snap.val() || {};
+    const orders = Object.values(raw).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return res.json(orders);
+  } catch (err) {
+    console.error("logistics/orders error:", err);
+    return res.status(500).json({ error: "Database error" });
+  }
+});
+
+// ── POST /logistics/print-label  (admin only) ────────────────────────────────
+// Builds and returns the ECPay PrintTradeDocument URL so admin can open it.
+// Body: { allPayLogisticsID, useSandbox? }
+app.post("/logistics/print-label", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  const { allPayLogisticsID, useSandbox } = req.body;
+  if (!allPayLogisticsID) return res.status(400).json({ error: "Missing allPayLogisticsID" });
+
+  const base = (useSandbox !== false)
+    ? "https://logistics-stage.ecpay.com.tw"
+    : "https://logistics.ecpay.com.tw";
+
+  const hashKey = process.env.ECPAY_LOGISTICS_HASH_KEY || "";
+  const hashIV  = process.env.ECPAY_LOGISTICS_HASH_IV  || "";
+
+  const params = {
+    MerchantID:        process.env.ECPAY_LOGISTICS_MERCHANT_ID || process.env.ECPAY_MERCHANT_ID || "",
+    AllPayLogisticsID: allPayLogisticsID,
+  };
+  params.CheckMacValue = buildLogisticsCheckMacValue(params, hashKey, hashIV);
+
+  // PrintTradeDocument is a GET redirect to a PDF — build the URL with params
+  const printUrl = `${base}/Express/PrintTradeDocument?${new URLSearchParams(params).toString()}`;
+  return res.json({ printUrl });
+});
+
+// ── GET /logistics/track/:logisticsId  (admin only) ──────────────────────────
+// Queries ECPay for current status and updates Firebase.
+app.get("/logistics/track/:logisticsId", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  const { logisticsId } = req.params;
+
+  // Read sandbox flag from the stored order
+  let useSandbox = true;
+  try {
+    const snap = await db.ref(`logistics_orders/${logisticsId}/useSandbox`).get();
+    if (snap.val() === false) useSandbox = false;
+  } catch { /* default to sandbox */ }
+
+  const params = {
+    MerchantID:        process.env.ECPAY_LOGISTICS_MERCHANT_ID || process.env.ECPAY_MERCHANT_ID || "",
+    AllPayLogisticsID: logisticsId,
+    TimeStamp:         String(Math.floor(Date.now() / 1000)),
+  };
+
+  let result;
+  try {
+    result = await callEcpayLogistics("/Helper/QueryLogisticsTradeInfo/V2", params, useSandbox);
+  } catch (err) {
+    console.error("logistics/track error:", err);
+    return res.status(502).json({ error: "ECPay API error", detail: err.message });
+  }
+
+  const status = result.GoodsStatus || result.RtnMsg || "unknown";
+
+  // Update status in Firebase
+  try {
+    await db.ref(`logistics_orders/${logisticsId}`).update({ status, lastCheckedAt: Date.now() });
+  } catch { /* non-fatal */ }
+
+  return res.json({ logisticsId, status, raw: result });
+});

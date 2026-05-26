@@ -77,6 +77,46 @@
       🎉 付款成功！系統正在更新您的存取權限，請稍候幾秒後重新整理頁面。
     </div>
   </div>
+
+  <!-- ── 我的訂單 My Orders (physical purchases with logistics) ───────────── -->
+  <div id="ordersSection" class="hidden" style="margin-top:2.5rem;">
+    <div class="page-header" style="margin-bottom:1rem;">
+      <h2>🚚 我的訂單 My Orders</h2>
+      <p class="text-muted">實體商品寄送狀態。取貨時請出示取貨編號。</p>
+    </div>
+    <div id="ordersList"></div>
+  </div>
+
+  <!-- ── Receiver info modal (shown before CVS map redirect) ─────────────── -->
+  <div id="receiverModal" class="modal hidden">
+    <div class="modal-overlay" onclick="closeReceiverModal()"></div>
+    <div class="modal-panel" style="max-width:440px;">
+      <div class="modal-header">
+        <div>
+          <h3>🏪 選擇取貨門市</h3>
+          <span class="text-muted text-sm">請先填寫收件人資訊，再前往選擇門市。</span>
+        </div>
+        <button class="btn btn-ghost" onclick="closeReceiverModal()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body" style="padding:1.25rem;">
+        <div id="receiverAlert" class="alert hidden" style="margin-bottom:1rem;"></div>
+        <div class="form-group" style="margin-bottom:1rem;">
+          <label class="form-label" style="font-size:0.85rem;font-weight:600;">收件人姓名 <span style="color:#EF4444">*</span></label>
+          <input type="text" id="receiverName" class="form-input" placeholder="真實姓名（用於取貨）" style="width:100%;"/>
+        </div>
+        <div class="form-group" style="margin-bottom:1.5rem;">
+          <label class="form-label" style="font-size:0.85rem;font-weight:600;">收件人手機 <span style="color:#EF4444">*</span></label>
+          <input type="tel" id="receiverPhone" class="form-input" placeholder="09xxxxxxxx" style="width:100%;"/>
+        </div>
+        <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+          <button class="btn btn-ghost" onclick="closeReceiverModal()">取消</button>
+          <button class="btn btn-primary" id="receiverSubmitBtn" onclick="submitReceiverAndOpenMap()">前往選擇門市 →</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </main>
 
 <!-- FILE VIEWER MODAL -->
@@ -229,6 +269,10 @@
     // Load accessible files and products
     await loadFiles(user.uid);
     await loadProducts(user.uid);
+    await loadOrders(user.uid);
+
+    // Handle return from store-select-return.html after CVS map selection
+    await handleCheckoutReturn();
   });
 
   document.getElementById("signOutBtn").addEventListener("click", async () => {
@@ -753,51 +797,227 @@
     }
   };
 
+  // ── Shared: auto-submit a form to ECPay ────────────────────────────────────
+  function submitEcpayForm(ecpayUrl, params) {
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = ecpayUrl;
+    form.style.display = "none";
+    for (const [k, v] of Object.entries(params)) {
+      const input = document.createElement("input");
+      input.type  = "hidden";
+      input.name  = k;
+      input.value = v;
+      form.appendChild(input);
+    }
+    document.body.appendChild(form);
+    form.submit();
+  }
+
+  // ── Create a payment order and redirect to ECPay payment page ──────────────
+  async function createPaymentOrder(productKey, storeInfo) {
+    const idToken = await currentUserObj.getIdToken(true);
+    const body    = { productKey, idToken };
+    if (storeInfo) body.storeInfo = storeInfo;
+
+    const resp = await fetch(`${ECPAY_SERVER_URL}/ecpay/create-order`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      throw new Error(err.error || resp.statusText);
+    }
+    const { ecpayUrl, params } = await resp.json();
+    submitEcpayForm(ecpayUrl, params);
+  }
+
+  // ── State for the receiver-info modal ──────────────────────────────────────
+  let _pendingProductKey = null;
+
+  window.closeReceiverModal = () => {
+    document.getElementById("receiverModal").classList.add("hidden");
+    document.body.style.overflow = "";
+    _pendingProductKey = null;
+  };
+
+  // ── Main buy handler ────────────────────────────────────────────────────────
   window.buyProduct = async (productKey, btn) => {
-    if (!ECPAY_SERVER_URL) {
-      alert("付款伺服器尚未設定。請聯絡管理員。");
-      return;
-    }
-    if (!currentUserObj) {
-      alert("請先登入再購買。");
-      return;
-    }
-    btn.disabled = true;
+    if (!ECPAY_SERVER_URL) { alert("付款伺服器尚未設定。請聯絡管理員。"); return; }
+    if (!currentUserObj)   { alert("請先登入再購買。"); return; }
+
+    const product = allProducts[productKey];
+    btn.disabled    = true;
     btn.textContent = "跳轉中…";
 
     try {
-      // Get a fresh Firebase ID Token — server will verify it to get the uid
-      const idToken = await currentUserObj.getIdToken(/* forceRefresh */ true);
+      if (product && product.hasPhysical) {
+        // ── Physical product: need store selection first ────────────────────
+        // Open receiver-info modal; store selection + payment happen from there
+        _pendingProductKey = productKey;
+        // Pre-fill name from Firebase auth
+        document.getElementById("receiverName").value =
+          currentUserObj.displayName || "";
+        document.getElementById("receiverPhone").value  = "";
+        document.getElementById("receiverAlert").classList.add("hidden");
+        document.getElementById("receiverSubmitBtn").disabled    = false;
+        document.getElementById("receiverSubmitBtn").textContent = "前往選擇門市 →";
+        document.getElementById("receiverModal").classList.remove("hidden");
+        document.body.style.overflow = "hidden";
+        // Re-enable the buy button since the modal takes over
+        btn.disabled    = false;
+        btn.textContent = "立即購買";
+      } else {
+        // ── Digital-only product: go straight to payment ───────────────────
+        await createPaymentOrder(productKey, null);
+      }
+    } catch (err) {
+      btn.disabled    = false;
+      btn.textContent = "立即購買";
+      alert("無法建立訂單，請稍後再試。\n" + err.message);
+    }
+  };
 
-      const resp = await fetch(`${ECPAY_SERVER_URL}/ecpay/create-order`, {
-        method: "POST",
+  // ── On-page-load: handle return from store-select-return.html ──────────────
+  // index.html?action=checkout&tradeNo=xxx  → read store from sessionStorage
+  // and immediately trigger payment.
+  async function handleCheckoutReturn() {
+    const urlParams   = new URLSearchParams(window.location.search);
+    if (urlParams.get("action") !== "checkout") return;
+    const tradeNo     = urlParams.get("tradeNo");
+    if (!tradeNo)     return;
+
+    // Clean URL immediately
+    window.history.replaceState({}, "", window.location.pathname);
+
+    let storeInfo;
+    try {
+      const raw = sessionStorage.getItem("ecpay_store_" + tradeNo);
+      if (!raw) throw new Error("找不到門市資訊，請重新選擇。");
+      storeInfo = JSON.parse(raw);
+      sessionStorage.removeItem("ecpay_store_" + tradeNo);
+    } catch (err) {
+      alert("無法讀取門市資訊：" + err.message);
+      return;
+    }
+
+    // Find the productKey from trade_map via the server isn't easy from the
+    // client, so we store it in sessionStorage alongside storeInfo.
+    const pkRaw = sessionStorage.getItem("ecpay_pk_" + tradeNo);
+    sessionStorage.removeItem("ecpay_pk_" + tradeNo);
+    if (!pkRaw) {
+      alert("找不到商品資訊，請重新購買。");
+      return;
+    }
+
+    // Show a brief full-page notice before redirect
+    const notice = document.createElement("div");
+    notice.style.cssText = "position:fixed;inset:0;background:rgba(255,255,255,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:1rem;";
+    notice.innerHTML = `<div style="font-size:2.5rem">🏪</div><p style="font-weight:600;font-size:1rem">門市已選擇，正在跳轉付款…</p><p style="color:#64748B;font-size:0.85rem">${storeInfo.CVSStoreName || ""} ${storeInfo.CVSAddress || ""}</p>`;
+    document.body.appendChild(notice);
+
+    try {
+      await createPaymentOrder(pkRaw, storeInfo);
+    } catch (err) {
+      document.body.removeChild(notice);
+      alert("無法建立訂單：" + err.message);
+    }
+  }
+
+  // ── Load buyer's own logistics orders ──────────────────────────────────────
+  async function loadOrders(uid) {
+    try {
+      const purchases = await dbGet(auth, `purchases/${uid}`);
+      if (!purchases) return;
+
+      const logisticsOrders = Object.values(purchases)
+        .filter(p => p.logistics)
+        .sort((a, b) => (b.purchasedAt || 0) - (a.purchasedAt || 0));
+
+      if (logisticsOrders.length === 0) return;
+
+      document.getElementById("ordersSection").classList.remove("hidden");
+
+      const html = logisticsOrders.map(p => {
+        const lg      = p.logistics;
+        const date    = p.purchasedAt ? new Date(p.purchasedAt).toLocaleDateString("zh-TW") : "—";
+        const status  = lg.status || "建立中";
+        const statusColor = status === "created" || status === "建立中" ? "#2563EB"
+          : status.startsWith("error") ? "#DC2626" : "#16A34A";
+        return `
+          <div style="background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:1.25rem;margin-bottom:1rem;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;">
+              <div>
+                <div style="font-weight:600;font-size:0.95rem;">${escHtml(p.productName || lg.productName || "商品")}</div>
+                <div style="font-size:0.78rem;color:#64748B;margin-top:2px;">${date}</div>
+              </div>
+              <span style="font-size:0.75rem;font-weight:600;color:${statusColor};background:${statusColor}18;padding:2px 10px;border-radius:99px;border:1px solid ${statusColor}44;">${escHtml(status)}</span>
+            </div>
+            <div style="background:#F8FAFC;border-radius:8px;padding:0.85rem;margin-bottom:0.75rem;">
+              <div style="font-size:0.72rem;color:#64748B;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.35rem;">取貨門市</div>
+              <div style="font-weight:500;font-size:0.9rem;">${escHtml(lg.storeName || "—")}</div>
+              <div style="font-size:0.8rem;color:#64748B;">${escHtml(lg.storeAddress || "")}</div>
+            </div>
+            ${lg.cvsPaymentNo ? `
+            <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:0.85rem;">
+              <div style="font-size:0.72rem;color:#2563EB;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.35rem;">取貨編號（請出示給店員）</div>
+              <div style="font-size:1.5rem;font-weight:700;color:#1E40AF;letter-spacing:0.1em;">${escHtml(lg.cvsPaymentNo)}</div>
+            </div>` : `
+            <div style="font-size:0.82rem;color:#64748B;padding:0.5rem 0;">物流建立中，取貨編號稍後會顯示於此。請重新整理頁面。</div>`}
+          </div>`;
+      }).join("");
+
+      document.getElementById("ordersList").innerHTML = html;
+    } catch (err) {
+      console.warn("loadOrders failed:", err.message);
+    }
+  }
+
+  // submitReceiverAndOpenMap: validates receiver info, calls /logistics/cvs-map,
+  // saves productKey to sessionStorage, then redirects to ECPay store picker.
+  window.submitReceiverAndOpenMap = async function () {
+    // We need to intercept the response to grab merchantTradeNo before the redirect.
+    // Override: re-implement inline so we can capture the tradeNo.
+    const name  = document.getElementById("receiverName").value.trim();
+    const phone = document.getElementById("receiverPhone").value.trim();
+    const alertEl = document.getElementById("receiverAlert");
+    alertEl.classList.add("hidden");
+
+    if (!name)  { alertEl.textContent = "請填寫收件人姓名。"; alertEl.classList.remove("hidden"); return; }
+    if (!phone || !/^09\d{8}$/.test(phone.replace(/\s/g,""))) {
+      alertEl.textContent = "請填寫正確的手機號碼（09 開頭，共 10 碼）。";
+      alertEl.classList.remove("hidden");
+      return;
+    }
+    const btn = document.getElementById("receiverSubmitBtn");
+    btn.disabled = true; btn.textContent = "處理中…";
+
+    try {
+      const idToken = await currentUserObj.getIdToken(true);
+      const resp = await fetch(`${ECPAY_SERVER_URL}/logistics/cvs-map`, {
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productKey, idToken })
+        body:    JSON.stringify({ productKey: _pendingProductKey, idToken, receiverName: name, receiverPhone: phone }),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }));
         throw new Error(err.error || resp.statusText);
       }
-      const { ecpayUrl, params } = await resp.json();
+      const { ecpayUrl, params, merchantTradeNo } = await resp.json();
 
-      // Build and auto-submit the ECPay form entirely in the browser
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = ecpayUrl;
-      form.style.display = "none";
-      for (const [k, v] of Object.entries(params)) {
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = k;
-        input.value = v;
-        form.appendChild(input);
+      // Save productKey so the return page can pass it to createPaymentOrder
+      if (merchantTradeNo) {
+        sessionStorage.setItem("ecpay_pk_" + merchantTradeNo, _pendingProductKey);
       }
-      document.body.appendChild(form);
-      form.submit();
-    } catch(err) {
-      btn.disabled = false;
-      btn.textContent = "立即購買";
-      alert("無法建立訂單，請稍後再試。\n" + err.message);
+
+      document.getElementById("receiverModal").classList.add("hidden");
+      document.body.style.overflow = "";
+      submitEcpayForm(ecpayUrl, params);
+    } catch (err) {
+      btn.disabled = false; btn.textContent = "前往選擇門市 →";
+      alertEl.textContent = "無法開啟門市選擇：" + err.message;
+      alertEl.classList.remove("hidden");
     }
   };
 

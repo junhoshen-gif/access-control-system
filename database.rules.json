@@ -54,6 +54,14 @@
     "tradeMap": {
       ".read": false,
       ".write": false
+    },
+    "trade_map": {
+      ".read": false,
+      ".write": false
+    },
+    "logistics_orders": {
+      ".read": "root.child('admins').child(auth.uid).exists()",
+      ".write": false
     }
   }
 }

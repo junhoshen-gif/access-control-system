@@ -55,6 +55,10 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
         Pricing
       </a>
+      <a href="#section-logistics" class="sidebar-item" onclick="showSection('logistics', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        物流管理
+      </a>
       <a href="#section-log" class="sidebar-item" onclick="showSection('log', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
         Activity Log
@@ -275,6 +279,43 @@
             </div>
           </div>
 
+          <!-- ── Physical / C2C logistics ──────────────────────────────── -->
+          <div class="form-group" style="border-top:1px solid var(--color-border);padding-top:1rem;">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+              <input type="checkbox" id="productHasPhysical" style="cursor:pointer;" onchange="togglePhysicalFields(this.checked)"/>
+              <span class="form-label" style="margin:0;">🚚 包含實體商品寄送 (C2C 超商取貨)</span>
+            </label>
+            <p class="text-muted text-sm">勾選後，買家結帳時需先選擇取貨超商，付款後系統自動建立物流訂單。</p>
+          </div>
+
+          <div id="physicalFields" style="display:none;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;flex-direction:column;gap:0.85rem;">
+            <div class="form-group" style="margin:0;">
+              <label class="form-label text-sm">可選超商 Available Stores</label>
+              <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:0.35rem;">
+                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
+                  <input type="checkbox" name="logisticsSubType" value="UNIMART" checked/> 7-ELEVEN
+                </label>
+                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
+                  <input type="checkbox" name="logisticsSubType" value="FAMI"/> 全家 FamilyMart
+                </label>
+                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
+                  <input type="checkbox" name="logisticsSubType" value="HILIFE"/> 萊爾富 Hi-Life
+                </label>
+                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
+                  <input type="checkbox" name="logisticsSubType" value="OKMART"/> OK mart
+                </label>
+              </div>
+              <p class="text-muted text-sm" style="margin-top:0.35rem;">每次選門市只能選一種超商，系統會使用勾選的第一個。</p>
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                <input type="checkbox" id="productLogisticsSandbox" checked style="cursor:pointer;"/>
+                <span class="form-label text-sm" style="margin:0;">使用物流測試環境 Logistics Sandbox</span>
+              </label>
+              <p class="text-muted text-sm">上線前請取消勾選。</p>
+            </div>
+          </div>
+
           <div style="display:flex;gap:0.75rem;">
             <button class="btn btn-primary" onclick="saveProduct()">儲存商品 Save</button>
             <button class="btn btn-ghost" onclick="resetProductForm()">清除 Clear</button>
@@ -307,6 +348,42 @@
         <table class="data-table hidden" id="purchasesTable">
           <thead><tr><th>使用者 UID</th><th>商品</th><th>檔案</th><th>金額</th><th>付款方式</th><th>日期</th><th>到期</th><th>操作</th></tr></thead>
           <tbody id="purchasesTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- LOGISTICS SECTION -->
+    <section id="section-logistics" class="admin-section hidden">
+      <div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
+        <div>
+          <h2>🚚 物流管理 Logistics</h2>
+          <p class="text-muted">C2C 超商取貨訂單一覽。付款成功後系統自動建立物流訂單。</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadLogisticsOrders()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          重新整理
+        </button>
+      </div>
+
+      <div id="logisticsAlert" class="alert hidden" style="margin-bottom:1rem;"></div>
+      <div id="logisticsLoading" class="empty-state"><div class="spinner"></div><p>載入中…</p></div>
+      <div id="logisticsEmpty" class="empty-state hidden"><p>尚無物流訂單。</p></div>
+
+      <div style="overflow-x:auto;">
+        <table class="data-table hidden" id="logisticsTable">
+          <thead>
+            <tr>
+              <th>物流訂單號</th>
+              <th>買家 UID</th>
+              <th>商品</th>
+              <th>超商 / 地址</th>
+              <th>取貨編號</th>
+              <th>狀態</th>
+              <th>建立時間</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="logisticsTbody"></tbody>
         </table>
       </div>
     </section>
@@ -802,10 +879,121 @@
     document.querySelectorAll(".sidebar-item").forEach(s => s.classList.remove("active"));
     document.getElementById(`section-${name}`).classList.remove("hidden");
     el.classList.add("active");
-    if (name === "log") loadLog();
-    if (name === "pricing") loadPricing();
-    if (name === "security") loadSecurity();
-    if (name === "storage") loadStorage();
+    if (name === "log")       loadLog();
+    if (name === "pricing")   loadPricing();
+    if (name === "security")  loadSecurity();
+    if (name === "storage")   loadStorage();
+    if (name === "logistics") loadLogisticsOrders();
+  };
+
+  // ── Physical product form toggle ─────────────────────────────────────────
+  window.togglePhysicalFields = (checked) => {
+    const el = document.getElementById("physicalFields");
+    el.style.display = checked ? "flex" : "none";
+  };
+
+  // ── Logistics: load orders ─────────────────────────────────────────────────
+  window.loadLogisticsOrders = async () => {
+    document.getElementById("logisticsLoading").classList.remove("hidden");
+    document.getElementById("logisticsEmpty").classList.add("hidden");
+    document.getElementById("logisticsTable").classList.add("hidden");
+    document.getElementById("logisticsAlert").classList.add("hidden");
+
+    let orders;
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const resp    = await fetch(`${RENDER_SERVER_URL}/logistics/orders`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      orders = await resp.json();
+    } catch (err) {
+      document.getElementById("logisticsLoading").classList.add("hidden");
+      const alertEl = document.getElementById("logisticsAlert");
+      alertEl.textContent = "載入失敗：" + err.message;
+      alertEl.className   = "alert alert-error";
+      alertEl.classList.remove("hidden");
+      return;
+    }
+
+    document.getElementById("logisticsLoading").classList.add("hidden");
+
+    if (!orders || orders.length === 0) {
+      document.getElementById("logisticsEmpty").classList.remove("hidden");
+      return;
+    }
+
+    const tbody = document.getElementById("logisticsTbody");
+    tbody.innerHTML = orders.map(o => {
+      const date    = o.createdAt ? new Date(o.createdAt).toLocaleString("zh-TW") : "—";
+      const status  = escHtml(o.status || "—");
+      const sandbox = o.useSandbox !== false;
+      return `
+        <tr>
+          <td style="font-family:monospace;font-size:0.8rem;">${escHtml(o.allPayLogisticsID || "—")}</td>
+          <td style="font-size:0.78rem;max-width:120px;word-break:break-all;">${escHtml(o.uid || "—")}</td>
+          <td>${escHtml(o.productName || "—")}</td>
+          <td>
+            <div style="font-weight:500;font-size:0.85rem;">${escHtml(o.storeName || "—")}</div>
+            <div style="font-size:0.75rem;color:#64748B;">${escHtml(o.storeAddress || "")}</div>
+          </td>
+          <td style="font-family:monospace;font-weight:600;">${escHtml(o.cvsPaymentNo || "—")}</td>
+          <td><span class="badge ${o.status === 'created' ? 'badge-success' : o.status?.startsWith('error') ? 'badge-error' : 'badge-neutral'}">${status}</span></td>
+          <td style="font-size:0.8rem;white-space:nowrap;">${date}</td>
+          <td>
+            <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+              ${o.allPayLogisticsID ? `
+                <button class="btn btn-ghost btn-xs" onclick="printLogisticsLabel('${escHtml(o.allPayLogisticsID)}', ${sandbox})" title="列印標籤">🖨 標籤</button>
+                <button class="btn btn-ghost btn-xs" onclick="trackLogistics('${escHtml(o.allPayLogisticsID)}', this)" title="查詢狀態">📦 狀態</button>
+              ` : "<span class='text-muted text-sm'>物流建立失敗</span>"}
+            </div>
+          </td>
+        </tr>`;
+    }).join("");
+
+    document.getElementById("logisticsTable").classList.remove("hidden");
+  };
+
+  // ── Print shipping label ───────────────────────────────────────────────────
+  window.printLogisticsLabel = async (allPayLogisticsID, useSandbox) => {
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const resp    = await fetch(`${RENDER_SERVER_URL}/logistics/print-label`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body:    JSON.stringify({ allPayLogisticsID, useSandbox }),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const { printUrl } = await resp.json();
+      window.open(printUrl, "_blank");
+    } catch (err) {
+      alert("無法列印標籤：" + err.message);
+    }
+  };
+
+  // ── Track logistics status ─────────────────────────────────────────────────
+  window.trackLogistics = async (allPayLogisticsID, btn) => {
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = "查詢中…";
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const resp    = await fetch(`${RENDER_SERVER_URL}/logistics/track/${encodeURIComponent(allPayLogisticsID)}`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      const { status } = await resp.json();
+      // Update the status cell in this row
+      const row = btn.closest("tr");
+      if (row) {
+        const statusCell = row.cells[5];
+        if (statusCell) statusCell.innerHTML = `<span class="badge badge-success">${escHtml(status)}</span>`;
+      }
+      btn.textContent = "✓ 已更新";
+      setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 2000);
+    } catch (err) {
+      btn.disabled = false; btn.textContent = orig;
+      alert("查詢失敗：" + err.message);
+    }
   };
 
   // ── Upload ────────────────────────────────────────────────────────────────
@@ -1943,19 +2131,29 @@
     }
     const imageKeys = [...existingProductImages, ...newImageKeys];
 
+    // ── Physical / logistics fields ────────────────────────────────────────
+    const hasPhysical       = document.getElementById("productHasPhysical").checked;
+    const logisticsSandbox  = document.getElementById("productLogisticsSandbox").checked;
+    const logisticsSubTypes = hasPhysical
+      ? [...document.querySelectorAll("input[name='logisticsSubType']:checked")].map(cb => cb.value)
+      : [];
+
     const data = {
       name,
       priceNTD,
-      price:         price || `NT$${priceNTD}`,
-      paymentMethod: payMethod,
+      price:              price || `NT$${priceNTD}`,
+      paymentMethod:      payMethod,
       merchantId,
       useSandbox,
       fileIds,
-      durationDays:  durationRaw ? parseInt(durationRaw, 10) : null,
-      previewFileId: previewFileId || null,
-      previewPages:  (previewFileId && previewPages) ? previewPages : null,
-      imageKeys:     imageKeys.length > 0 ? imageKeys : null,
-      updatedAt:     Date.now()
+      durationDays:       durationRaw ? parseInt(durationRaw, 10) : null,
+      previewFileId:      previewFileId || null,
+      previewPages:       (previewFileId && previewPages) ? previewPages : null,
+      imageKeys:          imageKeys.length > 0 ? imageKeys : null,
+      hasPhysical:        hasPhysical,
+      logisticsSubTypes:  logisticsSubTypes.length > 0 ? logisticsSubTypes : null,
+      logisticsSandbox:   hasPhysical ? logisticsSandbox : null,
+      updatedAt:          Date.now()
     };
 
     try {
@@ -1995,6 +2193,15 @@
     pendingProductImages  = [];
     existingProductImages = p.imageKeys ? [...p.imageKeys] : [];
     renderProductImagesPreviews();
+    // Physical / logistics fields
+    const hasPhys = !!p.hasPhysical;
+    document.getElementById("productHasPhysical").checked    = hasPhys;
+    document.getElementById("productLogisticsSandbox").checked = p.logisticsSandbox !== false;
+    togglePhysicalFields(hasPhys);
+    const subTypes = p.logisticsSubTypes || [];
+    document.querySelectorAll("input[name='logisticsSubType']").forEach(cb => {
+      cb.checked = subTypes.includes(cb.value);
+    });
     document.getElementById("productFormTitle").scrollIntoView({ behavior: "smooth" });
   };
 
@@ -2014,6 +2221,11 @@
     pendingProductImages  = [];
     existingProductImages = [];
     renderProductImagesPreviews();
+    // Reset physical fields
+    document.getElementById("productHasPhysical").checked    = false;
+    document.getElementById("productLogisticsSandbox").checked = true;
+    togglePhysicalFields(false);
+    document.querySelectorAll("input[name='logisticsSubType']").forEach(cb => { cb.checked = cb.value === "UNIMART"; });
   };
 
   window.deleteProduct = async (key) => {
