@@ -1144,10 +1144,19 @@ async function callEcpayLogistics(path, params, useSandbox) {
       resp.on("data", chunk => { data += chunk; });
       resp.on("end", () => {
         try {
+          // ECPay sometimes returns a bare error string like "10500069|錯誤訊息"
+          // instead of URL-encoded key=value pairs — detect and normalise it
+          const decoded = data.includes("%") ? decodeURIComponent(data.replace(/\+/g, " ")) : data;
+          if (/^\d{8}\|/.test(decoded.trim())) {
+            // bare error code|message format
+            const [rtnCode, ...msgParts] = decoded.trim().split("|");
+            resolve({ RtnCode: rtnCode, RtnMsg: msgParts.join("|"), _raw: data });
+            return;
+          }
           const parsed = {};
-          data.split("&").forEach(pair => {
+          decoded.split("&").forEach(pair => {
             const [k, ...rest] = pair.split("=");
-            if (k) parsed[decodeURIComponent(k)] = decodeURIComponent(rest.join("="));
+            if (k) parsed[k] = rest.join("=");
           });
           resolve(parsed);
         } catch {
