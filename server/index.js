@@ -914,11 +914,26 @@ app.post("/ecpay/callback", async (req, res) => {
       PackageCount:        "1",
     };
 
+    // [TEMP DEBUG] log the key params being sent to ECPay
+    console.log("[LOGISTICS DEBUG] params:", JSON.stringify({
+      MerchantID:        logisticsParams.MerchantID,
+      LogisticsSubType:  logisticsParams.LogisticsSubType,
+      ReceiverName:      logisticsParams.ReceiverName,
+      ReceiverCellPhone: logisticsParams.ReceiverCellPhone,
+      ReceiverStoreID:   logisticsParams.ReceiverStoreID,
+      ReceiverAddress:   logisticsParams.ReceiverAddress,
+      SenderName:        logisticsParams.SenderName,
+      GoodsAmount:       logisticsParams.GoodsAmount,
+      useSandbox,
+    }));
+
     let logisticsResult;
     try {
       logisticsResult = await callEcpayLogistics("/Express/Create", logisticsParams, useSandbox);
+      // [TEMP DEBUG] log raw ECPay response
+      console.log("[LOGISTICS DEBUG] ECPay response:", JSON.stringify(logisticsResult));
     } catch (err) {
-      console.error("Logistics Create error:", err.message);
+      console.error("[LOGISTICS DEBUG] Logistics Create error:", err.message);
       // Non-fatal: payment succeeded, just log the failure
       logisticsResult = { RtnCode: "0", RtnMsg: err.message };
     }
