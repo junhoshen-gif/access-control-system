@@ -1106,14 +1106,21 @@ function buildLogisticsCheckMacValue(params, hashKey, hashIV) {
     .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
     .map(k => `${k}=${params[k]}`).join("&");
 
-  const raw     = `HashKey=${hashKey}&${sorted}&HashIV=${hashIV}`;
-  const encoded = encodeURIComponent(raw).toLowerCase()
+  // ECPay spec: encode each VALUE with encodeURIComponent, then lowercase the whole string
+  // The separators (= and &) must remain as literals — do NOT encodeURIComponent the whole string
+  const sortedEncoded = Object.keys(params)
+    .filter(k => k !== "CheckMacValue")
+    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map(k => `${k}=${encodeURIComponent(params[k])}`)
+    .join("&");
+
+  const raw     = `HashKey=${hashKey}&${sortedEncoded}&HashIV=${hashIV}`;
+  const encoded = raw.toLowerCase()
     .replace(/%20/g, "+").replace(/%21/g, "!").replace(/%27/g, "'")
     .replace(/%28/g, "(").replace(/%29/g, ")").replace(/%2a/g, "*");
 
   const mac = crypto.createHash("md5").update(encoded).digest("hex").toUpperCase();
-  console.log("[CMV DEBUG] raw:", raw.slice(0, 200));
-  console.log("[CMV DEBUG] encoded:", encoded.slice(0, 200));
+  console.log("[CMV DEBUG] raw:", raw.slice(0, 300));
   console.log("[CMV DEBUG] mac:", mac);
   return mac;
 }
