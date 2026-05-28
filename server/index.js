@@ -1111,7 +1111,11 @@ function buildLogisticsCheckMacValue(params, hashKey, hashIV) {
     .replace(/%20/g, "+").replace(/%21/g, "!").replace(/%27/g, "'")
     .replace(/%28/g, "(").replace(/%29/g, ")").replace(/%2a/g, "*");
 
-  return crypto.createHash("md5").update(encoded).digest("hex").toUpperCase();
+  const mac = crypto.createHash("md5").update(encoded).digest("hex").toUpperCase();
+  console.log("[CMV DEBUG] raw:", raw.slice(0, 200));
+  console.log("[CMV DEBUG] encoded:", encoded.slice(0, 200));
+  console.log("[CMV DEBUG] mac:", mac);
+  return mac;
 }
 
 // ── POST to ECPay logistics API, returns parsed key=value response ───────────
