@@ -139,7 +139,7 @@
       const password = document.getElementById("password").value;
       try {
         const cred = await signInWithEmailAndPassword(auth, email, password);
-        await saveUserProfile(cred.user);
+        saveUserProfile(cred.user); // fire-and-forget — don't block redirect
         window.location.href = "index.html";
       } catch (err) {
         showError(friendlyError(err.code));
@@ -185,20 +185,22 @@
     // ── Async init: persistence + redirect result ─────────────────────────────
     // Wrapped in an IIFE so top-level await isn't required (Safari 14 compat)
     (async () => {
-      // Force local persistence — critical for Safari ITP compatibility
-      await setPersistence(auth, browserLocalPersistence);
-
-      // Show a loading indicator while getRedirectResult resolves —
-      // on Safari this can take a moment after returning from Google's OAuth page
       const redirectEl = document.getElementById("redirectLoading");
       const formEl     = document.getElementById("emailForm");
       const dividerEl  = document.querySelector(".divider");
       const socialEl   = document.querySelector(".social-grid");
+
+      // Hide form while we set persistence + check redirect result
       redirectEl.classList.remove("hidden");
       formEl.classList.add("hidden");
       if (dividerEl) dividerEl.classList.add("hidden");
       if (socialEl)  socialEl.classList.add("hidden");
 
+      // Force local persistence FIRST — must complete before any sign-in attempt
+      // so the session survives navigation to index.html
+      await setPersistence(auth, browserLocalPersistence);
+
+      // Check for Google redirect result (Safari redirect flow)
       try {
         const result = await getRedirectResult(auth);
         if (result?.user) {
@@ -210,7 +212,7 @@
         if (err.code !== "auth/popup-closed-by-user") showError(friendlyError(err.code));
       }
 
-      // No redirect in progress — restore the normal sign-in form
+      // Persistence set and no redirect in progress — show the sign-in form
       redirectEl.classList.add("hidden");
       formEl.classList.remove("hidden");
       if (dividerEl) dividerEl.classList.remove("hidden");
