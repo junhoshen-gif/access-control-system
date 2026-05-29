@@ -881,38 +881,36 @@ app.post("/ecpay/callback", async (req, res) => {
       if (receiverName.length < 4) receiverName = "Buyer";
     }
 
-    const logisticsParams = {
-      MerchantID:          process.env.ECPAY_LOGISTICS_MERCHANT_ID || process.env.ECPAY_MERCHANT_ID || "",
-      MerchantTradeNo:     tradeNo,
-      MerchantTradeDate:   logDate,
-      LogisticsType:       "CVS",
-      LogisticsSubType:    store.LogisticsSubType || "UNIMART",
-      GoodsAmount:         String(Math.round(product.priceNTD || 0)),
-      CollectionAmount:    "0",
-      IsCollection:        "N",
-      GoodsName:           (product.name || "商品").replace(/[^a-zA-Z0-9一-鿿\s]/g, "").slice(0, 50),
-      SenderName:          process.env.SENDER_NAME    || "",
-      SenderPhone:         process.env.SENDER_PHONE   || "",
-      SenderZipCode:       process.env.SENDER_ZIPCODE || "",
-      SenderAddress:       process.env.SENDER_ADDRESS || "",
-      ReceiverName:        receiverName,
-      ReceiverCellPhone:   (tradeData.receiverPhone || "").replace(/\D/g, "").slice(0, 20),
-      ReceiverZipCode:     "",
-      ReceiverAddress:     store.CVSAddress || "",
-      ReceiverStoreID:     store.CVSStoreID || "",
-      ReturnStoreID:       "",
-      ServerReplyURL:      `${process.env.SERVER_URL || ""}/logistics/status-callback`,
-      ClientReplyURL:      `${process.env.SITE_URL   || ""}/index.html`,
-      Remark:              "",
-      PlatformID:          "",
-      Temperature:         "0001",
-      Distance:            "00",
-      Specification:       "0001",
-      ScheduledPickupTime: "1",
-      ScheduledDeliveryTime: "1",
-      ScheduledDeliveryDate: "0",
-      PackageCount:        "1",
+    // CVS-only fields — do NOT include HOME-delivery-only fields
+    // (Temperature, Specification, ScheduledPickupTime/DeliveryTime/Date, PackageCount)
+    // ECPay drops unknown fields before MAC verification, causing a mismatch if included.
+    // Also omit empty-string optional fields for the same reason.
+    const logisticsParamsRaw = {
+      MerchantID:        process.env.ECPAY_LOGISTICS_MERCHANT_ID || process.env.ECPAY_MERCHANT_ID || "",
+      MerchantTradeNo:   tradeNo,
+      MerchantTradeDate: logDate,
+      LogisticsType:     "CVS",
+      LogisticsSubType:  store.LogisticsSubType || "UNIMART",
+      GoodsAmount:       String(Math.round(product.priceNTD || 0)),
+      CollectionAmount:  "0",
+      IsCollection:      "N",
+      GoodsName:         (product.name || "商品").replace(/[^a-zA-Z0-9一-鿿\s]/g, "").slice(0, 50) || "商品",
+      SenderName:        process.env.SENDER_NAME    || "",
+      SenderPhone:       process.env.SENDER_PHONE   || "",
+      SenderZipCode:     process.env.SENDER_ZIPCODE || "",
+      SenderAddress:     process.env.SENDER_ADDRESS || "",
+      ReceiverName:      receiverName,
+      ReceiverCellPhone: (tradeData.receiverPhone || "").replace(/\D/g, "").slice(0, 20),
+      ReceiverZipCode:   "",
+      ReceiverAddress:   store.CVSAddress || "",
+      ReceiverStoreID:   store.CVSStoreID || "",
+      ServerReplyURL:    `${process.env.SERVER_URL || ""}/logistics/status-callback`,
+      ClientReplyURL:    `${process.env.SITE_URL   || ""}/index.html`,
     };
+    // Strip empty-string values — ECPay excludes them from MAC computation
+    const logisticsParams = Object.fromEntries(
+      Object.entries(logisticsParamsRaw).filter(([, v]) => v !== "")
+    );
 
     // [TEMP DEBUG] log the key params being sent to ECPay
     console.log("[LOGISTICS DEBUG] params:", JSON.stringify({
