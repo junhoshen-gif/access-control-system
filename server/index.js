@@ -851,7 +851,9 @@ app.post("/ecpay/callback", async (req, res) => {
   }
 
   // ── Physical product: create logistics order with ECPay ──────────────────
-  if (product.hasPhysical && tradeData.storeInfo) {
+  // ARCHIVED: set LOGISTICS_ENABLED=true in env to re-enable this flow.
+  const LOGISTICS_ENABLED = process.env.LOGISTICS_ENABLED === "true";
+  if (LOGISTICS_ENABLED && product.hasPhysical && tradeData.storeInfo) {
     const store        = tradeData.storeInfo;
     const useSandbox   = product.logisticsSandbox !== false;
 
@@ -892,7 +894,6 @@ app.post("/ecpay/callback", async (req, res) => {
       LogisticsType:     "CVS",
       LogisticsSubType:  store.LogisticsSubType || "UNIMART",
       GoodsAmount:       String(Math.round(product.priceNTD || 0)),
-      CollectionAmount:  "0",
       IsCollection:      "N",
       GoodsName:         (product.name || "商品").replace(/[^a-zA-Z0-9一-鿿\s]/g, "").slice(0, 50) || "商品",
       SenderName:        process.env.SENDER_NAME    || "",
@@ -901,7 +902,6 @@ app.post("/ecpay/callback", async (req, res) => {
       SenderAddress:     process.env.SENDER_ADDRESS || "",
       ReceiverName:      receiverName,
       ReceiverCellPhone: (tradeData.receiverPhone || "").replace(/\D/g, "").slice(0, 20),
-      ReceiverZipCode:   "",
       ReceiverAddress:   store.CVSAddress || "",
       ReceiverStoreID:   store.CVSStoreID || "",
       ServerReplyURL:    `${process.env.SERVER_URL || ""}/logistics/status-callback`,
@@ -1118,9 +1118,6 @@ function buildLogisticsCheckMacValue(params, hashKey, hashIV) {
     .replace(/%28/g, "(").replace(/%29/g, ")").replace(/%2a/g, "*");
 
   const mac = crypto.createHash("md5").update(encoded).digest("hex").toUpperCase();
-  console.log("[CMV DEBUG] raw:", raw);
-  console.log("[CMV DEBUG] encoded:", encoded);
-  console.log("[CMV DEBUG] mac:", mac);
   return mac;
 }
 
@@ -1134,8 +1131,6 @@ async function callEcpayLogistics(path, params, useSandbox) {
 
   const hashKey = process.env.ECPAY_LOGISTICS_HASH_KEY || "";
   const hashIV  = process.env.ECPAY_LOGISTICS_HASH_IV  || "";
-  console.log("[CMV DEBUG] hashKey:", hashKey, "hashIV:", hashIV);
-  console.log("[CMV DEBUG] params keys:", Object.keys(params).sort().join(", "));
   params.CheckMacValue = buildLogisticsCheckMacValue(params, hashKey, hashIV);
 
   const body    = new URLSearchParams(params).toString();
@@ -1190,6 +1185,11 @@ async function callEcpayLogistics(path, params, useSandbox) {
 //
 // Body: { productKey, idToken, receiverName, receiverPhone }
 app.post("/logistics/cvs-map", async (req, res) => {
+  // ARCHIVED: logistics feature is disabled. Re-enable by setting LOGISTICS_ENABLED=true.
+  if (process.env.LOGISTICS_ENABLED !== "true") {
+    return res.status(503).json({ error: "Logistics feature is currently unavailable." });
+  }
+
   const decoded = await verifyToken(req, res);
   if (!decoded) return;
 

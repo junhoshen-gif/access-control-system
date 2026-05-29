@@ -78,8 +78,8 @@
     </div>
   </div>
 
-  <!-- ── 我的訂單 My Orders (physical purchases with logistics) ───────────── -->
-  <div id="ordersSection" class="hidden" style="margin-top:2.5rem;">
+  <!-- ── 我的訂單 My Orders (physical purchases with logistics) ── ARCHIVED ── -->
+  <div id="ordersSection" class="hidden" style="margin-top:2.5rem;display:none!important;">
     <div class="page-header" style="margin-bottom:1rem;">
       <h2>🚚 我的訂單 My Orders</h2>
       <p class="text-muted">實體商品寄送狀態。取貨時請出示取貨編號。</p>
@@ -87,8 +87,8 @@
     <div id="ordersList"></div>
   </div>
 
-  <!-- ── Receiver info modal (shown before CVS map redirect) ─────────────── -->
-  <div id="receiverModal" class="modal hidden">
+  <!-- ── Receiver info modal (shown before CVS map redirect) ── ARCHIVED ─── -->
+  <div id="receiverModal" class="modal hidden" style="display:none!important;">
     <div class="modal-overlay" onclick="closeReceiverModal()"></div>
     <div class="modal-panel" style="max-width:440px;">
       <div class="modal-header">
@@ -852,26 +852,11 @@
     btn.textContent = "跳轉中…";
 
     try {
-      if (product && product.hasPhysical) {
-        // ── Physical product: need store selection first ────────────────────
-        // Open receiver-info modal; store selection + payment happen from there
-        _pendingProductKey = productKey;
-        // Pre-fill name from Firebase auth
-        document.getElementById("receiverName").value =
-          currentUserObj.displayName || "";
-        document.getElementById("receiverPhone").value  = "";
-        document.getElementById("receiverAlert").classList.add("hidden");
-        document.getElementById("receiverSubmitBtn").disabled    = false;
-        document.getElementById("receiverSubmitBtn").textContent = "前往選擇門市 →";
-        document.getElementById("receiverModal").classList.remove("hidden");
-        document.body.style.overflow = "hidden";
-        // Re-enable the buy button since the modal takes over
-        btn.disabled    = false;
-        btn.textContent = "立即購買";
-      } else {
-        // ── Digital-only product: go straight to payment ───────────────────
-        await createPaymentOrder(productKey, null);
-      }
+      // ARCHIVED: physical product / logistics flow disabled.
+      // To restore: remove this comment block and uncomment the hasPhysical branch below.
+      // if (product && product.hasPhysical) { ... open receiverModal ... } else {
+      await createPaymentOrder(productKey, null);
+      // }
     } catch (err) {
       btn.disabled    = false;
       btn.textContent = "立即購買";
