@@ -1134,7 +1134,7 @@ async function callEcpayLogistics(path, params, useSandbox) {
 
   const hashKey = process.env.ECPAY_LOGISTICS_HASH_KEY || "";
   const hashIV  = process.env.ECPAY_LOGISTICS_HASH_IV  || "";
-  console.log("[CMV DEBUG] hashKey prefix:", hashKey.slice(0, 6), "hashIV prefix:", hashIV.slice(0, 6));
+  console.log("[CMV DEBUG] hashKey:", hashKey, "hashIV:", hashIV);
   console.log("[CMV DEBUG] params keys:", Object.keys(params).sort().join(", "));
   params.CheckMacValue = buildLogisticsCheckMacValue(params, hashKey, hashIV);
 
