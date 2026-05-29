@@ -1119,6 +1119,7 @@ function buildLogisticsCheckMacValue(params, hashKey, hashIV) {
 
   const mac = crypto.createHash("md5").update(encoded).digest("hex").toUpperCase();
   console.log("[CMV DEBUG] raw:", raw.slice(0, 300));
+  console.log("[CMV DEBUG] encoded:", encoded.slice(0, 300));
   console.log("[CMV DEBUG] mac:", mac);
   return mac;
 }
@@ -1133,6 +1134,8 @@ async function callEcpayLogistics(path, params, useSandbox) {
 
   const hashKey = process.env.ECPAY_LOGISTICS_HASH_KEY || "";
   const hashIV  = process.env.ECPAY_LOGISTICS_HASH_IV  || "";
+  console.log("[CMV DEBUG] hashKey prefix:", hashKey.slice(0, 6), "hashIV prefix:", hashIV.slice(0, 6));
+  console.log("[CMV DEBUG] params keys:", Object.keys(params).sort().join(", "));
   params.CheckMacValue = buildLogisticsCheckMacValue(params, hashKey, hashIV);
 
   const body    = new URLSearchParams(params).toString();
