@@ -1118,8 +1118,8 @@ function buildLogisticsCheckMacValue(params, hashKey, hashIV) {
     .replace(/%28/g, "(").replace(/%29/g, ")").replace(/%2a/g, "*");
 
   const mac = crypto.createHash("md5").update(encoded).digest("hex").toUpperCase();
-  console.log("[CMV DEBUG] raw:", raw.slice(0, 300));
-  console.log("[CMV DEBUG] encoded:", encoded.slice(0, 300));
+  console.log("[CMV DEBUG] raw:", raw);
+  console.log("[CMV DEBUG] encoded:", encoded);
   console.log("[CMV DEBUG] mac:", mac);
   return mac;
 }
