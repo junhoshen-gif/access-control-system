@@ -1071,26 +1071,24 @@ app.use("/logistics/", logisticsLimiter);
 
 // ── MD5 CheckMacValue for logistics ─────────────────────────────────────────
 function buildLogisticsCheckMacValue(params, hashKey, hashIV) {
+  // ECPay logistics CheckMacValue (MD5):
+  // 1. Sort params by key (case-insensitive), join as key=value&...
+  // 2. Wrap: HashKey=...&{sorted}&HashIV=...
+  // 3. encodeURIComponent the ENTIRE string
+  // 4. Lowercase
+  // 5. Replace encoded chars back per ECPay spec
+  // 6. MD5 → uppercase hex
   const sorted = Object.keys(params)
     .filter(k => k !== "CheckMacValue")
     .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
     .map(k => `${k}=${params[k]}`).join("&");
 
-  // ECPay spec: encode each VALUE with encodeURIComponent, then lowercase the whole string
-  // The separators (= and &) must remain as literals — do NOT encodeURIComponent the whole string
-  const sortedEncoded = Object.keys(params)
-    .filter(k => k !== "CheckMacValue")
-    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
-    .map(k => `${k}=${encodeURIComponent(params[k])}`)
-    .join("&");
-
-  const raw     = `HashKey=${hashKey}&${sortedEncoded}&HashIV=${hashIV}`;
-  const encoded = raw.toLowerCase()
+  const raw     = `HashKey=${hashKey}&${sorted}&HashIV=${hashIV}`;
+  const encoded = encodeURIComponent(raw).toLowerCase()
     .replace(/%20/g, "+").replace(/%21/g, "!").replace(/%27/g, "'")
     .replace(/%28/g, "(").replace(/%29/g, ")").replace(/%2a/g, "*");
 
-  const mac = crypto.createHash("md5").update(encoded).digest("hex").toUpperCase();
-  return mac;
+  return crypto.createHash("md5").update(encoded).digest("hex").toUpperCase();
 }
 
 // ── POST to ECPay logistics API, returns parsed key=value response ───────────
