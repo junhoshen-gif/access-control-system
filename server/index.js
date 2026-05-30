@@ -168,6 +168,20 @@ function nowMs() {
   return Date.now();
 }
 
+// ── Startup env check ───────────────────────────────────────────────────────
+const REQUIRED_ENV = [
+  "ECPAY_HASH_KEY", "ECPAY_HASH_IV", "ECPAY_MERCHANT_ID",
+  "ECPAY_LOGISTICS_HASH_KEY", "ECPAY_LOGISTICS_HASH_IV", "ECPAY_LOGISTICS_MERCHANT_ID",
+  "FIREBASE_DATABASE_URL", "FIREBASE_SERVICE_ACCOUNT",
+  "S3_BUCKET", "AWS_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
+  "SENDER_NAME", "SENDER_PHONE", "SENDER_ZIPCODE", "SENDER_ADDRESS",
+  "SERVER_URL", "SITE_URL",
+];
+REQUIRED_ENV.forEach(k => {
+  if (!process.env[k]) console.warn(`[ENV] ⚠️  Missing env var: ${k}`);
+  else console.log(`[ENV] ✓ ${k} = ${k.includes("KEY") || k.includes("IV") || k.includes("ACCOUNT") ? "***" : process.env[k]}`);
+});
+
 // ── Health ──────────────────────────────────────────────────────────────────
 app.get("/", (req, res) => res.send("FileAccess server is running ✓"));
 
@@ -1088,7 +1102,11 @@ function buildLogisticsCheckMacValue(params, hashKey, hashIV) {
     .replace(/%20/g, "+").replace(/%21/g, "!").replace(/%27/g, "'")
     .replace(/%28/g, "(").replace(/%29/g, ")").replace(/%2a/g, "*");
 
-  return crypto.createHash("md5").update(encoded).digest("hex").toUpperCase();
+  console.log("[CheckMac] raw string:", raw);
+  console.log("[CheckMac] encoded:", encoded);
+  const mac = crypto.createHash("md5").update(encoded).digest("hex").toUpperCase();
+  console.log("[CheckMac] MD5:", mac);
+  return mac;
 }
 
 // ── POST to ECPay logistics API, returns parsed key=value response ───────────
