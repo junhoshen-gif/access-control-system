@@ -1092,17 +1092,21 @@ function buildLogisticsCheckMacValue(params, hashKey, hashIV) {
   // 4. Lowercase
   // 5. Replace encoded chars back per ECPay spec
   // 6. MD5 → uppercase hex
-  const sorted = Object.keys(params)
-    .filter(k => k !== "CheckMacValue")
-    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
-    .map(k => `${k}=${params[k]}`).join("&");
+  // Build sorted pairs with each VALUE encodeURIComponent'd; keys and separators stay literal
+  const pairs = [
+    ["HashKey", hashKey],
+    ...Object.keys(params)
+      .filter(k => k !== "CheckMacValue")
+      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      .map(k => [k, params[k]]),
+    ["HashIV", hashIV],
+  ];
 
-  const raw     = `HashKey=${hashKey}&${sorted}&HashIV=${hashIV}`;
-  const encoded = encodeURIComponent(raw).toLowerCase()
+  const joined = pairs.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+  const encoded = joined.toLowerCase()
     .replace(/%20/g, "+").replace(/%21/g, "!").replace(/%27/g, "'")
     .replace(/%28/g, "(").replace(/%29/g, ")").replace(/%2a/g, "*");
 
-  console.log("[CheckMac] raw string:", raw);
   console.log("[CheckMac] encoded:", encoded);
   const mac = crypto.createHash("md5").update(encoded).digest("hex").toUpperCase();
   console.log("[CheckMac] MD5:", mac);
