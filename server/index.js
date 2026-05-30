@@ -1495,12 +1495,15 @@ app.post("/logistics/create-label", async (req, res) => {
   const rtnCode           = result.RtnCode;
   const rtnMsg            = result.RtnMsg || "";
 
+  console.log("ECPay logistics /Express/Create result:", JSON.stringify(result));
+
   if (rtnCode !== "1") {
+    const detail = result._raw || JSON.stringify(result);
     return res.status(422).json({
-      error: `ECPay error: ${rtnCode} ${rtnMsg}`,
-      rtnCode,
+      error: rtnCode ? `ECPay error ${rtnCode}: ${rtnMsg}` : "ECPay returned unexpected response",
+      rtnCode: rtnCode || null,
       rtnMsg,
-      raw: result._raw || ""
+      raw: detail,
     });
   }
 

@@ -523,8 +523,11 @@
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
             <div class="form-group">
               <label class="form-label">連結訂單 Key（選填）</label>
-              <input type="text" id="labelOrderKey" class="form-input" placeholder="orders/ 中的訂單 key"/>
-              <p class="text-muted text-sm" style="margin-top:0.3rem;">填入後買家可在我的訂單中看到取貨編號。</p>
+              <div style="display:flex;gap:0.5rem;align-items:center;">
+                <input type="text" id="labelOrderKey" class="form-input" placeholder="orders/ 中的訂單 key" style="flex:1;"/>
+                <button class="btn btn-ghost btn-sm" onclick="loadFromOrder()" title="從訂單帶入資料" style="white-space:nowrap;">📋 帶入訂單</button>
+              </div>
+              <p class="text-muted text-sm" style="margin-top:0.3rem;">填入訂單 Key 後點「帶入訂單」可自動填入收件資訊。</p>
             </div>
             <div class="form-group">
               <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;margin-top:1.5rem;">
@@ -1281,7 +1284,8 @@
       });
       const data = await resp.json();
       if (!resp.ok) {
-        showLogisticsAlert(`建立失敗：${data.error || resp.statusText}`, "error");
+        const rawDetail = data.raw ? `\n原始回應：${data.raw}` : "";
+        showLogisticsAlert(`建立失敗：${data.error || resp.statusText}${rawDetail}`, "error");
         return;
       }
       showLogisticsAlert(`✓ 標籤建立成功！取貨編號：${data.cvsPaymentNo || data.allPayLogisticsID}`, "success");
@@ -1290,6 +1294,46 @@
     } catch (err) {
       showLogisticsAlert("建立失敗：" + err.message, "error");
     }
+  };
+
+  window.loadFromOrder = () => {
+    const orderKey = document.getElementById("labelOrderKey").value.trim();
+    if (!orderKey) { showLogisticsAlert("請先填入訂單 Key。", "error"); return; }
+
+    const o = (window.allOrdersCache || []).find(x => x.key === orderKey);
+    if (!o) { showLogisticsAlert("找不到該訂單，請先在「訂單」頁面載入訂單資料。", "error"); return; }
+
+    const di = o.deliveryInfo || {};
+
+    // Receiver name & phone
+    document.getElementById("labelReceiverName").value  = o.receiverName  || di.receiverName  || "";
+    document.getElementById("labelReceiverPhone").value = o.receiverPhone || di.receiverPhone || "";
+
+    // Goods info from product name & amount
+    if (o.productName) document.getElementById("labelGoodsName").value   = o.productName;
+    if (o.amount)      document.getElementById("labelGoodsAmount").value = o.amount;
+
+    const deliveryType = di.deliveryType || o.deliveryType || "";
+
+    const cvsTypes = ["UNIMART","FAMI","OKMART","HILIFE","UNIMARTFREEZE"];
+    const homeTypes = ["TCAT","POST"];
+
+    if (homeTypes.includes(deliveryType)) {
+      document.getElementById("labelLogisticsType").value    = "HOME";
+      document.getElementById("labelLogisticsSubType").value = deliveryType;
+      document.getElementById("labelReceiverAddress").value  = di.receiverAddress || "";
+      document.getElementById("labelReceiverZip").value      = di.receiverZipCode || "";
+      document.getElementById("labelCvsStoreId").value       = "";
+    } else {
+      document.getElementById("labelLogisticsType").value    = "CVS";
+      document.getElementById("labelLogisticsSubType").value = deliveryType || "UNIMART";
+      document.getElementById("labelCvsStoreId").value       = di.CVSStoreID || di.storeId || "";
+      document.getElementById("labelReceiverAddress").value  = "";
+      document.getElementById("labelReceiverZip").value      = "";
+    }
+
+    onLabelTypeChange();
+    showLogisticsAlert(`✓ 已從訂單帶入資料（${o.receiverName || "—"}，${deliveryType || "—"}${di.CVSStoreName ? "，" + di.CVSStoreName : ""}）`, "success");
   };
 
   window.resetLabelForm = () => {
