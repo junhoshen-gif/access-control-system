@@ -850,124 +850,31 @@ app.post("/ecpay/callback", async (req, res) => {
     return res.send("0|DB write error");
   }
 
-  // ── Physical product: create logistics order with ECPay ──────────────────
-  // ARCHIVED: set LOGISTICS_ENABLED=true in env to re-enable this flow.
-  const LOGISTICS_ENABLED = process.env.LOGISTICS_ENABLED === "true";
-  if (LOGISTICS_ENABLED && product.hasPhysical && tradeData.storeInfo) {
-    const store        = tradeData.storeInfo;
-    const useSandbox   = product.logisticsSandbox !== false;
-
-    // Build a Taiwan-time date string for the logistics order
-    const logNowTw  = new Date(now + 8 * 60 * 60 * 1000);
-    const logPad    = n => String(n).padStart(2, "0");
-    const logDate   = `${logNowTw.getUTCFullYear()}/${logPad(logNowTw.getUTCMonth()+1)}/${logPad(logNowTw.getUTCDate())} ${logPad(logNowTw.getUTCHours())}:${logPad(logNowTw.getUTCMinutes())}:${logPad(logNowTw.getUTCSeconds())}`;
-
-    // Load buyer display name from Firebase if not in tradeData
-    let receiverName = tradeData.receiverName || "";
-    if (!receiverName) {
-      try {
-        const uSnap  = await db.ref(`users/${uid}/displayName`).get();
-        receiverName = uSnap.val() || uid.slice(0, 8);
-      } catch { receiverName = uid.slice(0, 8); }
-    }
-    // ECPay ReceiverName validation: Chinese 2-5 chars, English 4-10 chars (no spaces)
-    // Remove spaces for English names; if still invalid, fall back to a safe default
-    const isChinese = /[一-鿿]/.test(receiverName);
-    if (isChinese) {
-      // Keep only Chinese chars, limit to 5
-      receiverName = receiverName.replace(/[^一-鿿]/g, "").slice(0, 5);
-      if (receiverName.length < 2) receiverName = "買家";
-    } else {
-      // Remove spaces/special chars, keep alphanumeric, limit to 10
-      receiverName = receiverName.replace(/[^A-Za-z0-9]/g, "").slice(0, 10);
-      if (receiverName.length < 4) receiverName = "Buyer";
-    }
-
-    // CVS-only fields — do NOT include HOME-delivery-only fields
-    // (Temperature, Specification, ScheduledPickupTime/DeliveryTime/Date, PackageCount)
-    // ECPay drops unknown fields before MAC verification, causing a mismatch if included.
-    // Also omit empty-string optional fields for the same reason.
-    const logisticsParamsRaw = {
-      MerchantID:        process.env.ECPAY_LOGISTICS_MERCHANT_ID || process.env.ECPAY_MERCHANT_ID || "",
-      MerchantTradeNo:   tradeNo,
-      MerchantTradeDate: logDate,
-      LogisticsType:     "CVS",
-      LogisticsSubType:  store.LogisticsSubType || "UNIMART",
-      GoodsAmount:       String(Math.round(product.priceNTD || 0)),
-      IsCollection:      "N",
-      GoodsName:         (product.name || "商品").replace(/[^a-zA-Z0-9一-鿿\s]/g, "").slice(0, 50) || "商品",
-      SenderName:        process.env.SENDER_NAME    || "",
-      SenderPhone:       process.env.SENDER_PHONE   || "",
-      SenderZipCode:     process.env.SENDER_ZIPCODE || "",
-      SenderAddress:     process.env.SENDER_ADDRESS || "",
-      ReceiverName:      receiverName,
-      ReceiverCellPhone: (tradeData.receiverPhone || "").replace(/\D/g, "").slice(0, 20),
-      ReceiverAddress:   store.CVSAddress || "",
-      ReceiverStoreID:   store.CVSStoreID || "",
-      ServerReplyURL:    `${process.env.SERVER_URL || ""}/logistics/status-callback`,
-      ClientReplyURL:    `${process.env.SITE_URL   || ""}/index.html`,
-    };
-    // Strip empty-string values — ECPay excludes them from MAC computation
-    const logisticsParams = Object.fromEntries(
-      Object.entries(logisticsParamsRaw).filter(([, v]) => v !== "")
-    );
-
-    // [TEMP DEBUG] log the key params being sent to ECPay
-    console.log("[LOGISTICS DEBUG] params:", JSON.stringify({
-      MerchantID:        logisticsParams.MerchantID,
-      LogisticsSubType:  logisticsParams.LogisticsSubType,
-      ReceiverName:      logisticsParams.ReceiverName,
-      ReceiverCellPhone: logisticsParams.ReceiverCellPhone,
-      ReceiverStoreID:   logisticsParams.ReceiverStoreID,
-      ReceiverAddress:   logisticsParams.ReceiverAddress,
-      SenderName:        logisticsParams.SenderName,
-      GoodsAmount:       logisticsParams.GoodsAmount,
-      useSandbox,
-    }));
-
-    let logisticsResult;
-    try {
-      logisticsResult = await callEcpayLogistics("/Express/Create", logisticsParams, useSandbox);
-      // [TEMP DEBUG] log raw ECPay response
-      console.log("[LOGISTICS DEBUG] ECPay response:", JSON.stringify(logisticsResult));
-    } catch (err) {
-      console.error("[LOGISTICS DEBUG] Logistics Create error:", err.message);
-      // Non-fatal: payment succeeded, just log the failure
-      logisticsResult = { RtnCode: "0", RtnMsg: err.message };
-    }
-
-    const allPayLogisticsID = logisticsResult.AllPayLogisticsID || "";
-    const cvsPaymentNo      = logisticsResult.CVSPaymentNo      || logisticsResult.CVSValidationNo || "";
-    const logisticsStatus   = logisticsResult.RtnCode === "1" ? "created" : `error: ${logisticsResult.RtnCode || ""} ${logisticsResult.RtnMsg || logisticsResult._raw || "unknown"}`.trim();
-
-    // Save logistics info under the purchase and as a top-level admin-queryable record
-    const logisticsData = {
-      allPayLogisticsID,
-      cvsPaymentNo,
-      status:          logisticsStatus,
-      storeName:       store.CVSStoreName     || "",
-      storeAddress:    store.CVSAddress       || "",
-      storeId:         store.CVSStoreID       || "",
-      logisticsSubType: store.LogisticsSubType || "",
+  // ── Physical product: record order (no auto logistics label creation) ───────
+  if (product.hasPhysical && tradeData.deliveryInfo) {
+    const deliveryInfo = tradeData.deliveryInfo;
+    const orderKey = "-" + crypto.randomBytes(12).toString("hex");
+    const orderData = {
       uid,
+      purchaseKey,
       productKey,
-      productName:     product.name || "",
-      useSandbox,
-      createdAt:       now,
+      productName:    product.name || "",
+      amount:         params.TradeAmt || 0,
+      merchantTradeNo: tradeNo,
+      deliveryType:   deliveryInfo.deliveryType || "",        // CVS carrier or TCAT or POST
+      deliveryInfo,                                           // full delivery details
+      receiverName:   tradeData.receiverName  || "",
+      receiverPhone:  tradeData.receiverPhone || "",
+      status:         "pending",
+      logisticsLabelId: null,                                 // linked by admin later
+      cvsPaymentNo:   null,                                   // set when admin creates label
+      createdAt:      now,
+      updatedAt:      now,
     };
-
-    const logisticsPatchUpdates = {};
-    logisticsPatchUpdates[`purchases/${uid}/${purchaseKey}/logistics`] = logisticsData;
-    if (allPayLogisticsID) {
-      logisticsPatchUpdates[`logistics_orders/${allPayLogisticsID}`]   = logisticsData;
-    }
-
-    try {
-      await db.ref().update(logisticsPatchUpdates);
-      console.log(`✓ Logistics order created: ${allPayLogisticsID} CVSPaymentNo=${cvsPaymentNo}`);
-    } catch (err) {
-      console.error("Logistics DB write error:", err.message);
-    }
+    updates[`orders/${orderKey}`] = orderData;
+    // Also store orderKey on the purchase for easy cross-reference
+    updates[`purchases/${uid}/${purchaseKey}/orderKey`] = orderKey;
+    console.log(`✓ Physical order recorded: orderKey=${orderKey} deliveryType=${deliveryInfo.deliveryType}`);
   }
 
   return res.send("1|OK");
@@ -994,8 +901,9 @@ app.post("/logistics/status-callback", async (req, res) => {
 });
 
 app.post("/ecpay/create-order", async (req, res) => {
-  // storeInfo is present only for physical products (set after CVS map selection)
-  const { productKey, idToken, storeInfo } = req.body;
+  // storeInfo: for CVS carriers (7-11, FamilyMart, OK, Hi-Life) — set after CVS map selection
+  // deliveryInfo: full delivery object (includes deliveryType, plus store or home address info)
+  const { productKey, idToken, storeInfo, deliveryInfo, receiverName, receiverPhone } = req.body;
   if (!productKey || !idToken) return res.status(400).json({ error: "Missing productKey or idToken" });
 
   let uid;
@@ -1026,11 +934,19 @@ app.post("/ecpay/create-order", async (req, res) => {
 
   try {
     const tradeEntry = { uid, productKey, createdAt: Date.now(), processed: false };
-    // Persist store selection so the payment callback can create the logistics order
-    if (storeInfo && product.hasPhysical) {
-      tradeEntry.storeInfo     = storeInfo;
-      tradeEntry.receiverName  = storeInfo.receiverName  || "";
-      tradeEntry.receiverPhone = storeInfo.receiverPhone || "";
+    // Persist delivery selection so the payment callback can record the order
+    if (product.hasPhysical) {
+      if (deliveryInfo) {
+        tradeEntry.deliveryInfo   = deliveryInfo;
+        tradeEntry.receiverName   = receiverName  || deliveryInfo.receiverName  || "";
+        tradeEntry.receiverPhone  = receiverPhone || deliveryInfo.receiverPhone || "";
+      } else if (storeInfo) {
+        // Legacy CVS-map flow fallback
+        tradeEntry.storeInfo      = storeInfo;
+        tradeEntry.deliveryInfo   = { deliveryType: storeInfo.LogisticsSubType || "UNIMART", ...storeInfo };
+        tradeEntry.receiverName   = storeInfo.receiverName  || "";
+        tradeEntry.receiverPhone  = storeInfo.receiverPhone || "";
+      }
     }
     await db.ref(`trade_map/${merchantTradeNo}`).set(tradeEntry);
   } catch { /* non-fatal */ }
@@ -1075,6 +991,62 @@ app.post("/ecpay/create-order", async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`FileAccess server listening on port ${PORT}`));
+
+// ════════════════════════════════════════════════════════════════════════════
+// ORDERS  (physical product orders — admin management)
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── GET /orders  (admin only) ─────────────────────────────────────────────────
+// Returns all physical orders, newest first.
+app.get("/orders", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  try {
+    const snap   = await db.ref("orders").get();
+    const raw    = snap.val() || {};
+    const orders = Object.entries(raw)
+      .map(([key, o]) => ({ key, ...o }))
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return res.json(orders);
+  } catch (err) {
+    console.error("/orders GET error:", err);
+    return res.status(500).json({ error: "Database error" });
+  }
+});
+
+// ── PATCH /orders/:orderKey  (admin only) ─────────────────────────────────────
+// Update order status and/or link a logistics label.
+// Body: { status?, logisticsLabelId?, cvsPaymentNo?, trackingNote? }
+app.patch("/orders/:orderKey", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  const { orderKey } = req.params;
+  const { status, logisticsLabelId, cvsPaymentNo, trackingNote } = req.body;
+
+  const VALID_STATUSES = new Set(["pending", "processing", "shipped", "completed", "cancelled"]);
+  if (status && !VALID_STATUSES.has(status)) {
+    return res.status(400).json({ error: "Invalid status value" });
+  }
+
+  const updates = { updatedAt: Date.now() };
+  if (status)           updates.status           = status;
+  if (logisticsLabelId !== undefined) updates.logisticsLabelId = logisticsLabelId;
+  if (cvsPaymentNo !== undefined)     updates.cvsPaymentNo     = cvsPaymentNo;
+  if (trackingNote !== undefined)     updates.trackingNote     = trackingNote;
+
+  try {
+    await db.ref(`orders/${orderKey}`).update(updates);
+    console.log(`✓ Order updated: ${orderKey} status=${status || "(unchanged)"}`);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("/orders PATCH error:", err);
+    return res.status(500).json({ error: "Database error" });
+  }
+});
 
 // ════════════════════════════════════════════════════════════════════════════
 // ECPAY C2C LOGISTICS
@@ -1193,7 +1165,9 @@ app.post("/logistics/cvs-map", async (req, res) => {
   const decoded = await verifyToken(req, res);
   if (!decoded) return;
 
-  const { productKey, receiverName, receiverPhone } = req.body;
+  // logisticsSubType can be passed directly (user selected a specific carrier)
+  // falling back to the first product logisticsSubTypes entry
+  const { productKey, receiverName, receiverPhone, logisticsSubType: reqSubType } = req.body;
   if (!productKey)      return res.status(400).json({ error: "Missing productKey" });
   if (!receiverName)    return res.status(400).json({ error: "Missing receiverName" });
   if (!receiverPhone)   return res.status(400).json({ error: "Missing receiverPhone" });
@@ -1218,13 +1192,14 @@ app.post("/logistics/cvs-map", async (req, res) => {
   // Save to trade_map so /cvs-map-return and later /ecpay/create-order can find it
   try {
     await db.ref(`trade_map/${merchantTradeNo}`).set({
-      uid:           decoded.uid,
+      uid:              decoded.uid,
       productKey,
       receiverName,
       receiverPhone,
-      createdAt:     Date.now(),
-      processed:     false,
-      storeSelected: false,
+      selectedSubType:  logisticsSubType,   // user's carrier choice
+      createdAt:        Date.now(),
+      processed:        false,
+      storeSelected:    false,
     });
   } catch (err) {
     console.error("trade_map write error:", err);
@@ -1234,9 +1209,10 @@ app.post("/logistics/cvs-map", async (req, res) => {
   const serverUrl = process.env.SERVER_URL || `https://${req.headers.host}`;
   const siteUrl   = process.env.SITE_URL   || allowedOrigin;
 
-  // ECPay CVSMap only supports one LogisticsSubType per redirect — use the first
+  // ECPay CVSMap only supports one LogisticsSubType per redirect
+  // Use caller's choice if provided, else fall back to first in product config
   const subTypes         = product.logisticsSubTypes || ["UNIMART"];
-  const logisticsSubType = subTypes[0];
+  const logisticsSubType = reqSubType || subTypes[0];
   const useSandbox       = product.logisticsSandbox !== false; // default sandbox for safety
   const base             = useSandbox
     ? "https://logistics-stage.ecpay.com.tw"
@@ -1296,14 +1272,21 @@ async function handleCvsMapReturn(req, res) {
 
   // Save store info to Firebase
   try {
+    // Read the selectedSubType saved by /logistics/cvs-map to preserve carrier choice
+    let savedSubType = LogisticsSubType || "";
+    try {
+      const stSnap = await db.ref(`trade_map/${tradeNo}/selectedSubType`).get();
+      if (stSnap.val()) savedSubType = stSnap.val();
+    } catch { /* keep fallback */ }
+
     await db.ref(`trade_map/${tradeNo}`).update({
       storeSelected: true,
       storeInfo: {
         CVSStoreID,
-        CVSStoreName:     CVSStoreName     || "",
-        CVSAddress:       CVSAddress       || "",
-        CVSOutSide:       CVSOutSide       || "0",
-        LogisticsSubType: LogisticsSubType || "",
+        CVSStoreName:     CVSStoreName  || "",
+        CVSAddress:       CVSAddress    || "",
+        CVSOutSide:       CVSOutSide    || "0",
+        LogisticsSubType: savedSubType,
       },
     });
     console.log(`✓ Store selected: tradeNo=${tradeNo} storeId=${CVSStoreID} (${CVSStoreName})`);
@@ -1417,6 +1400,177 @@ app.post("/logistics/print-label", async (req, res) => {
   return res.json({ printUrl });
 });
 
+// ── POST /logistics/create-label  (admin only) ───────────────────────────────
+// Manually creates an ECPay logistics label. Admin fills in all details.
+// Body: {
+//   logisticsType: "CVS" | "HOME",
+//   logisticsSubType: "UNIMART"|"FAMI"|"OKMART"|"HILIFE"|"TCAT"|"POST",
+//   receiverName, receiverPhone, receiverAddress, receiverZipCode?,
+//   cvsStoreId?,      // for CVS only
+//   goodsName, goodsAmount,
+//   isCollection: "N"|"Y",
+//   useSandbox?: boolean,
+//   orderKey?: string  // link to an existing order
+// }
+app.post("/logistics/create-label", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  const {
+    logisticsType = "CVS",
+    logisticsSubType,
+    receiverName,
+    receiverPhone,
+    receiverAddress,
+    receiverZipCode,
+    cvsStoreId,
+    goodsName,
+    goodsAmount,
+    isCollection = "N",
+    useSandbox = true,
+    orderKey,
+  } = req.body;
+
+  if (!logisticsSubType) return res.status(400).json({ error: "Missing logisticsSubType" });
+  if (!receiverName)     return res.status(400).json({ error: "Missing receiverName" });
+  if (!receiverPhone)    return res.status(400).json({ error: "Missing receiverPhone" });
+  if (!goodsName)        return res.status(400).json({ error: "Missing goodsName" });
+  if (!goodsAmount)      return res.status(400).json({ error: "Missing goodsAmount" });
+
+  // Build a unique MerchantTradeNo for this label
+  const randSuffix      = crypto.randomBytes(4).toString("hex");
+  const merchantTradeNo = `LBL${randSuffix}`;
+
+  const nowMs      = Date.now();
+  const nowTw      = new Date(nowMs + 8 * 60 * 60 * 1000);
+  const pad        = n => String(n).padStart(2, "0");
+  const tradeDate  = `${nowTw.getUTCFullYear()}/${pad(nowTw.getUTCMonth()+1)}/${pad(nowTw.getUTCDate())} ${pad(nowTw.getUTCHours())}:${pad(nowTw.getUTCMinutes())}:${pad(nowTw.getUTCSeconds())}`;
+
+  // Validate + normalise receiver name
+  let rName = (receiverName || "").trim();
+  const isChinese = /[一-鿿]/.test(rName);
+  if (isChinese) {
+    rName = rName.replace(/[^一-鿿]/g, "").slice(0, 5);
+    if (rName.length < 2) rName = "買家";
+  } else {
+    rName = rName.replace(/[^A-Za-z0-9]/g, "").slice(0, 10);
+    if (rName.length < 4) rName = "Buyer";
+  }
+
+  const isCVS = logisticsType === "CVS";
+  const paramsRaw = {
+    MerchantID:        process.env.ECPAY_LOGISTICS_MERCHANT_ID || process.env.ECPAY_MERCHANT_ID || "",
+    MerchantTradeNo:   merchantTradeNo,
+    MerchantTradeDate: tradeDate,
+    LogisticsType:     logisticsType,
+    LogisticsSubType:  logisticsSubType,
+    GoodsAmount:       String(Math.round(Number(goodsAmount) || 0)),
+    IsCollection:      isCollection || "N",
+    GoodsName:         (goodsName || "商品").replace(/[^a-zA-Z0-9一-鿿\s]/g, "").slice(0, 50) || "商品",
+    SenderName:        process.env.SENDER_NAME    || "",
+    SenderPhone:       process.env.SENDER_PHONE   || "",
+    SenderZipCode:     process.env.SENDER_ZIPCODE || "",
+    SenderAddress:     process.env.SENDER_ADDRESS || "",
+    ReceiverName:      rName,
+    ReceiverCellPhone: (receiverPhone || "").replace(/\D/g, "").slice(0, 20),
+    ReceiverAddress:   receiverAddress || "",
+    ...(isCVS && cvsStoreId ? { ReceiverStoreID: cvsStoreId } : {}),
+    ...(receiverZipCode     ? { ReceiverZipCode: receiverZipCode } : {}),
+    ServerReplyURL:    `${process.env.SERVER_URL || ""}/logistics/status-callback`,
+    ClientReplyURL:    `${process.env.SITE_URL   || ""}/index.html`,
+  };
+  const params = Object.fromEntries(Object.entries(paramsRaw).filter(([, v]) => v !== ""));
+
+  let result;
+  try {
+    result = await callEcpayLogistics("/Express/Create", params, useSandbox);
+  } catch (err) {
+    console.error("/logistics/create-label error:", err.message);
+    return res.status(502).json({ error: "ECPay API error", detail: err.message });
+  }
+
+  const allPayLogisticsID = result.AllPayLogisticsID || "";
+  const cvsPaymentNo      = result.CVSPaymentNo || result.CVSValidationNo || "";
+  const rtnCode           = result.RtnCode;
+  const rtnMsg            = result.RtnMsg || "";
+
+  if (rtnCode !== "1") {
+    return res.status(422).json({
+      error: `ECPay error: ${rtnCode} ${rtnMsg}`,
+      rtnCode,
+      rtnMsg,
+      raw: result._raw || ""
+    });
+  }
+
+  // Save label record in Firebase
+  const labelKey = allPayLogisticsID || ("-lbl-" + crypto.randomBytes(8).toString("hex"));
+  const labelData = {
+    allPayLogisticsID,
+    cvsPaymentNo,
+    merchantTradeNo,
+    logisticsType,
+    logisticsSubType,
+    receiverName:    rName,
+    receiverPhone:   (receiverPhone || "").replace(/\D/g, "").slice(0, 20),
+    receiverAddress: receiverAddress || "",
+    cvsStoreId:      cvsStoreId || "",
+    goodsName:       paramsRaw.GoodsName,
+    goodsAmount:     paramsRaw.GoodsAmount,
+    status:          "created",
+    useSandbox,
+    orderKey:        orderKey || null,
+    createdBy:       decoded.uid,
+    createdAt:       nowMs,
+  };
+
+  const labelUpdates = {};
+  labelUpdates[`logistics_labels/${labelKey}`] = labelData;
+
+  // If linked to an order, update the order with label info
+  if (orderKey) {
+    labelUpdates[`orders/${orderKey}/logisticsLabelId`] = labelKey;
+    labelUpdates[`orders/${orderKey}/cvsPaymentNo`]     = cvsPaymentNo || null;
+    labelUpdates[`orders/${orderKey}/status`]           = "shipped";
+    labelUpdates[`orders/${orderKey}/updatedAt`]        = nowMs;
+  }
+
+  try {
+    await db.ref().update(labelUpdates);
+    console.log(`✓ Label created: ${labelKey} CVSPaymentNo=${cvsPaymentNo}`);
+  } catch (err) {
+    console.error("Label DB write error:", err.message);
+  }
+
+  return res.json({
+    ok: true,
+    labelKey,
+    allPayLogisticsID,
+    cvsPaymentNo,
+    result,
+  });
+});
+
+// ── GET /logistics/labels  (admin only) ──────────────────────────────────────
+app.get("/logistics/labels", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  try {
+    const snap   = await db.ref("logistics_labels").get();
+    const raw    = snap.val() || {};
+    const labels = Object.entries(raw)
+      .map(([key, l]) => ({ key, ...l }))
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return res.json(labels);
+  } catch (err) {
+    console.error("/logistics/labels GET error:", err);
+    return res.status(500).json({ error: "Database error" });
+  }
+});
+
 // ── GET /logistics/track/:logisticsId  (admin only) ──────────────────────────
 // Queries ECPay for current status and updates Firebase.
 app.get("/logistics/track/:logisticsId", async (req, res) => {
@@ -1449,9 +1603,13 @@ app.get("/logistics/track/:logisticsId", async (req, res) => {
 
   const status = result.GoodsStatus || result.RtnMsg || "unknown";
 
-  // Update status in Firebase
+  // Update status in Firebase (try both old logistics_orders and new logistics_labels)
   try {
-    await db.ref(`logistics_orders/${logisticsId}`).update({ status, lastCheckedAt: Date.now() });
+    const updateData = { status, lastCheckedAt: Date.now() };
+    await db.ref(`logistics_labels/${logisticsId}`).update(updateData);
+    // Also update legacy logistics_orders if it exists there
+    const oldSnap = await db.ref(`logistics_orders/${logisticsId}`).get();
+    if (oldSnap.val()) await db.ref(`logistics_orders/${logisticsId}`).update(updateData);
   } catch { /* non-fatal */ }
 
   return res.json({ logisticsId, status, raw: result });

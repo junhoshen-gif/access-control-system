@@ -78,8 +78,8 @@
     </div>
   </div>
 
-  <!-- ── 我的訂單 My Orders (physical purchases with logistics) ── ARCHIVED ── -->
-  <div id="ordersSection" class="hidden" style="margin-top:2.5rem;display:none!important;">
+  <!-- ── 我的訂單 My Orders ── -->
+  <div id="ordersSection" class="hidden" style="margin-top:2.5rem;">
     <div class="page-header" style="margin-bottom:1rem;">
       <h2>🚚 我的訂單 My Orders</h2>
       <p class="text-muted">實體商品寄送狀態。取貨時請出示取貨編號。</p>
@@ -87,14 +87,14 @@
     <div id="ordersList"></div>
   </div>
 
-  <!-- ── Receiver info modal (shown before CVS map redirect) ── ARCHIVED ─── -->
-  <div id="receiverModal" class="modal hidden" style="display:none!important;">
+  <!-- ── Delivery selection modal ── -->
+  <div id="receiverModal" class="modal hidden">
     <div class="modal-overlay" onclick="closeReceiverModal()"></div>
-    <div class="modal-panel" style="max-width:440px;">
+    <div class="modal-panel" style="max-width:480px;">
       <div class="modal-header">
         <div>
-          <h3>🏪 選擇取貨門市</h3>
-          <span class="text-muted text-sm">請先填寫收件人資訊，再前往選擇門市。</span>
+          <h3 id="receiverModalTitle">🚚 選擇配送方式</h3>
+          <span class="text-muted text-sm">選擇您偏好的取貨或配送方式</span>
         </div>
         <button class="btn btn-ghost" onclick="closeReceiverModal()">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -102,17 +102,53 @@
       </div>
       <div class="modal-body" style="padding:1.25rem;">
         <div id="receiverAlert" class="alert hidden" style="margin-bottom:1rem;"></div>
-        <div class="form-group" style="margin-bottom:1rem;">
-          <label class="form-label" style="font-size:0.85rem;font-weight:600;">收件人姓名 <span style="color:#EF4444">*</span></label>
-          <input type="text" id="receiverName" class="form-input" placeholder="真實姓名（用於取貨）" style="width:100%;"/>
+
+        <!-- Step 1: Choose delivery method -->
+        <div id="deliveryStep1">
+          <p style="font-size:0.85rem;font-weight:600;margin-bottom:0.75rem;">選擇配送方式</p>
+          <div id="deliveryOptions" style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1.25rem;"></div>
+          <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+            <button class="btn btn-ghost" onclick="closeReceiverModal()">取消</button>
+            <button class="btn btn-primary" id="deliveryNextBtn" onclick="onDeliveryMethodChosen()">繼續 →</button>
+          </div>
         </div>
-        <div class="form-group" style="margin-bottom:1.5rem;">
-          <label class="form-label" style="font-size:0.85rem;font-weight:600;">收件人手機 <span style="color:#EF4444">*</span></label>
-          <input type="tel" id="receiverPhone" class="form-input" placeholder="09xxxxxxxx" style="width:100%;"/>
+
+        <!-- Step 2a: Receiver info for CVS (then redirect to store map) -->
+        <div id="deliveryStepCVS" style="display:none;">
+          <p style="font-size:0.85rem;color:#64748B;margin-bottom:1rem;">請填寫取件人資訊，接著會前往選擇門市位置。</p>
+          <div class="form-group" style="margin-bottom:1rem;">
+            <label class="form-label" style="font-size:0.85rem;font-weight:600;">收件人姓名 <span style="color:#EF4444">*</span></label>
+            <input type="text" id="receiverNameCVS" class="form-input" placeholder="真實姓名（用於取貨）" style="width:100%;"/>
+          </div>
+          <div class="form-group" style="margin-bottom:1.5rem;">
+            <label class="form-label" style="font-size:0.85rem;font-weight:600;">收件人手機 <span style="color:#EF4444">*</span></label>
+            <input type="tel" id="receiverPhoneCVS" class="form-input" placeholder="09xxxxxxxx" style="width:100%;"/>
+          </div>
+          <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+            <button class="btn btn-ghost" onclick="backToDeliveryStep1()">← 返回</button>
+            <button class="btn btn-primary" id="receiverSubmitBtn" onclick="submitReceiverAndOpenMap()">前往選擇門市 →</button>
+          </div>
         </div>
-        <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
-          <button class="btn btn-ghost" onclick="closeReceiverModal()">取消</button>
-          <button class="btn btn-primary" id="receiverSubmitBtn" onclick="submitReceiverAndOpenMap()">前往選擇門市 →</button>
+
+        <!-- Step 2b: Home address form for Tcat / 郵政 -->
+        <div id="deliveryStepHome" style="display:none;">
+          <p style="font-size:0.85rem;color:#64748B;margin-bottom:1rem;">請填寫宅配收件資訊。</p>
+          <div class="form-group" style="margin-bottom:0.85rem;">
+            <label class="form-label" style="font-size:0.85rem;font-weight:600;">收件人姓名 <span style="color:#EF4444">*</span></label>
+            <input type="text" id="homeReceiverName" class="form-input" placeholder="真實姓名" style="width:100%;"/>
+          </div>
+          <div class="form-group" style="margin-bottom:0.85rem;">
+            <label class="form-label" style="font-size:0.85rem;font-weight:600;">收件人手機 <span style="color:#EF4444">*</span></label>
+            <input type="tel" id="homeReceiverPhone" class="form-input" placeholder="09xxxxxxxx" style="width:100%;"/>
+          </div>
+          <div class="form-group" style="margin-bottom:1.25rem;">
+            <label class="form-label" style="font-size:0.85rem;font-weight:600;">收件地址 <span style="color:#EF4444">*</span></label>
+            <input type="text" id="homeReceiverAddress" class="form-input" placeholder="縣市、鄉鎮、路名、號碼" style="width:100%;"/>
+          </div>
+          <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+            <button class="btn btn-ghost" onclick="backToDeliveryStep1()">← 返回</button>
+            <button class="btn btn-primary" onclick="submitHomeDelivery()">確認並付款 →</button>
+          </div>
         </div>
       </div>
     </div>
@@ -815,10 +851,15 @@
   }
 
   // ── Create a payment order and redirect to ECPay payment page ──────────────
-  async function createPaymentOrder(productKey, storeInfo) {
+  // storeInfo: legacy CVS map result (has CVSStoreID etc.)
+  // deliveryInfo: new unified delivery object { deliveryType, receiverName, receiverPhone, receiverAddress?, CVSStoreID?, ... }
+  async function createPaymentOrder(productKey, storeInfo, deliveryInfo, receiverName, receiverPhone) {
     const idToken = await currentUserObj.getIdToken(true);
     const body    = { productKey, idToken };
-    if (storeInfo) body.storeInfo = storeInfo;
+    if (storeInfo)    body.storeInfo    = storeInfo;
+    if (deliveryInfo) body.deliveryInfo = deliveryInfo;
+    if (receiverName) body.receiverName = receiverName;
+    if (receiverPhone) body.receiverPhone = receiverPhone;
 
     const resp = await fetch(`${ECPAY_SERVER_URL}/ecpay/create-order`, {
       method:  "POST",
@@ -833,13 +874,86 @@
     submitEcpayForm(ecpayUrl, params);
   }
 
-  // ── State for the receiver-info modal ──────────────────────────────────────
-  let _pendingProductKey = null;
+  // ── State for the delivery modal ───────────────────────────────────────────
+  let _pendingProductKey  = null;
+  let _selectedDeliveryType = null; // e.g. "UNIMART", "FAMI", "TCAT", "POST"
+
+  const CVS_CARRIERS  = new Set(["UNIMART","FAMI","OKMART","HILIFE"]);
+  const HOME_CARRIERS = new Set(["TCAT","POST"]);
+  const CARRIER_LABELS = {
+    UNIMART: "7-ELEVEN 統一超商",
+    FAMI:    "全家 FamilyMart",
+    OKMART:  "OK mart",
+    HILIFE:  "萊爾富 Hi-Life",
+    TCAT:    "黑貓宅急便 Tcat",
+    POST:    "中華郵政",
+  };
 
   window.closeReceiverModal = () => {
     document.getElementById("receiverModal").classList.add("hidden");
     document.body.style.overflow = "";
-    _pendingProductKey = null;
+    _pendingProductKey    = null;
+    _selectedDeliveryType = null;
+  };
+
+  window.backToDeliveryStep1 = () => {
+    document.getElementById("deliveryStep1").style.display     = "";
+    document.getElementById("deliveryStepCVS").style.display   = "none";
+    document.getElementById("deliveryStepHome").style.display  = "none";
+    document.getElementById("receiverAlert").classList.add("hidden");
+  };
+
+  window.onDeliveryMethodChosen = () => {
+    const selected = document.querySelector('input[name="deliveryChoice"]:checked');
+    if (!selected) {
+      const alertEl = document.getElementById("receiverAlert");
+      alertEl.textContent = "請選擇一種配送方式。";
+      alertEl.classList.remove("hidden");
+      return;
+    }
+    _selectedDeliveryType = selected.value;
+    document.getElementById("receiverAlert").classList.add("hidden");
+    document.getElementById("deliveryStep1").style.display = "none";
+
+    if (CVS_CARRIERS.has(_selectedDeliveryType)) {
+      document.getElementById("deliveryStepCVS").style.display  = "";
+    } else {
+      document.getElementById("deliveryStepHome").style.display = "";
+    }
+  };
+
+  // Called after user fills home address form
+  window.submitHomeDelivery = async () => {
+    const name    = document.getElementById("homeReceiverName").value.trim();
+    const phone   = document.getElementById("homeReceiverPhone").value.trim();
+    const address = document.getElementById("homeReceiverAddress").value.trim();
+    const alertEl = document.getElementById("receiverAlert");
+    alertEl.classList.add("hidden");
+
+    if (!name)    { alertEl.textContent = "請填寫收件人姓名。"; alertEl.classList.remove("hidden"); return; }
+    if (!phone || !/^09\d{8}$/.test(phone.replace(/\s/g,""))) {
+      alertEl.textContent = "請填寫正確的手機號碼（09 開頭，共 10 碼）。";
+      alertEl.classList.remove("hidden");
+      return;
+    }
+    if (!address) { alertEl.textContent = "請填寫收件地址。"; alertEl.classList.remove("hidden"); return; }
+
+    const btn = document.querySelector("#deliveryStepHome button.btn-primary");
+    if (btn) { btn.disabled = true; btn.textContent = "處理中…"; }
+
+    try {
+      const deliveryInfo = {
+        deliveryType:    _selectedDeliveryType,
+        receiverName:    name,
+        receiverPhone:   phone,
+        receiverAddress: address,
+      };
+      closeReceiverModal();
+      await createPaymentOrder(_pendingProductKey, null, deliveryInfo, name, phone);
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.textContent = "確認並付款 →"; }
+      alert("無法建立訂單，請稍後再試。\n" + err.message);
+    }
   };
 
   // ── Main buy handler ────────────────────────────────────────────────────────
@@ -848,19 +962,44 @@
     if (!currentUserObj)   { alert("請先登入再購買。"); return; }
 
     const product = allProducts[productKey];
-    btn.disabled    = true;
-    btn.textContent = "跳轉中…";
 
-    try {
-      // ARCHIVED: physical product / logistics flow disabled.
-      // To restore: remove this comment block and uncomment the hasPhysical branch below.
-      // if (product && product.hasPhysical) { ... open receiverModal ... } else {
-      await createPaymentOrder(productKey, null);
-      // }
-    } catch (err) {
-      btn.disabled    = false;
-      btn.textContent = "立即購買";
-      alert("無法建立訂單，請稍後再試。\n" + err.message);
+    if (product && product.hasPhysical && Array.isArray(product.logisticsSubTypes) && product.logisticsSubTypes.length > 0) {
+      // Physical product — show delivery selection modal
+      _pendingProductKey = productKey;
+      _selectedDeliveryType = null;
+
+      // Build delivery options from product config
+      const optionsEl = document.getElementById("deliveryOptions");
+      optionsEl.innerHTML = product.logisticsSubTypes.map((type, i) =>
+        `<label style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border:1px solid var(--color-border);border-radius:8px;cursor:pointer;font-size:0.9rem;transition:border-color .2s;"
+          onmouseover="this.style.borderColor='#2563EB'" onmouseout="this.querySelector('input').checked || (this.style.borderColor='var(--color-border)')">
+          <input type="radio" name="deliveryChoice" value="${escHtml(type)}" ${i===0?'checked':''} style="cursor:pointer;accent-color:#2563EB;" onchange="this.closest('#deliveryOptions').querySelectorAll('label').forEach(l=>l.style.borderColor='var(--color-border)');this.closest('label').style.borderColor='#2563EB';"/>
+          <span>${escHtml(CARRIER_LABELS[type] || type)}</span>
+          ${CVS_CARRIERS.has(type) ? '<span style="font-size:0.72rem;color:#64748B;margin-left:auto;">需選擇門市</span>' : '<span style="font-size:0.72rem;color:#64748B;margin-left:auto;">填寫宅配地址</span>'}
+        </label>`
+      ).join("");
+      // Highlight first option
+      const firstLabel = optionsEl.querySelector("label");
+      if (firstLabel) firstLabel.style.borderColor = "#2563EB";
+
+      // Show step 1
+      document.getElementById("deliveryStep1").style.display    = "";
+      document.getElementById("deliveryStepCVS").style.display  = "none";
+      document.getElementById("deliveryStepHome").style.display = "none";
+      document.getElementById("receiverAlert").classList.add("hidden");
+      document.getElementById("receiverModal").classList.remove("hidden");
+      document.body.style.overflow = "hidden";
+    } else {
+      // Digital-only product — go straight to payment
+      btn.disabled    = true;
+      btn.textContent = "跳轉中…";
+      try {
+        await createPaymentOrder(productKey, null);
+      } catch (err) {
+        btn.disabled    = false;
+        btn.textContent = "立即購買";
+        alert("無法建立訂單，請稍後再試。\n" + err.message);
+      }
     }
   };
 
@@ -913,53 +1052,95 @@
         nameEl.textContent = `${storeInfo.CVSStoreName}  ${storeInfo.CVSAddress || ""}`;
       }
 
-      await createPaymentOrder(productKey, storeInfo);
+      // Build unified deliveryInfo from storeInfo
+      const deliveryInfo = storeInfo ? {
+        deliveryType:  storeInfo.LogisticsSubType || "UNIMART",
+        CVSStoreID:    storeInfo.CVSStoreID    || "",
+        CVSStoreName:  storeInfo.CVSStoreName  || "",
+        CVSAddress:    storeInfo.CVSAddress    || "",
+        receiverName:  storeInfo.receiverName  || "",
+        receiverPhone: storeInfo.receiverPhone || "",
+      } : null;
+
+      await createPaymentOrder(productKey, storeInfo, deliveryInfo,
+        storeInfo?.receiverName, storeInfo?.receiverPhone);
     } catch (err) {
       document.body.removeChild(notice);
       alert("無法建立訂單：" + err.message);
     }
   }
 
-  // ── Load buyer's own logistics orders ──────────────────────────────────────
+  // ── Load buyer's own orders ────────────────────────────────────────────────
   async function loadOrders(uid) {
     try {
       const purchases = await dbGet(auth, `purchases/${uid}`);
       if (!purchases) return;
 
-      const logisticsOrders = Object.values(purchases)
-        .filter(p => p.logistics)
+      // Physical purchases are ones with an orderKey
+      const physicalPurchases = Object.values(purchases)
+        .filter(p => p.orderKey)
         .sort((a, b) => (b.purchasedAt || 0) - (a.purchasedAt || 0));
 
-      if (logisticsOrders.length === 0) return;
+      if (physicalPurchases.length === 0) return;
+
+      // Fetch each order record individually
+      const orderFetches = await Promise.all(
+        physicalPurchases.map(p =>
+          dbGet(auth, `orders/${p.orderKey}`)
+            .then(o => o ? { ...o, key: p.orderKey, purchasedAt: p.purchasedAt } : null)
+            .catch(() => null)
+        )
+      );
+      const orders = orderFetches.filter(Boolean);
+      if (orders.length === 0) return;
 
       document.getElementById("ordersSection").classList.remove("hidden");
 
-      const html = logisticsOrders.map(p => {
-        const lg      = p.logistics;
-        const date    = p.purchasedAt ? new Date(p.purchasedAt).toLocaleDateString("zh-TW") : "—";
-        const status  = lg.status || "建立中";
-        const statusColor = status === "created" || status === "建立中" ? "#2563EB"
-          : status.startsWith("error") ? "#DC2626" : "#16A34A";
+      const STATUS_LABELS = {
+        pending:    { label:"待處理",  color:"#F59E0B" },
+        processing: { label:"處理中",  color:"#3B82F6" },
+        shipped:    { label:"已出貨",  color:"#8B5CF6" },
+        completed:  { label:"已完成",  color:"#10B981" },
+        cancelled:  { label:"已取消",  color:"#6B7280" },
+      };
+      const CARRIER_LABELS_USER = {
+        UNIMART:"7-ELEVEN", FAMI:"全家", OKMART:"OK mart",
+        HILIFE:"萊爾富", TCAT:"黑貓宅配", POST:"中華郵政"
+      };
+
+      const html = orders.map(o => {
+        const date    = o.purchasedAt ? new Date(o.purchasedAt).toLocaleDateString("zh-TW") : "—";
+        const st      = STATUS_LABELS[o.status] || { label: o.status || "處理中", color: "#3B82F6" };
+        const di      = o.deliveryInfo || {};
+        const carrier = CARRIER_LABELS_USER[di.deliveryType || o.deliveryType] || di.deliveryType || "—";
+        const isCVS   = di.CVSStoreName;
+        const isHome  = di.receiverAddress && !isCVS;
+
         return `
           <div style="background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:1.25rem;margin-bottom:1rem;">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;">
               <div>
-                <div style="font-weight:600;font-size:0.95rem;">${escHtml(p.productName || lg.productName || "商品")}</div>
+                <div style="font-weight:600;font-size:0.95rem;">${escHtml(o.productName || "商品")}</div>
                 <div style="font-size:0.78rem;color:#64748B;margin-top:2px;">${date}</div>
               </div>
-              <span style="font-size:0.75rem;font-weight:600;color:${statusColor};background:${statusColor}18;padding:2px 10px;border-radius:99px;border:1px solid ${statusColor}44;">${escHtml(status)}</span>
+              <span style="font-size:0.75rem;font-weight:600;color:${st.color};background:${st.color}18;padding:2px 10px;border-radius:99px;border:1px solid ${st.color}44;">${escHtml(st.label)}</span>
             </div>
             <div style="background:#F8FAFC;border-radius:8px;padding:0.85rem;margin-bottom:0.75rem;">
-              <div style="font-size:0.72rem;color:#64748B;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.35rem;">取貨門市</div>
-              <div style="font-weight:500;font-size:0.9rem;">${escHtml(lg.storeName || "—")}</div>
-              <div style="font-size:0.8rem;color:#64748B;">${escHtml(lg.storeAddress || "")}</div>
+              <div style="font-size:0.72rem;color:#64748B;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.35rem;">配送方式</div>
+              <div style="font-weight:500;font-size:0.9rem;">${escHtml(carrier)}</div>
+              ${isCVS
+                ? `<div style="font-size:0.8rem;color:#64748B;">${escHtml(di.CVSStoreName)} · ${escHtml(di.CVSAddress || "")}</div>`
+                : isHome
+                  ? `<div style="font-size:0.8rem;color:#64748B;">${escHtml(di.receiverAddress)}</div>`
+                  : ""}
             </div>
-            ${lg.cvsPaymentNo ? `
+            ${o.cvsPaymentNo ? `
             <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:0.85rem;">
-              <div style="font-size:0.72rem;color:#2563EB;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.35rem;">取貨編號（請出示給店員）</div>
-              <div style="font-size:1.5rem;font-weight:700;color:#1E40AF;letter-spacing:0.1em;">${escHtml(lg.cvsPaymentNo)}</div>
+              <div style="font-size:0.72rem;color:#2563EB;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.35rem;">取貨／追蹤編號</div>
+              <div style="font-size:1.4rem;font-weight:700;color:#1E40AF;letter-spacing:0.1em;">${escHtml(o.cvsPaymentNo)}</div>
+              ${o.trackingNote ? `<div style="font-size:0.78rem;color:#64748B;margin-top:0.35rem;">${escHtml(o.trackingNote)}</div>` : ""}
             </div>` : `
-            <div style="font-size:0.82rem;color:#64748B;padding:0.5rem 0;">物流建立中，取貨編號稍後會顯示於此。請重新整理頁面。</div>`}
+            <div style="font-size:0.82rem;color:#64748B;padding:0.5rem 0;">出貨後取貨編號會顯示於此。如有疑問請聯絡客服。</div>`}
           </div>`;
       }).join("");
 
@@ -969,13 +1150,11 @@
     }
   }
 
-  // submitReceiverAndOpenMap: validates receiver info, calls /logistics/cvs-map,
-  // saves productKey to sessionStorage, then redirects to ECPay store picker.
+  // submitReceiverAndOpenMap: validates receiver info for CVS carriers,
+  // calls /logistics/cvs-map, then redirects to ECPay store picker.
   window.submitReceiverAndOpenMap = async function () {
-    // We need to intercept the response to grab merchantTradeNo before the redirect.
-    // Override: re-implement inline so we can capture the tradeNo.
-    const name  = document.getElementById("receiverName").value.trim();
-    const phone = document.getElementById("receiverPhone").value.trim();
+    const name  = document.getElementById("receiverNameCVS").value.trim();
+    const phone = document.getElementById("receiverPhoneCVS").value.trim();
     const alertEl = document.getElementById("receiverAlert");
     alertEl.classList.add("hidden");
 
@@ -988,12 +1167,15 @@
     const btn = document.getElementById("receiverSubmitBtn");
     btn.disabled = true; btn.textContent = "處理中…";
 
+    // Build a minimal product config override so server knows which CVS type to use
+    const productOverride = { logisticsSubType: _selectedDeliveryType };
+
     try {
       const idToken = await currentUserObj.getIdToken(true);
       const resp = await fetch(`${ECPAY_SERVER_URL}/logistics/cvs-map`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ productKey: _pendingProductKey, idToken, receiverName: name, receiverPhone: phone }),
+        body:    JSON.stringify({ productKey: _pendingProductKey, idToken, receiverName: name, receiverPhone: phone, logisticsSubType: _selectedDeliveryType }),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }));

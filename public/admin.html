@@ -55,12 +55,14 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
         Pricing
       </a>
-      <!-- ARCHIVED: logistics sidebar item hidden until feature is re-enabled
+      <a href="#section-orders" class="sidebar-item" onclick="showSection('orders', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
+        訂單管理
+      </a>
       <a href="#section-logistics" class="sidebar-item" onclick="showSection('logistics', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-        物流管理
+        物流標籤
       </a>
-      -->
       <a href="#section-log" class="sidebar-item" onclick="showSection('log', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
         Activity Log
@@ -281,18 +283,18 @@
             </div>
           </div>
 
-          <!-- ── Physical / C2C logistics ── ARCHIVED (hidden until re-enabled) ── -->
-          <div class="form-group" style="border-top:1px solid var(--color-border);padding-top:1rem;display:none!important;">
+          <!-- ── Physical / C2C logistics ── -->
+          <div class="form-group" style="border-top:1px solid var(--color-border);padding-top:1rem;">
             <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
               <input type="checkbox" id="productHasPhysical" style="cursor:pointer;" onchange="togglePhysicalFields(this.checked)"/>
-              <span class="form-label" style="margin:0;">🚚 包含實體商品寄送 (C2C 超商取貨)</span>
+              <span class="form-label" style="margin:0;">🚚 包含實體商品寄送</span>
             </label>
-            <p class="text-muted text-sm">勾選後，買家結帳時需先選擇取貨超商，付款後系統自動建立物流訂單。</p>
+            <p class="text-muted text-sm">勾選後，買家結帳時需選擇配送方式，付款後管理員在「物流」頁面手動建立出貨標籤。</p>
           </div>
 
-          <div id="physicalFields" style="display:none!important;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;flex-direction:column;gap:0.85rem;">
+          <div id="physicalFields" style="display:none;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;flex-direction:column;gap:0.85rem;">
             <div class="form-group" style="margin:0;">
-              <label class="form-label text-sm">可選超商 Available Stores</label>
+              <label class="form-label text-sm">可選配送方式 Available Delivery Options</label>
               <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:0.35rem;">
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
                   <input type="checkbox" name="logisticsSubType" value="UNIMART" checked/> 7-ELEVEN
@@ -301,13 +303,19 @@
                   <input type="checkbox" name="logisticsSubType" value="FAMI"/> 全家 FamilyMart
                 </label>
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
+                  <input type="checkbox" name="logisticsSubType" value="OKMART"/> OK mart
+                </label>
+                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
                   <input type="checkbox" name="logisticsSubType" value="HILIFE"/> 萊爾富 Hi-Life
                 </label>
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="OKMART"/> OK mart
+                  <input type="checkbox" name="logisticsSubType" value="TCAT"/> 黑貓宅急便 Tcat
+                </label>
+                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
+                  <input type="checkbox" name="logisticsSubType" value="POST"/> 中華郵政
                 </label>
               </div>
-              <p class="text-muted text-sm" style="margin-top:0.35rem;">每次選門市只能選一種超商，系統會使用勾選的第一個。</p>
+              <p class="text-muted text-sm" style="margin-top:0.35rem;">超商取貨：買家選門市；黑貓/郵政：買家填寫宅配地址。</p>
             </div>
             <div class="form-group" style="margin:0;">
               <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
@@ -354,39 +362,210 @@
       </div>
     </section>
 
-    <!-- LOGISTICS SECTION — ARCHIVED: set display:none until re-enabled -->
-    <section id="section-logistics" class="admin-section hidden" style="display:none!important;">
+    <!-- ORDERS SECTION -->
+    <section id="section-orders" class="admin-section hidden">
       <div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
         <div>
-          <h2>🚚 物流管理 Logistics</h2>
-          <p class="text-muted">C2C 超商取貨訂單一覽。付款成功後系統自動建立物流訂單。</p>
+          <h2>📋 訂單管理 Orders</h2>
+          <p class="text-muted">付款成功的實體商品訂單。可更新狀態或連結物流標籤。</p>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="loadLogisticsOrders()">
+        <button class="btn btn-ghost btn-sm" onclick="loadOrders()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          重新整理
+        </button>
+      </div>
+
+      <div id="ordersAlert" class="alert hidden" style="margin-bottom:1rem;"></div>
+      <div id="ordersLoading" class="empty-state"><div class="spinner"></div><p>載入中…</p></div>
+      <div id="ordersEmpty" class="empty-state hidden"><p>尚無訂單。</p></div>
+
+      <div style="overflow-x:auto;">
+        <table class="data-table hidden" id="ordersTable">
+          <thead>
+            <tr>
+              <th>訂單 Key</th>
+              <th>買家 UID</th>
+              <th>商品</th>
+              <th>配送方式 / 地址</th>
+              <th>收件人</th>
+              <th>狀態</th>
+              <th>取貨編號</th>
+              <th>建立時間</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="ordersTbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ORDER STATUS MODAL -->
+    <div id="orderStatusModal" class="modal hidden">
+      <div class="modal-overlay" onclick="closeOrderStatusModal()"></div>
+      <div class="modal-panel" style="max-width:480px;width:90%;">
+        <div class="modal-header">
+          <h3>更新訂單狀態</h3>
+          <button class="btn btn-ghost" onclick="closeOrderStatusModal()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div style="padding:1.5rem;display:flex;flex-direction:column;gap:1rem;">
+          <input type="hidden" id="orderStatusKey"/>
+          <div class="form-group">
+            <label class="form-label">狀態 Status</label>
+            <select id="orderStatusSelect" class="form-input">
+              <option value="pending">待處理 Pending</option>
+              <option value="processing">處理中 Processing</option>
+              <option value="shipped">已出貨 Shipped</option>
+              <option value="completed">已完成 Completed</option>
+              <option value="cancelled">已取消 Cancelled</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">連結物流標籤 ID（選填）</label>
+            <input type="text" id="orderLabelId" class="form-input" placeholder="logistics_labels 中的 key"/>
+            <p class="text-muted text-sm" style="margin-top:0.3rem;">填入後，系統會將取貨編號同步顯示給買家。</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">取貨／追蹤編號（選填）</label>
+            <input type="text" id="orderCvsPaymentNo" class="form-input" placeholder="CVS payment no. 或物流追蹤號"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">備註（選填）</label>
+            <input type="text" id="orderTrackingNote" class="form-input" placeholder="e.g. 已寄出，預計 2-3 天到達"/>
+          </div>
+          <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+            <button class="btn btn-ghost" onclick="closeOrderStatusModal()">取消</button>
+            <button class="btn btn-primary" onclick="saveOrderStatus()">儲存</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOGISTICS LABELS SECTION -->
+    <section id="section-logistics" class="admin-section hidden">
+      <div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
+        <div>
+          <h2>🚚 物流標籤 Logistics</h2>
+          <p class="text-muted">手動向綠界建立出貨標籤，並可連結訂單讓買家追蹤。</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadLogisticsLabels()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
           重新整理
         </button>
       </div>
 
       <div id="logisticsAlert" class="alert hidden" style="margin-bottom:1rem;"></div>
-      <div id="logisticsLoading" class="empty-state"><div class="spinner"></div><p>載入中…</p></div>
-      <div id="logisticsEmpty" class="empty-state hidden"><p>尚無物流訂單。</p></div>
 
-      <div style="overflow-x:auto;">
-        <table class="data-table hidden" id="logisticsTable">
-          <thead>
-            <tr>
-              <th>物流訂單號</th>
-              <th>買家 UID</th>
-              <th>商品</th>
-              <th>超商 / 地址</th>
-              <th>取貨編號</th>
-              <th>狀態</th>
-              <th>建立時間</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="logisticsTbody"></tbody>
-        </table>
+      <!-- Create label form -->
+      <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card-header"><h3>建立出貨標籤 Create Label</h3></div>
+        <div class="card-body" style="display:grid;gap:1rem;padding:1.25rem;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+            <div class="form-group">
+              <label class="form-label">配送類型 <span class="text-error">*</span></label>
+              <select id="labelLogisticsType" class="form-input" onchange="onLabelTypeChange()">
+                <option value="CVS">超商取貨 CVS</option>
+                <option value="HOME">宅配 Home Delivery</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">配送商 Sub-type <span class="text-error">*</span></label>
+              <select id="labelLogisticsSubType" class="form-input" onchange="onLabelSubTypeChange()">
+                <option value="UNIMART">7-ELEVEN 統一超商</option>
+                <option value="FAMI">全家 FamilyMart</option>
+                <option value="OKMART">OK mart</option>
+                <option value="HILIFE">萊爾富 Hi-Life</option>
+                <option value="TCAT">黑貓宅急便 Tcat</option>
+                <option value="POST">中華郵政</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+            <div class="form-group">
+              <label class="form-label">收件人姓名 <span class="text-error">*</span></label>
+              <input type="text" id="labelReceiverName" class="form-input" placeholder="真實姓名"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">收件人手機 <span class="text-error">*</span></label>
+              <input type="text" id="labelReceiverPhone" class="form-input" placeholder="09xxxxxxxx"/>
+            </div>
+          </div>
+
+          <div id="labelCvsStoreRow" class="form-group">
+            <label class="form-label">超商門市 ID（選填）</label>
+            <input type="text" id="labelCvsStoreId" class="form-input" placeholder="CVS Store ID"/>
+            <p class="text-muted text-sm" style="margin-top:0.3rem;">若不填，ECPay 會自動指派，或可先透過 CVS map 取得。</p>
+          </div>
+
+          <div id="labelAddressRow" class="form-group" style="display:none;">
+            <label class="form-label">收件地址 <span class="text-error">*</span></label>
+            <input type="text" id="labelReceiverAddress" class="form-input" placeholder="全址（含縣市鄉鎮）"/>
+          </div>
+
+          <div id="labelZipRow" class="form-group" style="display:none;">
+            <label class="form-label">郵遞區號（選填）</label>
+            <input type="text" id="labelReceiverZip" class="form-input" placeholder="e.g. 100" style="max-width:120px;"/>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+            <div class="form-group">
+              <label class="form-label">商品名稱 <span class="text-error">*</span></label>
+              <input type="text" id="labelGoodsName" class="form-input" placeholder="e.g. 精裝書"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">商品金額 (NTD) <span class="text-error">*</span></label>
+              <input type="number" id="labelGoodsAmount" class="form-input" placeholder="e.g. 299" min="1"/>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+            <div class="form-group">
+              <label class="form-label">連結訂單 Key（選填）</label>
+              <input type="text" id="labelOrderKey" class="form-input" placeholder="orders/ 中的訂單 key"/>
+              <p class="text-muted text-sm" style="margin-top:0.3rem;">填入後買家可在我的訂單中看到取貨編號。</p>
+            </div>
+            <div class="form-group">
+              <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;margin-top:1.5rem;">
+                <input type="checkbox" id="labelUseSandbox" checked style="cursor:pointer;"/>
+                <span class="form-label" style="margin:0;">使用測試環境 Sandbox</span>
+              </label>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:0.75rem;">
+            <button class="btn btn-primary" onclick="createLogisticsLabel()">建立標籤 Create Label</button>
+            <button class="btn btn-ghost" onclick="resetLabelForm()">清除 Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Labels table -->
+      <div class="card">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <h3>標籤列表 Labels</h3>
+          <span class="text-muted text-sm" id="labelsCount"></span>
+        </div>
+        <div id="labelsLoading" class="empty-state"><div class="spinner"></div><p>載入中…</p></div>
+        <div id="labelsEmpty" class="empty-state hidden"><p>尚無標籤。</p></div>
+        <div style="overflow-x:auto;">
+          <table class="data-table hidden" id="labelsTable">
+            <thead>
+              <tr>
+                <th>物流單號</th>
+                <th>類型</th>
+                <th>收件人</th>
+                <th>取貨編號</th>
+                <th>連結訂單</th>
+                <th>狀態</th>
+                <th>建立時間</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="labelsTbody"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -885,7 +1064,8 @@
     if (name === "pricing")   loadPricing();
     if (name === "security")  loadSecurity();
     if (name === "storage")   loadStorage();
-    if (name === "logistics") loadLogisticsOrders();
+    if (name === "orders")    loadOrders();
+    if (name === "logistics") loadLogisticsLabels();
   };
 
   // ── Physical product form toggle ─────────────────────────────────────────
@@ -894,66 +1074,292 @@
     el.style.display = checked ? "flex" : "none";
   };
 
-  // ── Logistics: load orders ─────────────────────────────────────────────────
-  window.loadLogisticsOrders = async () => {
-    document.getElementById("logisticsLoading").classList.remove("hidden");
-    document.getElementById("logisticsEmpty").classList.add("hidden");
-    document.getElementById("logisticsTable").classList.add("hidden");
-    document.getElementById("logisticsAlert").classList.add("hidden");
+  // ════════════════════════════════════════════════════════════════════════
+  // ORDERS (physical product orders)
+  // ════════════════════════════════════════════════════════════════════════
+
+  const ORDER_STATUS_LABELS = {
+    pending:    { label: "待處理", color: "#F59E0B", bg: "#FFFBEB" },
+    processing: { label: "處理中", color: "#3B82F6", bg: "#EFF6FF" },
+    shipped:    { label: "已出貨", color: "#8B5CF6", bg: "#F5F3FF" },
+    completed:  { label: "已完成", color: "#10B981", bg: "#ECFDF5" },
+    cancelled:  { label: "已取消", color: "#6B7280", bg: "#F9FAFB" },
+  };
+
+  let allOrdersCache = [];
+
+  window.loadOrders = async () => {
+    document.getElementById("ordersLoading").classList.remove("hidden");
+    document.getElementById("ordersEmpty").classList.add("hidden");
+    document.getElementById("ordersTable").classList.add("hidden");
+    document.getElementById("ordersAlert").classList.add("hidden");
 
     let orders;
     try {
       const idToken = await auth.currentUser.getIdToken();
-      const resp    = await fetch(`${RENDER_SERVER_URL}/logistics/orders`, {
+      const resp    = await fetch(`${RENDER_SERVER_URL}/orders`, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
       if (!resp.ok) throw new Error(await resp.text());
       orders = await resp.json();
     } catch (err) {
-      document.getElementById("logisticsLoading").classList.add("hidden");
-      const alertEl = document.getElementById("logisticsAlert");
+      document.getElementById("ordersLoading").classList.add("hidden");
+      const alertEl = document.getElementById("ordersAlert");
       alertEl.textContent = "載入失敗：" + err.message;
       alertEl.className   = "alert alert-error";
       alertEl.classList.remove("hidden");
       return;
     }
 
-    document.getElementById("logisticsLoading").classList.add("hidden");
+    document.getElementById("ordersLoading").classList.add("hidden");
+    allOrdersCache = orders || [];
 
     if (!orders || orders.length === 0) {
-      document.getElementById("logisticsEmpty").classList.remove("hidden");
+      document.getElementById("ordersEmpty").classList.remove("hidden");
       return;
     }
 
-    const tbody = document.getElementById("logisticsTbody");
+    renderOrdersTable(orders);
+  };
+
+  function renderOrdersTable(orders) {
+    const tbody = document.getElementById("ordersTbody");
     tbody.innerHTML = orders.map(o => {
-      const date    = o.createdAt ? new Date(o.createdAt).toLocaleString("zh-TW") : "—";
-      const status  = escHtml(o.status || "—");
-      const sandbox = o.useSandbox !== false;
-      return `
-        <tr>
-          <td style="font-family:monospace;font-size:0.8rem;">${escHtml(o.allPayLogisticsID || "—")}</td>
-          <td style="font-size:0.78rem;max-width:120px;word-break:break-all;">${escHtml(o.uid || "—")}</td>
-          <td>${escHtml(o.productName || "—")}</td>
-          <td>
-            <div style="font-weight:500;font-size:0.85rem;">${escHtml(o.storeName || "—")}</div>
-            <div style="font-size:0.75rem;color:#64748B;">${escHtml(o.storeAddress || "")}</div>
-          </td>
-          <td style="font-family:monospace;font-weight:600;">${escHtml(o.cvsPaymentNo || "—")}</td>
-          <td><span class="badge ${o.status === 'created' ? 'badge-success' : o.status?.startsWith('error') ? 'badge-error' : 'badge-neutral'}">${status}</span></td>
-          <td style="font-size:0.8rem;white-space:nowrap;">${date}</td>
-          <td>
-            <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-              ${o.allPayLogisticsID ? `
-                <button class="btn btn-ghost btn-xs" onclick="printLogisticsLabel('${escHtml(o.allPayLogisticsID)}', ${sandbox})" title="列印標籤">🖨 標籤</button>
-                <button class="btn btn-ghost btn-xs" onclick="trackLogistics('${escHtml(o.allPayLogisticsID)}', this)" title="查詢狀態">📦 狀態</button>
-              ` : "<span class='text-muted text-sm'>物流建立失敗</span>"}
-            </div>
-          </td>
-        </tr>`;
+      const date   = o.createdAt ? new Date(o.createdAt).toLocaleString("zh-TW") : "—";
+      const st     = ORDER_STATUS_LABELS[o.status] || { label: o.status || "—", color: "#64748B", bg: "#F9FAFB" };
+      const badge  = `<span style="font-size:0.72rem;font-weight:600;padding:2px 8px;border-radius:99px;color:${st.color};background:${st.bg};border:1px solid ${st.color}44;">${escHtml(st.label)}</span>`;
+
+      // Delivery info summary
+      const di = o.deliveryInfo || {};
+      const deliveryLabel = {
+        UNIMART: "7-ELEVEN", FAMI: "全家", OKMART: "OK mart",
+        HILIFE: "萊爾富", TCAT: "黑貓宅配", POST: "中華郵政"
+      }[di.deliveryType || o.deliveryType] || di.deliveryType || o.deliveryType || "—";
+      const deliveryDetail = di.CVSStoreName
+        ? `${di.CVSStoreName} <span style="color:#64748B;font-size:0.75rem;">${escHtml(di.CVSAddress || "")}</span>`
+        : escHtml(di.receiverAddress || "");
+
+      return `<tr data-okey="${escHtml(o.key)}">
+        <td style="font-family:monospace;font-size:0.75rem;max-width:100px;word-break:break-all;">${escHtml(o.key || "—")}</td>
+        <td style="font-size:0.75rem;max-width:100px;word-break:break-all;">${escHtml(o.uid || "—")}</td>
+        <td style="font-size:0.85rem;">${escHtml(o.productName || "—")}</td>
+        <td style="font-size:0.8rem;">
+          <span style="font-weight:500;">${deliveryLabel}</span><br>
+          <span style="color:#64748B;font-size:0.75rem;">${deliveryDetail}</span>
+        </td>
+        <td style="font-size:0.82rem;">${escHtml(o.receiverName || "—")}<br><span style="color:#64748B;font-size:0.75rem;">${escHtml(o.receiverPhone || "")}</span></td>
+        <td>${badge}</td>
+        <td style="font-family:monospace;font-size:0.82rem;font-weight:600;">${escHtml(o.cvsPaymentNo || "—")}</td>
+        <td style="font-size:0.78rem;white-space:nowrap;">${date}</td>
+        <td>
+          <button class="btn btn-ghost btn-xs" onclick="openOrderStatusModal('${escHtml(o.key)}')">✏️ 更新</button>
+        </td>
+      </tr>`;
+    }).join("");
+    document.getElementById("ordersTable").classList.remove("hidden");
+  }
+
+  window.openOrderStatusModal = (orderKey) => {
+    const o = allOrdersCache.find(x => x.key === orderKey);
+    document.getElementById("orderStatusKey").value      = orderKey;
+    document.getElementById("orderStatusSelect").value   = o?.status || "pending";
+    document.getElementById("orderLabelId").value        = o?.logisticsLabelId || "";
+    document.getElementById("orderCvsPaymentNo").value   = o?.cvsPaymentNo || "";
+    document.getElementById("orderTrackingNote").value   = o?.trackingNote || "";
+    document.getElementById("orderStatusModal").classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+  };
+  window.closeOrderStatusModal = () => {
+    document.getElementById("orderStatusModal").classList.add("hidden");
+    document.body.style.overflow = "";
+  };
+
+  window.saveOrderStatus = async () => {
+    const orderKey       = document.getElementById("orderStatusKey").value;
+    const status         = document.getElementById("orderStatusSelect").value;
+    const logisticsLabelId = document.getElementById("orderLabelId").value.trim() || null;
+    const cvsPaymentNo   = document.getElementById("orderCvsPaymentNo").value.trim() || null;
+    const trackingNote   = document.getElementById("orderTrackingNote").value.trim() || null;
+
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const resp    = await fetch(`${RENDER_SERVER_URL}/orders/${encodeURIComponent(orderKey)}`, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body:    JSON.stringify({ status, logisticsLabelId, cvsPaymentNo, trackingNote }),
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      closeOrderStatusModal();
+      // Update local cache and re-render
+      const idx = allOrdersCache.findIndex(x => x.key === orderKey);
+      if (idx !== -1) {
+        allOrdersCache[idx] = { ...allOrdersCache[idx], status, logisticsLabelId, cvsPaymentNo, trackingNote };
+        renderOrdersTable(allOrdersCache);
+      }
+    } catch (err) {
+      alert("更新失敗：" + err.message);
+    }
+  };
+
+  // ════════════════════════════════════════════════════════════════════════
+  // LOGISTICS LABELS
+  // ════════════════════════════════════════════════════════════════════════
+
+  window.onLabelTypeChange = () => {
+    const type    = document.getElementById("labelLogisticsType").value;
+    const subSel  = document.getElementById("labelLogisticsSubType");
+    const cvsRow  = document.getElementById("labelCvsStoreRow");
+    const addrRow = document.getElementById("labelAddressRow");
+    const zipRow  = document.getElementById("labelZipRow");
+
+    if (type === "CVS") {
+      // Keep only CVS-compatible options
+      [...subSel.options].forEach(opt => {
+        opt.disabled = ["TCAT","POST"].includes(opt.value);
+        if (opt.disabled && opt.selected) subSel.value = "UNIMART";
+      });
+      cvsRow.style.display  = "";
+      addrRow.style.display = "none";
+      zipRow.style.display  = "none";
+    } else {
+      // HOME delivery — show address, hide store id
+      [...subSel.options].forEach(opt => {
+        opt.disabled = !["TCAT","POST"].includes(opt.value);
+        if (opt.disabled && opt.selected) subSel.value = "TCAT";
+      });
+      cvsRow.style.display  = "none";
+      addrRow.style.display = "";
+      zipRow.style.display  = "";
+    }
+  };
+
+  window.onLabelSubTypeChange = () => {
+    const sub = document.getElementById("labelLogisticsSubType").value;
+    if (["TCAT","POST"].includes(sub)) {
+      document.getElementById("labelLogisticsType").value = "HOME";
+      onLabelTypeChange();
+    } else {
+      document.getElementById("labelLogisticsType").value = "CVS";
+      onLabelTypeChange();
+    }
+  };
+
+  window.createLogisticsLabel = async () => {
+    const logisticsType    = document.getElementById("labelLogisticsType").value;
+    const logisticsSubType = document.getElementById("labelLogisticsSubType").value;
+    const receiverName     = document.getElementById("labelReceiverName").value.trim();
+    const receiverPhone    = document.getElementById("labelReceiverPhone").value.trim();
+    const cvsStoreId       = document.getElementById("labelCvsStoreId").value.trim();
+    const receiverAddress  = document.getElementById("labelReceiverAddress").value.trim();
+    const receiverZipCode  = document.getElementById("labelReceiverZip").value.trim();
+    const goodsName        = document.getElementById("labelGoodsName").value.trim();
+    const goodsAmount      = document.getElementById("labelGoodsAmount").value.trim();
+    const orderKey         = document.getElementById("labelOrderKey").value.trim() || null;
+    const useSandbox       = document.getElementById("labelUseSandbox").checked;
+
+    if (!receiverName)  { showLogisticsAlert("請填寫收件人姓名。", "error"); return; }
+    if (!receiverPhone) { showLogisticsAlert("請填寫收件人手機。", "error"); return; }
+    if (!goodsName)     { showLogisticsAlert("請填寫商品名稱。", "error"); return; }
+    if (!goodsAmount)   { showLogisticsAlert("請填寫商品金額。", "error"); return; }
+    if (logisticsType === "HOME" && !receiverAddress) { showLogisticsAlert("宅配需填寫收件地址。", "error"); return; }
+
+    const body = {
+      logisticsType, logisticsSubType,
+      receiverName, receiverPhone, receiverAddress,
+      receiverZipCode: receiverZipCode || undefined,
+      cvsStoreId: cvsStoreId || undefined,
+      goodsName, goodsAmount, useSandbox,
+      orderKey,
+    };
+
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const resp    = await fetch(`${RENDER_SERVER_URL}/logistics/create-label`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body:    JSON.stringify(body),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        showLogisticsAlert(`建立失敗：${data.error || resp.statusText}`, "error");
+        return;
+      }
+      showLogisticsAlert(`✓ 標籤建立成功！取貨編號：${data.cvsPaymentNo || data.allPayLogisticsID}`, "success");
+      resetLabelForm();
+      loadLogisticsLabels();
+    } catch (err) {
+      showLogisticsAlert("建立失敗：" + err.message, "error");
+    }
+  };
+
+  window.resetLabelForm = () => {
+    ["labelReceiverName","labelReceiverPhone","labelCvsStoreId","labelReceiverAddress",
+     "labelReceiverZip","labelGoodsName","labelGoodsAmount","labelOrderKey"]
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+    document.getElementById("labelLogisticsType").value    = "CVS";
+    document.getElementById("labelLogisticsSubType").value = "UNIMART";
+    document.getElementById("labelUseSandbox").checked     = true;
+    onLabelTypeChange();
+  };
+
+  window.loadLogisticsLabels = async () => {
+    document.getElementById("labelsLoading").classList.remove("hidden");
+    document.getElementById("labelsEmpty").classList.add("hidden");
+    document.getElementById("labelsTable").classList.add("hidden");
+
+    let labels;
+    try {
+      const idToken = await auth.currentUser.getIdToken();
+      const resp    = await fetch(`${RENDER_SERVER_URL}/logistics/labels`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      if (!resp.ok) throw new Error(await resp.text());
+      labels = await resp.json();
+    } catch (err) {
+      document.getElementById("labelsLoading").classList.add("hidden");
+      showLogisticsAlert("載入失敗：" + err.message, "error");
+      return;
+    }
+
+    document.getElementById("labelsLoading").classList.add("hidden");
+    document.getElementById("labelsCount").textContent = `${(labels||[]).length} 個`;
+
+    if (!labels || labels.length === 0) {
+      document.getElementById("labelsEmpty").classList.remove("hidden");
+      return;
+    }
+
+    const tbody = document.getElementById("labelsTbody");
+    const subTypeLabels = {
+      UNIMART:"7-ELEVEN", FAMI:"全家", OKMART:"OK mart",
+      HILIFE:"萊爾富", TCAT:"黑貓宅配", POST:"中華郵政"
+    };
+
+    tbody.innerHTML = labels.map(l => {
+      const date    = l.createdAt ? new Date(l.createdAt).toLocaleString("zh-TW") : "—";
+      const stLabel = subTypeLabels[l.logisticsSubType] || l.logisticsSubType || "—";
+      const sandbox = l.useSandbox !== false;
+      const stBadge = `<span class="badge ${l.status === "created" ? "badge-success" : "badge-neutral"}">${escHtml(l.status || "—")}</span>`;
+      return `<tr>
+        <td style="font-family:monospace;font-size:0.78rem;">${escHtml(l.allPayLogisticsID || "—")}</td>
+        <td style="font-size:0.82rem;">${escHtml(stLabel)}</td>
+        <td style="font-size:0.82rem;">${escHtml(l.receiverName || "—")}</td>
+        <td style="font-family:monospace;font-weight:600;color:#2563EB;">${escHtml(l.cvsPaymentNo || "—")}</td>
+        <td style="font-size:0.78rem;font-family:monospace;">${escHtml(l.orderKey || "—")}</td>
+        <td>${stBadge}</td>
+        <td style="font-size:0.78rem;white-space:nowrap;">${date}</td>
+        <td>
+          <div style="display:flex;gap:0.3rem;flex-wrap:wrap;">
+            ${l.allPayLogisticsID ? `
+              <button class="btn btn-ghost btn-xs" onclick="printLogisticsLabel('${escHtml(l.allPayLogisticsID)}', ${sandbox})" title="列印標籤">🖨 標籤</button>
+              <button class="btn btn-ghost btn-xs" onclick="trackLogistics('${escHtml(l.allPayLogisticsID)}', this)" title="查詢狀態">📦 狀態</button>
+            ` : ""}
+          </div>
+        </td>
+      </tr>`;
     }).join("");
 
-    document.getElementById("logisticsTable").classList.remove("hidden");
+    document.getElementById("labelsTable").classList.remove("hidden");
   };
 
   // ── Print shipping label ───────────────────────────────────────────────────
@@ -984,9 +1390,9 @@
       });
       if (!resp.ok) throw new Error(await resp.text());
       const { status } = await resp.json();
-      // Update the status cell in this row
       const row = btn.closest("tr");
       if (row) {
+        // Find the status cell (6th cell in labels table)
         const statusCell = row.cells[5];
         if (statusCell) statusCell.innerHTML = `<span class="badge badge-success">${escHtml(status)}</span>`;
       }
@@ -997,6 +1403,12 @@
       alert("查詢失敗：" + err.message);
     }
   };
+
+  function showLogisticsAlert(msg, type) {
+    const el = document.getElementById("logisticsAlert");
+    el.textContent = msg; el.className = `alert alert-${type}`; el.classList.remove("hidden");
+    setTimeout(() => el.classList.add("hidden"), 6000);
+  }
 
   // ── Upload ────────────────────────────────────────────────────────────────
   const uploadZone = document.getElementById("uploadZone");
@@ -2327,7 +2739,7 @@
       } else {
         tableEl.classList.remove("hidden");
         tbody.innerHTML = files.map(f => {
-          const def     = getTypeDef(f.type, f.name);
+          const def     = getFileTypeDef(f.type, f.name);
           const pct     = s3Bytes > 0 ? ((f.size / s3Bytes) * 100).toFixed(1) : "0.0";
           const barW    = s3Bytes > 0 ? Math.max((f.size / s3Bytes) * 100, 0.5) : 0;
           const uploaded = f.uploadedAt ? formatDate(f.uploadedAt) : "—";
