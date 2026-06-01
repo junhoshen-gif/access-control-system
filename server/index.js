@@ -1084,29 +1084,26 @@ const logisticsLimiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders:
 app.use("/logistics/", logisticsLimiter);
 
 // ── MD5 CheckMacValue for logistics ─────────────────────────────────────────
+// Per official ECPay logistics spec (https://developers.ecpay.com.tw/7424/):
+// 1. Sort all params (except CheckMacValue) by key, case-insensitive A→Z
+// 2. Join as key=value&key=value
+// 3. Prepend HashKey=...& and append &HashIV=...
+// 4. encodeURIComponent the ENTIRE string (= and & become %3d and %26)
+// 5. Lowercase
+// 6. Replace %20→+ %21→! %27→' %28→( %29→) %2a→*
+// 7. MD5 → uppercase hex
 function buildLogisticsCheckMacValue(params, hashKey, hashIV) {
-  // ECPay logistics CheckMacValue (MD5):
-  // 1. Sort params by key (case-insensitive), join as key=value&...
-  // 2. Wrap: HashKey=...&{sorted}&HashIV=...
-  // 3. encodeURIComponent the ENTIRE string
-  // 4. Lowercase
-  // 5. Replace encoded chars back per ECPay spec
-  // 6. MD5 → uppercase hex
-  // Build sorted pairs with each VALUE encodeURIComponent'd; keys and separators stay literal
-  const pairs = [
-    ["HashKey", hashKey],
-    ...Object.keys(params)
-      .filter(k => k !== "CheckMacValue")
-      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
-      .map(k => [k, params[k]]),
-    ["HashIV", hashIV],
-  ];
+  const sorted = Object.keys(params)
+    .filter(k => k !== "CheckMacValue")
+    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map(k => `${k}=${params[k]}`).join("&");
 
-  const joined = pairs.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
-  const encoded = joined.toLowerCase()
+  const raw     = `HashKey=${hashKey}&${sorted}&HashIV=${hashIV}`;
+  const encoded = encodeURIComponent(raw).toLowerCase()
     .replace(/%20/g, "+").replace(/%21/g, "!").replace(/%27/g, "'")
     .replace(/%28/g, "(").replace(/%29/g, ")").replace(/%2a/g, "*");
 
+  console.log("[CheckMac] raw:", raw);
   console.log("[CheckMac] encoded:", encoded);
   const mac = crypto.createHash("md5").update(encoded).digest("hex").toUpperCase();
   console.log("[CheckMac] MD5:", mac);

@@ -556,6 +556,46 @@ function showToast(msg) {
   }, 2800);
 }
 
+// ── IndexedDB file cache ─────────────────────────────────────────────────────
+const CACHE_DB_NAME    = "fileaccess-cache";
+const CACHE_DB_VERSION = 1;
+const CACHE_STORE      = "files";
+
+function openCacheDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(CACHE_DB_NAME, CACHE_DB_VERSION);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(CACHE_STORE, { keyPath: "fileId" });
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function getCachedBlob(fileId) {
+  try {
+    const db = await openCacheDB();
+    return new Promise((resolve, reject) => {
+      const tx  = db.transaction(CACHE_STORE, "readonly");
+      const req = tx.objectStore(CACHE_STORE).get(fileId);
+      req.onsuccess = e => resolve(e.target.result?.blob || null);
+      req.onerror   = e => reject(e.target.error);
+    });
+  } catch { return null; }
+}
+
+async function setCachedBlob(fileId, blob) {
+  try {
+    const db = await openCacheDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(CACHE_STORE, "readwrite");
+      tx.objectStore(CACHE_STORE).put({ fileId, blob, cachedAt: Date.now() });
+      tx.oncomplete = resolve;
+      tx.onerror    = e => reject(e.target.error);
+    });
+  } catch {}
+}
+
+const cacheConsent = localStorage.getItem("cacheConsent") === "true";
+
 // ── Firebase auth ────────────────────────────────────────────────────────────
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -580,88 +620,99 @@ onAuthStateChanged(auth, async user => {
 // ── Main load flow ────────────────────────────────────────────────────────────
 async function loadFile(user) {
 
-  // Step 2 — get signed URL
-  stepActive(2, "Contacting server…");
-  let signedUrl;
-  try {
-    const idToken = await user.getIdToken(true);
-    const resp = await fetch(
-      `${RENDER_SERVER_URL}/files/signed-url?fileId=${encodeURIComponent(fileId)}`,
-      { headers: { "Authorization": `Bearer ${idToken}` } }
-    );
-    if (!resp.ok) {
-      const body = await resp.json().catch(() => ({}));
-      throw new Error(body.error || `Server error ${resp.status}`);
+  // Step 2 — check cache first, otherwise get signed URL
+  let blob = null;
+
+  if (cacheConsent && fileId) {
+    stepActive(2, "Checking local cache…");
+    blob = await getCachedBlob(fileId);
+    if (blob) {
+      stepDone(2, "Loaded from cache");
+      stepDone(3, `${formatBytes(blob.size)} (cached)`);
     }
-    ({ signedUrl } = await resp.json());
-    stepDone(2, "Secure link received");
-  } catch (err) {
-    stepError(2, err.message);
-    showError(`Could not get file link:\n${err.message}`);
-    return;
   }
 
-  // Step 3 — download file with progress tracking
-  stepActive(3, "Connecting to storage…");
-  let blob;
-  try {
-    const dlController = new AbortController();
-    const dlTimeout    = setTimeout(() => dlController.abort(), 60_000);
-
-    let resp;
+  if (!blob) {
+    stepActive(2, "Contacting server…");
+    let signedUrl;
     try {
-      resp = await fetch(signedUrl, { signal: dlController.signal });
-    } catch (fetchErr) {
-      clearTimeout(dlTimeout);
-      if (fetchErr.name === "AbortError") throw new Error("Download timed out. Please try again.");
-      throw fetchErr;
-    }
-    if (!resp.ok) { clearTimeout(dlTimeout); throw new Error(`Storage error ${resp.status}`); }
-
-    const contentLength = Number(resp.headers.get("Content-Length") || 0);
-
-    try {
-      if (contentLength > 0 && resp.body) {
-        // Stream with progress
-        const reader = resp.body.getReader();
-        const chunks = [];
-        let received = 0;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          received += value.length;
-          const pct = (received / contentLength) * 100;
-          setDownloadProgress(pct);
-          document.getElementById("step3Sub").textContent =
-            `${formatBytes(received)} / ${formatBytes(contentLength)}`;
-        }
-
-        const allChunks = new Uint8Array(received);
-        let offset = 0;
-        for (const chunk of chunks) { allChunks.set(chunk, offset); offset += chunk.length; }
-        blob = new Blob([allChunks]);
-      } else {
-        // Fallback: no Content-Length — animate indeterminate bar
-        animateIndeterminate();
-        try {
-          blob = await resp.blob();
-        } finally {
-          // Always clear the indeterminate animation timer
-          if (_indTimer) { clearInterval(_indTimer); _indTimer = null; }
-        }
+      const idToken = await user.getIdToken(true);
+      const resp = await fetch(
+        `${RENDER_SERVER_URL}/files/signed-url?fileId=${encodeURIComponent(fileId)}`,
+        { headers: { "Authorization": `Bearer ${idToken}` } }
+      );
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        throw new Error(body.error || `Server error ${resp.status}`);
       }
-    } finally {
-      clearTimeout(dlTimeout);
+      ({ signedUrl } = await resp.json());
+      stepDone(2, "Secure link received");
+    } catch (err) {
+      stepError(2, err.message);
+      showError(`Could not get file link:\n${err.message}`);
+      return;
     }
 
-    setDownloadProgress(100);
-    stepDone(3, `${formatBytes(blob.size)} downloaded`);
-  } catch (err) {
-    stepError(3, err.message);
-    showError(`Could not download file:\n${err.message}`);
-    return;
+    // Step 3 — download file with progress tracking
+    stepActive(3, "Connecting to storage…");
+    try {
+      const dlController = new AbortController();
+      const dlTimeout    = setTimeout(() => dlController.abort(), 60_000);
+
+      let resp;
+      try {
+        resp = await fetch(signedUrl, { signal: dlController.signal });
+      } catch (fetchErr) {
+        clearTimeout(dlTimeout);
+        if (fetchErr.name === "AbortError") throw new Error("Download timed out. Please try again.");
+        throw fetchErr;
+      }
+      if (!resp.ok) { clearTimeout(dlTimeout); throw new Error(`Storage error ${resp.status}`); }
+
+      const contentLength = Number(resp.headers.get("Content-Length") || 0);
+
+      try {
+        if (contentLength > 0 && resp.body) {
+          const reader = resp.body.getReader();
+          const chunks = [];
+          let received = 0;
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            received += value.length;
+            setDownloadProgress((received / contentLength) * 100);
+            document.getElementById("step3Sub").textContent =
+              `${formatBytes(received)} / ${formatBytes(contentLength)}`;
+          }
+          const allChunks = new Uint8Array(received);
+          let offset = 0;
+          for (const chunk of chunks) { allChunks.set(chunk, offset); offset += chunk.length; }
+          blob = new Blob([allChunks]);
+        } else {
+          animateIndeterminate();
+          try {
+            blob = await resp.blob();
+          } finally {
+            if (_indTimer) { clearInterval(_indTimer); _indTimer = null; }
+          }
+        }
+      } finally {
+        clearTimeout(dlTimeout);
+      }
+
+      setDownloadProgress(100);
+      stepDone(3, `${formatBytes(blob.size)} downloaded`);
+
+      // Save to cache if user consented
+      if (cacheConsent && fileId) {
+        setCachedBlob(fileId, blob); // fire-and-forget
+      }
+    } catch (err) {
+      stepError(3, err.message);
+      showError(`Could not download file:\n${err.message}`);
+      return;
+    }
   }
 
   // Step 4 — render
