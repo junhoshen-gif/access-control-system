@@ -657,17 +657,26 @@ async function loadFile(user) {
     stepActive(3, "Connecting to storage…");
     try {
       const dlController = new AbortController();
-      const dlTimeout    = setTimeout(() => dlController.abort(), 60_000);
+
+      // Stall detector: abort only if no data arrives for 30 seconds
+      // (replaces fixed 60s timeout which kills large-file downloads)
+      const STALL_MS = 30_000;
+      let stallTimer = setTimeout(() => dlController.abort(), STALL_MS);
+      const resetStall = () => {
+        clearTimeout(stallTimer);
+        stallTimer = setTimeout(() => dlController.abort(), STALL_MS);
+      };
 
       let resp;
       try {
         resp = await fetch(signedUrl, { signal: dlController.signal });
+        resetStall();
       } catch (fetchErr) {
-        clearTimeout(dlTimeout);
-        if (fetchErr.name === "AbortError") throw new Error("Download timed out. Please try again.");
+        clearTimeout(stallTimer);
+        if (fetchErr.name === "AbortError") throw new Error("Download stalled (no data for 30s). Please try again.");
         throw fetchErr;
       }
-      if (!resp.ok) { clearTimeout(dlTimeout); throw new Error(`Storage error ${resp.status}`); }
+      if (!resp.ok) { clearTimeout(stallTimer); throw new Error(`Storage error ${resp.status}`); }
 
       const contentLength = Number(resp.headers.get("Content-Length") || 0);
 
@@ -679,6 +688,7 @@ async function loadFile(user) {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            resetStall(); // got data — reset stall timer
             chunks.push(value);
             received += value.length;
             setDownloadProgress((received / contentLength) * 100);
@@ -698,7 +708,7 @@ async function loadFile(user) {
           }
         }
       } finally {
-        clearTimeout(dlTimeout);
+        clearTimeout(stallTimer);
       }
 
       setDownloadProgress(100);
