@@ -182,6 +182,56 @@ REQUIRED_ENV.forEach(k => {
   else console.log(`[ENV] ✓ ${k} = ${k.includes("KEY") || k.includes("IV") || k.includes("ACCOUNT") ? "***" : process.env[k]}`);
 });
 
+// ── Real-time log streaming (SSE) ───────────────────────────────────────────
+// Intercept console output and broadcast to connected admin SSE clients.
+const sseClients = new Set();
+
+function broadcastLog(level, args) {
+  if (sseClients.size === 0) return;
+  const msg = args.map(a => (typeof a === "object" ? JSON.stringify(a) : String(a))).join(" ");
+  const payload = JSON.stringify({ ts: Date.now(), level, msg });
+  for (const res of sseClients) {
+    try { res.write(`data: ${payload}\n\n`); } catch { sseClients.delete(res); }
+  }
+}
+
+// Patch console methods
+const _origLog   = console.log.bind(console);
+const _origWarn  = console.warn.bind(console);
+const _origError = console.error.bind(console);
+console.log   = (...a) => { _origLog(...a);   broadcastLog("log",   a); };
+console.warn  = (...a) => { _origWarn(...a);  broadcastLog("warn",  a); };
+console.error = (...a) => { _origError(...a); broadcastLog("error", a); };
+
+// SSE endpoint — admin only, token passed as ?token= query param (SSE can't set headers)
+app.get("/logs/stream", async (req, res) => {
+  const idToken = req.query.token;
+  if (!idToken) return res.status(401).send("Unauthorized");
+
+  let decoded;
+  try { decoded = await admin.auth().verifyIdToken(idToken); }
+  catch { return res.status(401).send("Unauthorized"); }
+
+  if (!await isAdmin(decoded.uid)) return res.status(403).send("Admin only");
+
+  res.setHeader("Content-Type",  "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection",    "keep-alive");
+  res.flushHeaders();
+
+  // Send a welcome line so the client knows the stream is live
+  res.write(`data: ${JSON.stringify({ ts: Date.now(), level: "info", msg: "▶ Log stream connected" })}\n\n`);
+
+  sseClients.add(res);
+
+  // Heartbeat every 20s to keep the connection alive through proxies
+  const hb = setInterval(() => {
+    try { res.write(": heartbeat\n\n"); } catch { clearInterval(hb); sseClients.delete(res); }
+  }, 20_000);
+
+  req.on("close", () => { clearInterval(hb); sseClients.delete(res); });
+});
+
 // ── Health ──────────────────────────────────────────────────────────────────
 app.get("/", (req, res) => res.send("FileAccess server is running ✓"));
 
