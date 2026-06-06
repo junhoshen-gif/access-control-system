@@ -448,6 +448,15 @@
       window.history.replaceState({}, "", window.location.pathname);
     }
 
+    // Auto-apply magic-link promo (?promo=<promoId>)
+    const magicPromoId = urlParams.get("promo");
+    if (magicPromoId) {
+      window.history.replaceState({}, "", window.location.pathname);
+      // We'll validate it once products are loaded (need a productKey for validate call)
+      // Store the raw id; validation happens after product cards are built
+      window._pendingMagicPromoId = magicPromoId;
+    }
+
     try {
       const val = await dbGet(auth, "products");
       if (!val) return;
@@ -485,7 +494,7 @@
         : "";
 
       return `
-        <div class="store-card">
+        <div class="store-card" id="storecard-${escHtml(key)}">
           ${imageSection}
           <div class="store-card-body">
             <div class="store-info">
@@ -494,8 +503,22 @@
               ${p.durationDays ? `<div class="store-meta">有效期限：${p.durationDays} 天</div>` : `<div class="store-meta">永久存取</div>`}
             </div>
           </div>
+          <!-- Promo code input -->
+          <div style="padding:0 0 0.75rem;display:flex;gap:0.4rem;align-items:center;">
+            <input type="text" id="promoInput-${escHtml(key)}"
+              placeholder="Promo code"
+              style="flex:1;font-size:0.8rem;padding:0.3rem 0.6rem;border:1px solid var(--color-border);border-radius:6px;text-transform:uppercase;max-width:160px;"/>
+            <button class="btn btn-ghost btn-sm" style="font-size:0.78rem;padding:0.3rem 0.6rem;"
+              onclick="applyPromoCode('${escHtml(key)}')">Apply</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:0.78rem;padding:0.3rem 0.6rem;display:none;" id="promoRemoveBtn-${escHtml(key)}"
+              onclick="removePromoCode('${escHtml(key)}')">✕</button>
+          </div>
+          <div id="promoMsg-${escHtml(key)}" style="font-size:0.78rem;min-height:1em;padding-bottom:0.5rem;"></div>
           <div class="store-card-footer">
-            <span class="store-price">${escHtml(price)}</span>
+            <div>
+              <span class="store-price" id="promoPrice-${escHtml(key)}">${escHtml(price)}</span>
+              <span id="promoOrigPrice-${escHtml(key)}" style="display:none;text-decoration:line-through;color:#94a3b8;font-size:0.85rem;margin-left:0.4rem;"></span>
+            </div>
             <div style="display:flex;gap:0.5rem;align-items:center;">
               ${previewBtn}
               <button class="btn btn-primary btn-sm" onclick="buyProduct('${key}', this)">立即購買</button>
@@ -508,6 +531,13 @@
 
     // Async: load signed URLs for all product images
     loadProductImages();
+
+    // Auto-apply magic-link promo if present
+    if (window._pendingMagicPromoId) {
+      const pid = window._pendingMagicPromoId;
+      delete window._pendingMagicPromoId;
+      applyMagicPromo(pid, availableProducts.map(([k]) => k));
+    }
   }
 
   // ── Load signed URLs for product images ────────────────────────────────────
@@ -925,13 +955,16 @@
   // ── Create a payment order and redirect to ECPay payment page ──────────────
   // storeInfo: legacy CVS map result (has CVSStoreID etc.)
   // deliveryInfo: new unified delivery object { deliveryType, receiverName, receiverPhone, receiverAddress?, CVSStoreID?, ... }
-  async function createPaymentOrder(productKey, storeInfo, deliveryInfo, receiverName, receiverPhone) {
+  async function createPaymentOrder(productKey, storeInfo, deliveryInfo, receiverName, receiverPhone, promoId) {
     const idToken = await currentUserObj.getIdToken(true);
     const body    = { productKey, idToken };
     if (storeInfo)    body.storeInfo    = storeInfo;
     if (deliveryInfo) body.deliveryInfo = deliveryInfo;
     if (receiverName) body.receiverName = receiverName;
     if (receiverPhone) body.receiverPhone = receiverPhone;
+    // Pass active promo so server can re-validate and apply discount
+    const activePromoId = promoId || _promosByProduct[productKey]?.promoId || _globalPromo?.promoId;
+    if (activePromoId) body.promoId = activePromoId;
 
     const resp = await fetch(`${ECPAY_SERVER_URL}/ecpay/create-order`, {
       method:  "POST",
@@ -947,8 +980,14 @@
   }
 
   // ── State for the delivery modal ───────────────────────────────────────────
-  let _pendingProductKey  = null;
+  let _pendingProductKey    = null;
   let _selectedDeliveryType = null; // e.g. "UNIMART", "FAMI", "TCAT", "POST"
+
+  // ── Promotion state ─────────────────────────────────────────────────────────
+  // _globalPromo: a promotion that applies to all products (scope=all or magic-link)
+  // _promosByProduct: per-product promo code applied in a store card input
+  let _globalPromo      = null;  // { promoId, name, discountType, discountValue, originalPrice, discountedPrice }
+  let _promosByProduct  = {};    // { [productKey]: same shape }
 
   const CVS_CARRIERS  = new Set(["UNIMART","FAMI","OKMART","HILIFE"]);
   const HOME_CARRIERS = new Set(["TCAT","POST"]);
@@ -1502,6 +1541,101 @@
 
   // Close modal on Escape
   document.addEventListener("keydown", e => { if (e.key === "Escape") closeViewer(); });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PROMO CODE LOGIC
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Apply a typed promo code to a specific product card
+  window.applyPromoCode = async (productKey) => {
+    const input = document.getElementById(`promoInput-${productKey}`);
+    const code  = input?.value.trim().toUpperCase();
+    if (!code) return;
+    await _validateAndApplyPromo({ code, productKey });
+  };
+
+  // Remove a promo from a specific card
+  window.removePromoCode = (productKey) => {
+    delete _promosByProduct[productKey];
+    _restoreCardPrice(productKey);
+    const removeBtn = document.getElementById(`promoRemoveBtn-${productKey}`);
+    if (removeBtn) removeBtn.style.display = "none";
+    const input = document.getElementById(`promoInput-${productKey}`);
+    if (input) input.value = "";
+    _setPromoMsg(productKey, "", "");
+  };
+
+  // Validate promo against server, then visually apply to card(s)
+  async function _validateAndApplyPromo({ code, promoId, productKey }) {
+    const msgEl = document.getElementById(`promoMsg-${productKey}`);
+    if (msgEl) { msgEl.textContent = "Checking…"; msgEl.style.color = "#64748b"; }
+
+    try {
+      const idToken = await currentUserObj.getIdToken();
+      const body = { productKey };
+      if (code)    body.code    = code;
+      if (promoId) body.promoId = promoId;
+
+      const resp = await fetch(`${ECPAY_SERVER_URL}/promotions/validate`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body:    JSON.stringify(body),
+      });
+      const data = await resp.json();
+
+      if (!data.valid) {
+        _setPromoMsg(productKey, "❌ " + (data.reason || "Invalid promo"), "#ef4444");
+        return;
+      }
+
+      // Store and display
+      _promosByProduct[productKey] = data;
+      _applyPromoToCard(productKey, data);
+      const discountLabel = data.discountType === "percent"
+        ? `${data.discountValue}% off`
+        : `NT$${data.discountValue} off`;
+      _setPromoMsg(productKey, `✅ ${data.name} — ${discountLabel}`, "#22c55e");
+      const removeBtn = document.getElementById(`promoRemoveBtn-${productKey}`);
+      if (removeBtn) removeBtn.style.display = "";
+    } catch (err) {
+      _setPromoMsg(productKey, "Network error: " + err.message, "#ef4444");
+    }
+  }
+
+  function _applyPromoToCard(productKey, data) {
+    const priceEl    = document.getElementById(`promoPrice-${productKey}`);
+    const origEl     = document.getElementById(`promoOrigPrice-${productKey}`);
+    if (!priceEl) return;
+    const origText = `NT$${data.originalPrice}`;
+    const newText  = `NT$${data.discountedPrice}`;
+    priceEl.textContent = newText;
+    priceEl.style.color = "#16a34a";
+    if (origEl) { origEl.textContent = origText; origEl.style.display = "inline"; }
+  }
+
+  function _restoreCardPrice(productKey) {
+    const product  = allProducts[productKey];
+    if (!product) return;
+    const priceEl  = document.getElementById(`promoPrice-${productKey}`);
+    const origEl   = document.getElementById(`promoOrigPrice-${productKey}`);
+    if (priceEl) { priceEl.textContent = product.price || `NT$${product.priceNTD || 0}`; priceEl.style.color = ""; }
+    if (origEl)  { origEl.style.display = "none"; }
+  }
+
+  function _setPromoMsg(productKey, msg, color) {
+    const el = document.getElementById(`promoMsg-${productKey}`);
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = color || "#64748b";
+  }
+
+  // Apply a magic-link promo to all eligible product cards
+  async function applyMagicPromo(promoId, productKeys) {
+    for (const productKey of productKeys) {
+      await _validateAndApplyPromo({ promoId, productKey });
+    }
+  }
+
 </script>
 </body>
 </html>

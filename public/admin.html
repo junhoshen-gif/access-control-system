@@ -59,6 +59,10 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
         Orders
       </a>
+      <a href="#section-promotions" class="sidebar-item" onclick="showSection('promotions', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+        Promotions
+      </a>
       <a href="#section-logistics" class="sidebar-item" onclick="showSection('logistics', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
         Logistics
@@ -445,6 +449,139 @@
         </div>
       </div>
     </div>
+
+    <!-- PROMOTIONS SECTION -->
+    <section id="section-promotions" class="admin-section hidden">
+      <div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
+        <div>
+          <h2>🏷️ Promotions</h2>
+          <p class="text-muted">Create promo codes and magic links. Apply to the whole store or a single product.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadPromotions()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Refresh
+        </button>
+      </div>
+
+      <div id="promoAlert" class="alert hidden" style="margin-bottom:1rem;"></div>
+
+      <!-- Create / Edit promotion form -->
+      <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card-header">
+          <h3 id="promoFormTitle">New Promotion</h3>
+        </div>
+        <div class="card-body" style="display:grid;gap:1rem;">
+          <input type="hidden" id="editPromoId"/>
+
+          <div class="form-group">
+            <label class="form-label">Promotion Name <span class="text-error">*</span></label>
+            <input type="text" id="promoName" class="form-input" placeholder="e.g. Summer Sale 20%"/>
+          </div>
+
+          <!-- Discount config -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+            <div class="form-group">
+              <label class="form-label">Discount Type <span class="text-error">*</span></label>
+              <select id="promoDiscountType" class="form-input">
+                <option value="percent">Percentage off (%)</option>
+                <option value="fixed">Fixed amount off (NTD)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Discount Value <span class="text-error">*</span></label>
+              <input type="number" id="promoDiscountValue" class="form-input" placeholder="e.g. 20 or 100" min="1"/>
+              <p id="promoDiscountHint" class="text-muted text-sm" style="margin-top:0.3rem;">Enter a % between 1–100</p>
+            </div>
+          </div>
+
+          <!-- Scope -->
+          <div class="form-group">
+            <label class="form-label">Applies To</label>
+            <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+              <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.9rem;">
+                <input type="radio" name="promoScope" value="all" checked onchange="togglePromoScope()"/> Entire store (all products)
+              </label>
+              <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.9rem;">
+                <input type="radio" name="promoScope" value="product" onchange="togglePromoScope()"/> Specific product only
+              </label>
+            </div>
+          </div>
+          <div id="promoProductRow" class="form-group" style="display:none;">
+            <label class="form-label">Product <span class="text-error">*</span></label>
+            <select id="promoProductKey" class="form-input">
+              <option value="">— Loading products… —</option>
+            </select>
+          </div>
+
+          <!-- Code vs link-only -->
+          <div class="form-group" style="border-top:1px solid var(--color-border);padding-top:1rem;">
+            <label class="form-label">Promo Code <span class="text-muted text-sm">(leave blank for link-only promotion)</span></label>
+            <input type="text" id="promoCode" class="form-input" placeholder="e.g. SUMMER20" style="max-width:240px;text-transform:uppercase;"/>
+            <p class="text-muted text-sm" style="margin-top:0.3rem;">Customers enter this code at checkout. Leave blank to create a secret link instead.</p>
+          </div>
+
+          <!-- Time limits -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;border-top:1px solid var(--color-border);padding-top:1rem;">
+            <div class="form-group">
+              <label class="form-label">Start Date (optional)</label>
+              <input type="datetime-local" id="promoStartsAt" class="form-input"/>
+              <p class="text-muted text-sm" style="margin-top:0.3rem;">Leave blank to activate immediately.</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Expiry Date (optional)</label>
+              <input type="datetime-local" id="promoExpiresAt" class="form-input"/>
+              <p class="text-muted text-sm" style="margin-top:0.3rem;">Leave blank for no expiry.</p>
+            </div>
+          </div>
+
+          <!-- Usage limits -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+            <div class="form-group">
+              <label class="form-label">Max Total Uses (optional)</label>
+              <input type="number" id="promoMaxUses" class="form-input" placeholder="e.g. 100" min="1" style="max-width:160px;"/>
+              <p class="text-muted text-sm" style="margin-top:0.3rem;">Total across all users. Blank = unlimited.</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Max Uses Per User (optional)</label>
+              <input type="number" id="promoMaxUsesPerUser" class="form-input" placeholder="e.g. 1" min="1" style="max-width:160px;"/>
+              <p class="text-muted text-sm" style="margin-top:0.3rem;">Per-customer limit. Blank = unlimited.</p>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:0.75rem;">
+            <button class="btn btn-primary" onclick="savePromotion()">Save Promotion</button>
+            <button class="btn btn-ghost" onclick="resetPromoForm()">Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Promotions table -->
+      <div class="card">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <h3>All Promotions</h3>
+          <span class="text-muted text-sm" id="promoCount"></span>
+        </div>
+        <div id="promoLoading" class="empty-state"><div class="spinner"></div><p>Loading…</p></div>
+        <div id="promoEmpty" class="empty-state hidden"><p>No promotions yet. Create one above.</p></div>
+        <div style="overflow-x:auto;">
+          <table class="data-table hidden" id="promoTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Code / Link</th>
+                <th>Discount</th>
+                <th>Scope</th>
+                <th>Validity</th>
+                <th>Uses</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="promoTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
 
     <!-- LOGISTICS LABELS SECTION -->
     <section id="section-logistics" class="admin-section hidden">
@@ -3007,6 +3144,304 @@
       }
     });
   });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PROMOTIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  let allPromosCache = [];
+  // Use the same RENDER_SERVER_URL imported at the top of this module
+  const promoServerUrl = () => (typeof RENDER_SERVER_URL !== "undefined" ? RENDER_SERVER_URL : "");
+  const promoTok       = async () => auth.currentUser?.getIdToken() || null;
+
+  function togglePromoScope() {
+    const val = document.querySelector('input[name="promoScope"]:checked')?.value;
+    const row  = document.getElementById("promoProductRow");
+    if (!row) return;
+    row.style.display = val === "product" ? "block" : "none";
+  }
+
+  // Populate product dropdown in the promo form whenever it opens
+  async function populatePromoProductSelect() {
+    const sel = document.getElementById("promoProductKey");
+    if (!sel || sel.dataset.loaded) return;
+    const tok = await promoTok();
+    if (!tok) return;
+    try {
+      const r = await fetch(`${promoServerUrl()}/db/products`, { headers: { Authorization: `Bearer ${tok}` } });
+      const products = (await r.json()) || {};
+      sel.innerHTML = '<option value="">— Select product —</option>';
+      for (const [key, p] of Object.entries(products)) {
+        const opt = document.createElement("option");
+        opt.value       = key;
+        opt.textContent = `${p.name || key} (NT$${p.priceNTD || 0})`;
+        sel.appendChild(opt);
+      }
+      sel.dataset.loaded = "1";
+    } catch { /* ignore */ }
+  }
+
+  // Keep discount hint in sync
+  document.getElementById("promoDiscountType")?.addEventListener("change", function() {
+    const hint = document.getElementById("promoDiscountHint");
+    if (!hint) return;
+    hint.textContent = this.value === "percent"
+      ? "Enter a % between 1–100"
+      : "Amount in NTD to subtract from price";
+  });
+
+  async function loadPromotions() {
+    document.getElementById("promoLoading").classList.remove("hidden");
+    document.getElementById("promoEmpty").classList.add("hidden");
+    document.getElementById("promoTable")?.classList.add("hidden");
+    await populatePromoProductSelect();
+    const tok = await promoTok();
+    if (!tok) return;
+    try {
+      const r     = await fetch(`${promoServerUrl()}/promotions`, { headers: { Authorization: `Bearer ${tok}` } });
+      const promos = await r.json();
+      allPromosCache = promos || [];
+      renderPromosTable(allPromosCache);
+    } catch (err) {
+      showPromoAlert("error", "Failed to load promotions: " + err.message);
+    }
+  }
+
+  function renderPromosTable(promos) {
+    const loading = document.getElementById("promoLoading");
+    const empty   = document.getElementById("promoEmpty");
+    const table   = document.getElementById("promoTable");
+    const tbody   = document.getElementById("promoTbody");
+    const count   = document.getElementById("promoCount");
+
+    loading.classList.add("hidden");
+    if (!promos.length) { empty.classList.remove("hidden"); table.classList.add("hidden"); return; }
+    empty.classList.add("hidden");
+    table.classList.remove("hidden");
+    count.textContent = `${promos.length} promotion${promos.length !== 1 ? "s" : ""}`;
+
+    tbody.innerHTML = "";
+    for (const p of promos) {
+      const now    = Date.now();
+      const active = p.active && (!p.startsAt || now >= p.startsAt) && (!p.expiresAt || now <= p.expiresAt);
+      const maxed  = p.maxUses && (p.usageCount || 0) >= p.maxUses;
+      const statusLabel = !p.active ? "Disabled"
+        : maxed ? "Limit Reached"
+        : p.expiresAt && now > p.expiresAt ? "Expired"
+        : p.startsAt && now < p.startsAt ? "Scheduled"
+        : "Active";
+      const statusColor = statusLabel === "Active" ? "#22c55e"
+        : statusLabel === "Scheduled" ? "#f59e0b"
+        : "#94a3b8";
+
+      const discountText = p.discountType === "percent"
+        ? `${p.discountValue}% off`
+        : `NT$${p.discountValue} off`;
+
+      const scopeText = p.scope === "all" ? "All products" : `Product: ${p.productKey || "—"}`;
+
+      const validText = (() => {
+        const parts = [];
+        if (p.startsAt)  parts.push("From: " + new Date(p.startsAt).toLocaleDateString());
+        if (p.expiresAt) parts.push("Until: " + new Date(p.expiresAt).toLocaleDateString());
+        return parts.join(" · ") || "No time limit";
+      })();
+
+      const usageText = (() => {
+        const used = p.usageCount || 0;
+        if (p.maxUses) return `${used} / ${p.maxUses}`;
+        return used + " uses";
+      })();
+
+      const promoLink = `${location.origin}/index.html?promo=${p.promoId}`;
+      const codeOrLink = p.code
+        ? `<code style="font-size:0.82rem;background:#f1f5f9;padding:0.2rem 0.4rem;border-radius:4px;">${p.code}</code>`
+        : `<span class="text-muted text-sm">link-only</span>`;
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td style="font-weight:500;">${p.name || "—"}</td>
+        <td>
+          ${codeOrLink}
+          <div style="display:flex;gap:0.4rem;margin-top:0.3rem;flex-wrap:wrap;">
+            ${p.code ? `<button class="btn btn-ghost btn-sm" style="font-size:0.72rem;padding:0.15rem 0.4rem;" onclick="copyPromoCode('${p.code}')">📋 Copy Code</button>` : ""}
+            <button class="btn btn-ghost btn-sm" style="font-size:0.72rem;padding:0.15rem 0.4rem;" onclick="copyPromoLink('${p.promoId}')">🔗 Copy Link</button>
+          </div>
+        </td>
+        <td><span style="font-weight:600;">${discountText}</span></td>
+        <td><span class="text-muted text-sm">${scopeText}</span></td>
+        <td><span class="text-muted text-sm">${validText}</span></td>
+        <td><span class="text-muted text-sm">${usageText}</span></td>
+        <td><span style="font-size:0.8rem;font-weight:600;color:${statusColor};">● ${statusLabel}</span></td>
+        <td>
+          <div style="display:flex;gap:0.35rem;flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-sm" onclick="editPromo('${p.promoId}')">Edit</button>
+            <button class="btn btn-ghost btn-sm" onclick="togglePromoActive('${p.promoId}', ${!p.active})">
+              ${p.active ? "Disable" : "Enable"}
+            </button>
+            <button class="btn btn-danger-ghost btn-sm" onclick="deletePromo('${p.promoId}')">Delete</button>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function copyPromoCode(code) {
+    navigator.clipboard.writeText(code).then(() => showPromoAlert("success", `Copied code: ${code}`));
+  }
+
+  function copyPromoLink(promoId) {
+    const link = `${location.origin}/index.html?promo=${promoId}`;
+    navigator.clipboard.writeText(link).then(() => showPromoAlert("success", "Magic link copied to clipboard!"));
+  }
+
+  async function savePromotion() {
+    const promoId = document.getElementById("editPromoId")?.value;
+    const name    = document.getElementById("promoName")?.value.trim();
+    const discountType  = document.getElementById("promoDiscountType")?.value;
+    const discountValue = parseFloat(document.getElementById("promoDiscountValue")?.value);
+    const scope   = document.querySelector('input[name="promoScope"]:checked')?.value || "all";
+    const productKey = scope === "product" ? document.getElementById("promoProductKey")?.value : null;
+    const code    = document.getElementById("promoCode")?.value.trim().toUpperCase() || null;
+
+    const startsAtRaw  = document.getElementById("promoStartsAt")?.value;
+    const expiresAtRaw = document.getElementById("promoExpiresAt")?.value;
+    const maxUses      = document.getElementById("promoMaxUses")?.value  || null;
+    const maxUsesPerUser = document.getElementById("promoMaxUsesPerUser")?.value || null;
+
+    if (!name)              return showPromoAlert("error", "Promotion name is required.");
+    if (!discountValue || discountValue <= 0) return showPromoAlert("error", "Discount value must be > 0.");
+    if (discountType === "percent" && discountValue > 100) return showPromoAlert("error", "Percent discount cannot exceed 100.");
+    if (scope === "product" && !productKey) return showPromoAlert("error", "Please select a product.");
+
+    const tok = await promoTok();
+    if (!tok) return;
+
+    const body = {
+      name, code: code || null, discountType, discountValue, scope, productKey,
+      startsAt:       startsAtRaw  ? new Date(startsAtRaw).getTime()  : null,
+      expiresAt:      expiresAtRaw ? new Date(expiresAtRaw).getTime() : null,
+      maxUses:        maxUses        ? Number(maxUses)        : null,
+      maxUsesPerUser: maxUsesPerUser ? Number(maxUsesPerUser) : null,
+    };
+
+    try {
+      let r;
+      if (promoId) {
+        r = await fetch(`${promoServerUrl()}/promotions/${promoId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
+          body: JSON.stringify(body),
+        });
+      } else {
+        r = await fetch(`${promoServerUrl()}/promotions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
+          body: JSON.stringify(body),
+        });
+      }
+      const data = await r.json();
+      if (!r.ok) return showPromoAlert("error", data.error || "Save failed");
+      showPromoAlert("success", promoId ? "Promotion updated." : `Promotion created! ${code ? `Code: ${code}` : ""}`);
+      resetPromoForm();
+      await loadPromotions();
+    } catch (err) {
+      showPromoAlert("error", "Network error: " + err.message);
+    }
+  }
+
+  function editPromo(promoId) {
+    const p = allPromosCache.find(x => x.promoId === promoId);
+    if (!p) return;
+    document.getElementById("editPromoId").value   = p.promoId;
+    document.getElementById("promoFormTitle").textContent = "Edit Promotion";
+    document.getElementById("promoName").value     = p.name || "";
+    document.getElementById("promoDiscountType").value  = p.discountType || "percent";
+    document.getElementById("promoDiscountValue").value = p.discountValue || "";
+    document.getElementById("promoCode").value     = p.code || "";
+
+    // Scope
+    document.querySelectorAll('input[name="promoScope"]').forEach(r => { r.checked = r.value === p.scope; });
+    togglePromoScope();
+    if (p.scope === "product") {
+      populatePromoProductSelect().then(() => {
+        document.getElementById("promoProductKey").value = p.productKey || "";
+      });
+    }
+
+    // Dates
+    const toLocal = ts => ts ? new Date(ts - new Date().getTimezoneOffset()*60000).toISOString().slice(0,16) : "";
+    document.getElementById("promoStartsAt").value  = toLocal(p.startsAt);
+    document.getElementById("promoExpiresAt").value = toLocal(p.expiresAt);
+
+    document.getElementById("promoMaxUses").value         = p.maxUses        || "";
+    document.getElementById("promoMaxUsesPerUser").value  = p.maxUsesPerUser  || "";
+
+    // Scroll to form
+    document.querySelector("#section-promotions .card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function togglePromoActive(promoId, active) {
+    const tok = await promoTok();
+    if (!tok) return;
+    try {
+      const r = await fetch(`${promoServerUrl()}/promotions/${promoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tok}` },
+        body: JSON.stringify({ active }),
+      });
+      if (!r.ok) return showPromoAlert("error", "Update failed");
+      await loadPromotions();
+    } catch (err) { showPromoAlert("error", err.message); }
+  }
+
+  async function deletePromo(promoId) {
+    if (!confirm("Delete this promotion? This cannot be undone.")) return;
+    const tok = await promoTok();
+    if (!tok) return;
+    try {
+      const r = await fetch(`${promoServerUrl()}/promotions/${promoId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${tok}` },
+      });
+      if (!r.ok) return showPromoAlert("error", "Delete failed");
+      showPromoAlert("success", "Promotion deleted.");
+      await loadPromotions();
+    } catch (err) { showPromoAlert("error", err.message); }
+  }
+
+  function resetPromoForm() {
+    document.getElementById("editPromoId").value  = "";
+    document.getElementById("promoFormTitle").textContent = "New Promotion";
+    ["promoName","promoDiscountValue","promoCode","promoStartsAt","promoExpiresAt","promoMaxUses","promoMaxUsesPerUser"]
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
+    document.getElementById("promoDiscountType").value = "percent";
+    document.querySelectorAll('input[name="promoScope"]').forEach(r => { r.checked = r.value === "all"; });
+    togglePromoScope();
+  }
+
+  function showPromoAlert(type, msg) {
+    const el = document.getElementById("promoAlert");
+    if (!el) return;
+    el.className = `alert alert-${type === "success" ? "success" : "error"}`;
+    el.textContent = msg;
+    el.classList.remove("hidden");
+    setTimeout(() => el.classList.add("hidden"), 5000);
+  }
+
+  // Expose promo functions to window so inline onclick= attributes can reach them
+  Object.assign(window, {
+    togglePromoScope, loadPromotions, savePromotion, editPromo,
+    togglePromoActive, deletePromo, resetPromoForm, copyPromoCode, copyPromoLink,
+  });
+
+  // Auto-load when the promotions section is opened — patch window.showSection
+  const _origShowSection = window.showSection;
+  window.showSection = function(name, link) {
+    _origShowSection?.(name, link);
+    if (name === "promotions") loadPromotions();
+  };
 
 </script>
 </body>

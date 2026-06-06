@@ -914,6 +914,28 @@ app.post("/ecpay/callback", async (req, res) => {
     return res.send("0|DB write error");
   }
 
+  // ── Record promo usage if a promotion was applied ────────────────────────────
+  if (tradeData.promoId) {
+    try {
+      const promoRef  = db.ref(`promotions/${tradeData.promoId}`);
+      const promoSnap = await promoRef.get();
+      const promo     = promoSnap.val();
+      if (promo) {
+        const curCount   = promo.usageCount    || 0;
+        const curByUid   = promo.usageByUid    || {};
+        const curUserCnt = curByUid[uid]       || 0;
+        await promoRef.update({
+          usageCount:           curCount + 1,
+          [`usageByUid/${uid}`]: curUserCnt + 1,
+        });
+        console.log(`✓ Promo usage recorded: promoId=${tradeData.promoId} uid=${uid} total=${curCount + 1}`);
+      }
+    } catch (err) {
+      console.error("Promo usage update error:", err.message);
+      // Non-fatal — payment already processed
+    }
+  }
+
   // ── Physical product: record order (no auto logistics label creation) ───────
   if (product.hasPhysical && tradeData.deliveryInfo) {
     const deliveryInfo = tradeData.deliveryInfo;
@@ -967,7 +989,8 @@ app.post("/logistics/status-callback", async (req, res) => {
 app.post("/ecpay/create-order", async (req, res) => {
   // storeInfo: for CVS carriers (7-11, FamilyMart, OK, Hi-Life) — set after CVS map selection
   // deliveryInfo: full delivery object (includes deliveryType, plus store or home address info)
-  const { productKey, idToken, storeInfo, deliveryInfo, receiverName, receiverPhone } = req.body;
+  // promoId: optional promotion to apply (validated server-side again before use)
+  const { productKey, idToken, storeInfo, deliveryInfo, receiverName, receiverPhone, promoId } = req.body;
   if (!productKey || !idToken) return res.status(400).json({ error: "Missing productKey or idToken" });
 
   let uid;
@@ -996,8 +1019,46 @@ app.post("/ecpay/create-order", async (req, res) => {
   const shortUID        = uid.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).padEnd(10, "0");
   const merchantTradeNo = `${shortPK}${shortUID}${randSuffix}`;
 
+  // ── Apply promotion (server-side re-validation) ─────────────────────────────
+  let finalPrice    = Math.round(product.priceNTD || 0);
+  let appliedPromo  = null;
+
+  if (promoId) {
+    try {
+      const promoSnap = await db.ref(`promotions/${promoId}`).get();
+      const promo     = promoSnap.val();
+      const now       = Date.now();
+      const userUsage = (promo?.usageByUid || {})[uid] || 0;
+
+      if (
+        promo && promo.active &&
+        (!promo.startsAt  || now >= promo.startsAt) &&
+        (!promo.expiresAt || now <= promo.expiresAt) &&
+        (!promo.maxUses   || (promo.usageCount || 0) < promo.maxUses) &&
+        (!promo.maxUsesPerUser || userUsage < promo.maxUsesPerUser) &&
+        (promo.scope === "all" || promo.productKey === productKey)
+      ) {
+        if (promo.discountType === "percent") {
+          finalPrice = Math.round(finalPrice * (1 - promo.discountValue / 100));
+        } else {
+          finalPrice = Math.max(0, finalPrice - promo.discountValue);
+        }
+        // ECPay requires TotalAmount >= 1
+        finalPrice = Math.max(1, finalPrice);
+        appliedPromo = promo;
+        console.log(`[Promo] Applied promoId=${promoId} → finalPrice=${finalPrice}`);
+      } else {
+        console.warn(`[Promo] promoId=${promoId} failed re-validation — using full price`);
+      }
+    } catch (err) {
+      console.error("[Promo] validation error:", err.message);
+      // Fall through with full price
+    }
+  }
+
   try {
     const tradeEntry = { uid, productKey, createdAt: Date.now(), processed: false };
+    if (appliedPromo) tradeEntry.promoId = promoId;
     // Persist delivery selection so the payment callback can record the order
     if (product.hasPhysical) {
       if (deliveryInfo) {
@@ -1029,7 +1090,7 @@ app.post("/ecpay/create-order", async (req, res) => {
     MerchantTradeNo:   merchantTradeNo,
     MerchantTradeDate: tradeDate,
     PaymentType:       "aio",
-    TotalAmount:       String(Math.round(product.priceNTD || 0)),
+    TotalAmount:       String(finalPrice),
     TradeDesc:         safeName,
     ItemName:          safeName,
     ReturnURL:         `${serverUrl}/ecpay/callback`,
@@ -1683,4 +1744,227 @@ app.get("/logistics/track/:logisticsId", async (req, res) => {
   } catch { /* non-fatal */ }
 
   return res.json({ logisticsId, status, raw: result });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// PROMOTIONS  (promo codes + magic links)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// Firebase schema: promotions/<promoId> = {
+//   name          : string          – admin label
+//   code          : string|null     – promo code (uppercase, or null if link-only)
+//   promoId       : string          – same as the key, embedded for convenience
+//   discountType  : "percent" | "fixed"
+//   discountValue : number          – e.g. 20 (percent) or 100 (NTD)
+//   scope         : "all" | "product"
+//   productKey    : string|null     – required when scope = "product"
+//   active        : boolean
+//   startsAt      : number|null     – ms timestamp, null = no start limit
+//   expiresAt     : number|null     – ms timestamp, null = no expiry
+//   maxUses       : number|null     – total use cap, null = unlimited
+//   maxUsesPerUser: number|null     – per-user cap, null = unlimited
+//   usageCount    : number          – total redeemed (incremented on payment)
+//   usageByUid    : { uid: count }  – per-user usage tracking
+//   createdAt     : number
+//   createdBy     : string          – admin uid
+// }
+
+const promoLimiter = rateLimit({ windowMs: 60_000, max: 60, standardHeaders: true, legacyHeaders: false });
+app.use("/promotions/", promoLimiter);
+
+// ── POST /promotions  (admin: create promotion) ───────────────────────────────
+app.post("/promotions", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  const {
+    name, code, discountType, discountValue,
+    scope, productKey,
+    startsAt, expiresAt, maxUses, maxUsesPerUser,
+  } = req.body;
+
+  if (!name)         return res.status(400).json({ error: "Missing name" });
+  if (!discountType || !["percent", "fixed"].includes(discountType))
+                     return res.status(400).json({ error: "discountType must be percent or fixed" });
+  if (!discountValue || Number(discountValue) <= 0)
+                     return res.status(400).json({ error: "discountValue must be > 0" });
+  if (!scope || !["all", "product"].includes(scope))
+                     return res.status(400).json({ error: "scope must be all or product" });
+  if (scope === "product" && !productKey)
+                     return res.status(400).json({ error: "productKey required when scope=product" });
+  if (discountType === "percent" && Number(discountValue) > 100)
+                     return res.status(400).json({ error: "Percent discount cannot exceed 100" });
+
+  // Normalize code: uppercase, strip spaces; null if blank
+  const normalizedCode = code ? code.toUpperCase().replace(/\s+/g, "") : null;
+
+  // Check code uniqueness if provided
+  if (normalizedCode) {
+    const snap = await db.ref("promotions").orderByChild("code").equalTo(normalizedCode).get();
+    if (snap.val()) return res.status(409).json({ error: "Promo code already exists" });
+  }
+
+  const promoId = newId();
+  const promo = {
+    promoId,
+    name:           name.trim(),
+    code:           normalizedCode,
+    discountType,
+    discountValue:  Number(discountValue),
+    scope,
+    productKey:     scope === "product" ? productKey : null,
+    active:         true,
+    startsAt:       startsAt  ? Number(startsAt)  : null,
+    expiresAt:      expiresAt ? Number(expiresAt) : null,
+    maxUses:        maxUses        ? Number(maxUses)        : null,
+    maxUsesPerUser: maxUsesPerUser ? Number(maxUsesPerUser) : null,
+    usageCount:     0,
+    usageByUid:     {},
+    createdAt:      nowMs(),
+    createdBy:      decoded.uid,
+  };
+
+  try {
+    await db.ref(`promotions/${promoId}`).set(promo);
+    console.log(`✓ Promotion created: ${promoId} code=${normalizedCode || "link-only"} type=${discountType} value=${discountValue}`);
+    return res.json({ ok: true, promoId });
+  } catch (err) {
+    console.error("/promotions POST error:", err);
+    return res.status(500).json({ error: "Database error" });
+  }
+});
+
+// ── GET /promotions  (admin: list all promotions) ─────────────────────────────
+app.get("/promotions", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  try {
+    const snap   = await db.ref("promotions").get();
+    const raw    = snap.val() || {};
+    const promos = Object.values(raw).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return res.json(promos);
+  } catch (err) {
+    console.error("/promotions GET error:", err);
+    return res.status(500).json({ error: "Database error" });
+  }
+});
+
+// ── PATCH /promotions/:promoId  (admin: update active flag or settings) ───────
+app.patch("/promotions/:promoId", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  const { promoId } = req.params;
+  const allowed = ["active","name","expiresAt","startsAt","maxUses","maxUsesPerUser","discountValue","discountType","scope","productKey","code"];
+  const updates = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) updates[key] = req.body[key];
+  }
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nothing to update" });
+  // Normalize code if updating
+  if (updates.code !== undefined) {
+    updates.code = updates.code ? updates.code.toUpperCase().replace(/\s+/g, "") : null;
+  }
+
+  try {
+    await db.ref(`promotions/${promoId}`).update(updates);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("/promotions PATCH error:", err);
+    return res.status(500).json({ error: "Database error" });
+  }
+});
+
+// ── DELETE /promotions/:promoId  (admin only) ─────────────────────────────────
+app.delete("/promotions/:promoId", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
+
+  try {
+    await db.ref(`promotions/${req.params.promoId}`).remove();
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("/promotions DELETE error:", err);
+    return res.status(500).json({ error: "Database error" });
+  }
+});
+
+// ── POST /promotions/validate  (any authenticated user) ───────────────────────
+// Body: { code?, promoId?, productKey, idToken }
+// Returns: { valid: true, promoId, discountType, discountValue, discountedPrice }
+//       or { valid: false, reason: string }
+app.post("/promotions/validate", async (req, res) => {
+  const decoded = await verifyToken(req, res);
+  if (!decoded) return;
+  const uid = decoded.uid;
+
+  const { code, promoId: reqPromoId, productKey } = req.body;
+  if (!code && !reqPromoId) return res.status(400).json({ error: "Provide code or promoId" });
+  if (!productKey)          return res.status(400).json({ error: "Missing productKey" });
+
+  // Load product for its price
+  let product;
+  try {
+    const snap = await db.ref(`products/${productKey}`).get();
+    product = snap.val();
+    if (!product) return res.json({ valid: false, reason: "Product not found" });
+  } catch {
+    return res.status(500).json({ error: "Database error" });
+  }
+
+  // Find the promotion
+  let promo;
+  try {
+    if (reqPromoId) {
+      const snap = await db.ref(`promotions/${reqPromoId}`).get();
+      promo = snap.val();
+    } else {
+      // Look up by code (case-insensitive on our side — codes are stored uppercase)
+      const normalCode = code.toUpperCase().replace(/\s+/g, "");
+      const snap = await db.ref("promotions").orderByChild("code").equalTo(normalCode).get();
+      const found = snap.val();
+      if (found) promo = Object.values(found)[0];
+    }
+  } catch {
+    return res.status(500).json({ error: "Database error" });
+  }
+
+  if (!promo) return res.json({ valid: false, reason: "Invalid promo code" });
+
+  const now = Date.now();
+
+  if (!promo.active)                              return res.json({ valid: false, reason: "This promotion is no longer active" });
+  if (promo.startsAt  && now < promo.startsAt)   return res.json({ valid: false, reason: "This promotion has not started yet" });
+  if (promo.expiresAt && now > promo.expiresAt)  return res.json({ valid: false, reason: "This promotion has expired" });
+  if (promo.maxUses   && (promo.usageCount || 0) >= promo.maxUses)
+                                                  return res.json({ valid: false, reason: "This promotion has reached its usage limit" });
+  if (promo.maxUsesPerUser) {
+    const userUsage = (promo.usageByUid || {})[uid] || 0;
+    if (userUsage >= promo.maxUsesPerUser)        return res.json({ valid: false, reason: "You have already used this promotion the maximum number of times" });
+  }
+  if (promo.scope === "product" && promo.productKey !== productKey)
+                                                  return res.json({ valid: false, reason: "This promotion does not apply to this product" });
+
+  const originalPrice = Number(product.priceNTD) || 0;
+  let discountedPrice;
+  if (promo.discountType === "percent") {
+    discountedPrice = Math.round(originalPrice * (1 - promo.discountValue / 100));
+  } else {
+    discountedPrice = Math.max(0, originalPrice - promo.discountValue);
+  }
+
+  return res.json({
+    valid:          true,
+    promoId:        promo.promoId,
+    name:           promo.name,
+    discountType:   promo.discountType,
+    discountValue:  promo.discountValue,
+    originalPrice,
+    discountedPrice,
+  });
 });
