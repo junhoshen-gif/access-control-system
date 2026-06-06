@@ -461,14 +461,104 @@
       rtEl.className = `metric-value mono latency-${latencyClass}`;
       statEl.textContent = ms < 200 ? "Fast response" : ms < 600 ? "Normal response" : "Slow response";
       card.className = `status-card card-ok`;
+      // Hide log panel if service recovered
+      const panel = document.getElementById(`log-panel-${id}`);
+      if (panel) panel.remove();
     } else {
       badge.textContent = "Degraded";
       badge.className = "service-status-badge badge-error";
       rtEl.textContent = ms !== null ? `${ms} ms` : "Timeout";
       statEl.textContent = "Service may be unavailable";
       card.className = "status-card card-error";
+      // Show log panel for admins
+      if (isAdmin) showDegradedLogPanel(id, card);
     }
   }
+
+  // ── Degraded service log panel ──────────────────────────────────────────────
+  let statusSSE = null;
+  let statusSSELines = [];
+  const STATUS_SSE_MAX = 200;
+
+  function statusTimestamp(ts) {
+    const d = new Date(ts);
+    return d.toLocaleTimeString("en-US", { hour12: false }) + "." + String(d.getMilliseconds()).padStart(3, "0");
+  }
+
+  function statusLineHtml({ ts, level, msg }) {
+    const colors = { log: "#c9d1d9", warn: "#e3b341", error: "#f85149", info: "#58a6ff" };
+    const color = colors[level] || colors.log;
+    const safeMsg = msg.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    return `<div style="color:${color};white-space:pre-wrap;word-break:break-all;font-size:0.75rem;line-height:1.5;"><span style="color:#484f58;user-select:none;">${statusTimestamp(ts)} </span>${safeMsg}</div>`;
+  }
+
+  function showDegradedLogPanel(serviceId, card) {
+    if (document.getElementById(`log-panel-${serviceId}`)) return; // already shown
+    const panel = document.createElement("div");
+    panel.id = `log-panel-${serviceId}`;
+    panel.style.cssText = "margin-top:0.75rem;border-top:1px solid #334155;padding-top:0.75rem;";
+    panel.innerHTML = `
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;">
+        <span style="width:7px;height:7px;border-radius:50%;background:#f85149;flex-shrink:0;" id="sdot-${serviceId}"></span>
+        <span style="font-size:0.72rem;font-weight:600;color:#f85149;">Live Server Logs</span>
+        <button onclick="toggleStatusLog('${serviceId}')" style="margin-left:auto;background:none;border:none;color:#8b949e;cursor:pointer;font-size:0.72rem;">Hide ▲</button>
+      </div>
+      <div id="slog-${serviceId}" style="background:#0d1117;border-radius:6px;padding:0.5rem 0.75rem;height:160px;overflow-y:auto;font-family:'JetBrains Mono',monospace;">
+        <div style="color:#484f58;font-size:0.73rem;">Connecting to log stream…</div>
+      </div>`;
+    card.appendChild(panel);
+    startStatusSSE();
+    // Flush buffered lines into this panel
+    renderStatusLogPanel(serviceId);
+  }
+
+  function renderStatusLogPanel(serviceId) {
+    const el = document.getElementById(`slog-${serviceId}`);
+    if (!el) return;
+    el.innerHTML = statusSSELines.map(statusLineHtml).join("") ||
+      '<div style="color:#484f58;font-size:0.73rem;">No logs yet…</div>';
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function appendStatusLog(entry) {
+    statusSSELines.push(entry);
+    if (statusSSELines.length > STATUS_SSE_MAX) statusSSELines.shift();
+    // Append to all visible panels
+    document.querySelectorAll("[id^='slog-']").forEach(el => {
+      const div = document.createElement("div");
+      div.innerHTML = statusLineHtml(entry);
+      el.appendChild(div.firstChild);
+      while (el.childNodes.length > STATUS_SSE_MAX) el.removeChild(el.firstChild);
+      el.scrollTop = el.scrollHeight;
+    });
+  }
+
+  async function startStatusSSE() {
+    if (statusSSE) return; // already running
+    const user = currentUser;
+    if (!user) return;
+    const idToken = await user.getIdToken();
+    statusSSE = new EventSource(`${ECPAY_SERVER_URL}/logs/stream?token=${encodeURIComponent(idToken)}`);
+    statusSSE.onmessage = (e) => {
+      try { appendStatusLog(JSON.parse(e.data)); } catch {}
+    };
+    statusSSE.onerror = () => {
+      // auto-reconnects; update dot color
+      document.querySelectorAll("[id^='sdot-']").forEach(d => d.style.background = "#f85149");
+    };
+    statusSSE.onopen = () => {
+      document.querySelectorAll("[id^='sdot-']").forEach(d => d.style.background = "#28c840");
+    };
+  }
+
+  window.toggleStatusLog = (serviceId) => {
+    const el = document.getElementById(`slog-${serviceId}`);
+    const btn = el?.previousElementSibling?.querySelector("button");
+    if (!el) return;
+    const hidden = el.style.display === "none";
+    el.style.display = hidden ? "block" : "none";
+    if (btn) btn.textContent = hidden ? "Hide ▲" : "Show ▼";
+  };
 
   // ── Run all checks ─────────────────────────────────────────────────────────
   async function runChecks() {

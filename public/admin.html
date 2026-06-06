@@ -57,11 +57,11 @@
       </a>
       <a href="#section-orders" class="sidebar-item" onclick="showSection('orders', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
-        訂單管理
+        Orders
       </a>
       <a href="#section-logistics" class="sidebar-item" onclick="showSection('logistics', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-        物流標籤
+        Logistics
       </a>
       <a href="#section-log" class="sidebar-item" onclick="showSection('log', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
@@ -181,93 +181,93 @@
     <!-- PRICING SECTION -->
     <section id="section-pricing" class="admin-section hidden">
       <div class="section-header">
-        <h2>定價與商品 Pricing &amp; Products</h2>
-        <p class="text-muted">設定綠界金流商品，讓使用者直接付款取得檔案存取權，無需管理員手動授權。</p>
+        <h2>Pricing &amp; Products</h2>
+        <p class="text-muted">Set up ECPay products so users can purchase file access directly without admin intervention.</p>
       </div>
       <div id="pricingAlert" class="alert hidden"></div>
 
       <!-- Server URL config reminder -->
       <div class="alert alert-info" style="margin-bottom:1rem;background:#EFF6FF;border-color:#BFDBFE;color:#1E40AF;">
-        <strong>⚙️ 伺服器設定提醒：</strong>
-        請確認 <code>server/.env</code> 中的 <code>SERVER_URL</code> 已設為你在 Render.com 部署的伺服器網址（例如 <code>https://fileaccess-ecpay.onrender.com</code>）。
-        ECPay 付款回呼 (ReturnURL) 將指向該伺服器。
+        <strong>⚙️ Server Configuration Reminder:</strong>
+        Make sure <code>SERVER_URL</code> in your Render environment is set to your deployed server URL (e.g. <code>https://fileaccess-ecpay.onrender.com</code>).
+        ECPay payment callbacks (ReturnURL) will point to that server.
       </div>
 
       <!-- Create / Edit product form -->
       <div class="card" style="margin-bottom:1.5rem;">
         <div class="card-header">
-          <h3 id="productFormTitle">新增商品 New Product</h3>
+          <h3 id="productFormTitle">New Product</h3>
         </div>
         <div class="card-body" style="display:grid;gap:1rem;">
           <input type="hidden" id="editProductKey"/>
 
           <div class="form-group">
-            <label class="form-label">商品名稱 Product Name <span class="text-error">*</span></label>
+            <label class="form-label">Product Name <span class="text-error">*</span></label>
             <input type="text" id="productName" class="form-input" placeholder="e.g. 完整電子書 Full E-Book"/>
           </div>
 
           <div class="form-row" style="grid-template-columns:1fr 1fr;">
             <div class="form-group">
-              <label class="form-label">價格（新台幣整數）NTD Price <span class="text-error">*</span></label>
+              <label class="form-label">Price (NTD, integer) <span class="text-error">*</span></label>
               <input type="number" id="productPriceNTD" class="form-input" placeholder="e.g. 299" min="1" style="max-width:180px;"/>
             </div>
             <div class="form-group">
-              <label class="form-label">顯示價格文字 Display Price</label>
+              <label class="form-label">Display Price Text</label>
               <input type="text" id="productPrice" class="form-input" placeholder="e.g. NT$299" style="max-width:180px;"/>
             </div>
           </div>
 
           <div class="form-group">
-            <label class="form-label">付款方式 Payment Method</label>
+            <label class="form-label">Payment Method</label>
             <select id="productPaymentMethod" class="form-input" style="max-width:240px;">
-              <option value="ALL">信用卡 + ATM（全部）</option>
-              <option value="Credit">信用卡 Credit Card only</option>
-              <option value="ATM">ATM 轉帳 only</option>
+              <option value="ALL">Credit Card + ATM (All)</option>
+              <option value="Credit">Credit Card only</option>
+              <option value="ATM">ATM Transfer only</option>
             </select>
           </div>
 
           <div class="form-group">
-            <label class="form-label">ECPay 商店代號 Merchant ID <span class="text-error">*</span></label>
+            <label class="form-label">ECPay Merchant ID <span class="text-error">*</span></label>
             <input type="text" id="productMerchantId" class="form-input" placeholder="e.g. 2000132（測試用）" style="max-width:240px;"/>
-            <p class="text-muted text-sm" style="margin-top:0.3rem;">登入綠界後台 → 系統開發管理 → 廠商資料 → 廠商代號。測試用：<code>2000132</code></p>
+            <p class="text-muted text-sm" style="margin-top:0.3rem;">ECPay merchant backend → API settings → Merchant ID. Sandbox: <code>2000132</code></p>
           </div>
 
           <div class="form-group">
             <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
               <input type="checkbox" id="productUseSandbox" style="cursor:pointer;"/>
-              <span class="form-label" style="margin:0;">使用測試環境 Use Sandbox (stage)</span>
+              <span class="form-label" style="margin:0;">Use Sandbox (stage environment)</span>
             </label>
-            <p class="text-muted text-sm">勾選後付款頁面會指向綠界測試環境，上線前記得取消勾選。</p>
+            <p class="text-muted text-sm">When checked, payments go to the ECPay sandbox. Uncheck before going live.</p>
           </div>
 
           <div class="form-group">
-            <label class="form-label">解鎖的檔案 Files unlocked <span class="text-error">*</span></label>
+            <label class="form-label">Files Unlocked <span class="text-error">*</span></label>
             <div id="productFileCheckboxes" class="checkbox-list">
               <p class="text-muted text-sm">Loading files…</p>
             </div>
           </div>
 
           <div class="form-group">
-            <label class="form-label">存取期限 Access Duration</label>
+            <label class="form-label">Access Duration</label>
             <div style="display:flex;align-items:center;gap:0.75rem;">
               <input type="number" id="productDuration" class="form-input" placeholder="空白 = 永久" min="1" style="max-width:180px;"/>
-              <span class="text-muted">天 days（空白 = 永久 permanent）</span>
+              <span class="text-muted">days (leave blank = permanent)</span>
             </div>
           </div>
 
           <!-- ── Preview section ─────────────────────────────────────── -->
           <div class="form-group" style="border-top:1px solid var(--color-border);padding-top:1rem;">
-            <label class="form-label">免費預覽 Free Preview</label>
-            <p class="text-muted text-sm" style="margin-bottom:0.75rem;">選擇一個檔案作為預覽，並設定最多可預覽的頁數（PDF）。使用者不需購買即可預覽。</p>
+            <label class="form-label">Free Preview</label>
+            <p class="text-muted text-sm" style="margin-bottom:0.75rem;">Select a file to offer as a free preview and set the max pages visible (PDF). Users can preview without purchasing.</p>
             <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;">
               <div class="form-group" style="margin:0;flex:1;min-width:200px;">
-                <label class="form-label text-sm">預覽檔案 Preview File</label>
+                <label class="form-label text-sm">Preview File</label>
                 <select id="productPreviewFileId" class="form-input">
-                  <option value="">— 不設定預覽 —</option>
+                  <option value="">— No preview —</option>
                 </select>
               </div>
               <div class="form-group" style="margin:0;min-width:130px;">
-                <label class="form-label text-sm">最多頁數 Page Limit</label>
+                <label class="form-label text-sm">Page Limit</label>
                 <input type="number" id="productPreviewPages" class="form-input" placeholder="e.g. 3" min="1" max="50"/>
               </div>
             </div>
@@ -275,12 +275,12 @@
 
           <!-- ── Product images ──────────────────────────────────────── -->
           <div class="form-group" style="border-top:1px solid var(--color-border);padding-top:1rem;">
-            <label class="form-label">商品圖片 Product Images <span class="text-muted text-sm">(最多 10 張 · PNG/JPG/GIF/WEBP)</span></label>
-            <p class="text-muted text-sm" style="margin-bottom:0.75rem;">圖片會顯示在購買頁的商品卡片上。</p>
+            <label class="form-label">Product Images <span class="text-muted text-sm">(max 10 · PNG/JPG/GIF/WEBP)</span></label>
+            <p class="text-muted text-sm" style="margin-bottom:0.75rem;">Images appear on the product card on the store page.</p>
             <div id="productImagesPreview" style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;"></div>
             <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
               <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
-                ＋ 上傳圖片
+                + Upload Image
                 <input type="file" id="productImageInput" accept="image/png,image/jpeg,image/gif,image/webp" multiple style="display:none;" onchange="handleProductImageSelect(this)"/>
               </label>
               <span id="productImageCount" class="text-muted text-sm">0 / 10</span>
@@ -291,48 +291,48 @@
           <div class="form-group" style="border-top:1px solid var(--color-border);padding-top:1rem;">
             <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
               <input type="checkbox" id="productHasPhysical" style="cursor:pointer;" onchange="togglePhysicalFields(this.checked)"/>
-              <span class="form-label" style="margin:0;">🚚 包含實體商品寄送</span>
+              <span class="form-label" style="margin:0;">🚚 Includes physical shipment</span>
             </label>
-            <p class="text-muted text-sm">勾選後，買家結帳時需選擇配送方式，付款後管理員在「物流」頁面手動建立出貨標籤。</p>
+            <p class="text-muted text-sm">When checked, buyers must choose a delivery method at checkout. Admin creates the shipping label in the Logistics tab after payment.</p>
           </div>
 
           <div id="physicalFields" style="display:none;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;flex-direction:column;gap:0.85rem;">
             <div class="form-group" style="margin:0;">
-              <label class="form-label text-sm">可選配送方式 Available Delivery Options</label>
+              <label class="form-label text-sm">Available Delivery Options</label>
               <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:0.35rem;">
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
                   <input type="checkbox" name="logisticsSubType" value="UNIMART" checked/> 7-ELEVEN
                 </label>
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="FAMI"/> 全家 FamilyMart
+                  <input type="checkbox" name="logisticsSubType" value="FAMI"/> FamilyMart
                 </label>
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
                   <input type="checkbox" name="logisticsSubType" value="OKMART"/> OK mart
                 </label>
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="HILIFE"/> 萊爾富 Hi-Life
+                  <input type="checkbox" name="logisticsSubType" value="HILIFE"/> Hi-Life
                 </label>
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="TCAT"/> 黑貓宅急便 Tcat
+                  <input type="checkbox" name="logisticsSubType" value="TCAT"/> TCAT (Black Cat)
                 </label>
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="POST"/> 中華郵政
+                  <input type="checkbox" name="logisticsSubType" value="POST"/> Chunghwa Post
                 </label>
               </div>
-              <p class="text-muted text-sm" style="margin-top:0.35rem;">超商取貨：買家選門市；黑貓/郵政：買家填寫宅配地址。</p>
+              <p class="text-muted text-sm" style="margin-top:0.35rem;">CVS pickup: buyer selects a store. TCAT/POST: buyer enters a home delivery address.</p>
             </div>
             <div class="form-group" style="margin:0;">
               <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
                 <input type="checkbox" id="productLogisticsSandbox" checked style="cursor:pointer;"/>
-                <span class="form-label text-sm" style="margin:0;">使用物流測試環境 Logistics Sandbox</span>
+                <span class="form-label text-sm" style="margin:0;">Use Logistics Sandbox</span>
               </label>
-              <p class="text-muted text-sm">上線前請取消勾選。</p>
+              <p class="text-muted text-sm">Uncheck before going live.</p>
             </div>
           </div>
 
           <div style="display:flex;gap:0.75rem;">
-            <button class="btn btn-primary" onclick="saveProduct()">儲存商品 Save</button>
-            <button class="btn btn-ghost" onclick="resetProductForm()">清除 Clear</button>
+            <button class="btn btn-primary" onclick="saveProduct()">Save Product</button>
+            <button class="btn btn-ghost" onclick="resetProductForm()">Clear</button>
           </div>
         </div>
       </div>
@@ -340,13 +340,13 @@
       <!-- Products list -->
       <div class="card">
         <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
-          <h3>商品列表 Products</h3>
+          <h3>Products</h3>
           <span class="text-muted text-sm" id="productCount"></span>
         </div>
         <div id="productsLoading" class="empty-state" style="padding:2rem;"><div class="spinner"></div><p>Loading…</p></div>
-        <div id="productsEmpty" class="empty-state hidden" style="padding:2rem;"><p>尚無商品。請在上方新增。</p></div>
+        <div id="productsEmpty" class="empty-state hidden" style="padding:2rem;"><p>No products yet. Add one above.</p></div>
         <table class="data-table hidden" id="productsTable">
-          <thead><tr><th>名稱</th><th>檔案</th><th>期限</th><th>價格</th><th>付款方式</th><th>環境</th><th>操作</th></tr></thead>
+          <thead><tr><th>Name</th><th>Files</th><th>Duration</th><th>Price</th><th>Payment</th><th>Env</th><th>Actions</th></tr></thead>
           <tbody id="productsTableBody"></tbody>
         </table>
       </div>
@@ -354,13 +354,13 @@
       <!-- Purchases sub-section -->
       <div class="card" style="margin-top:1.5rem;">
         <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
-          <h3>購買記錄 Purchase History</h3>
+          <h3>Purchase History</h3>
           <span class="text-muted text-sm" id="purchaseCount"></span>
         </div>
         <div id="purchasesLoading" class="empty-state" style="padding:2rem;"><div class="spinner"></div><p>Loading…</p></div>
-        <div id="purchasesEmpty" class="empty-state hidden" style="padding:2rem;"><p>尚無購買記錄。</p></div>
+        <div id="purchasesEmpty" class="empty-state hidden" style="padding:2rem;"><p>No purchases yet.</p></div>
         <table class="data-table hidden" id="purchasesTable">
-          <thead><tr><th>使用者 UID</th><th>商品</th><th>檔案</th><th>金額</th><th>付款方式</th><th>日期</th><th>到期</th><th>操作</th></tr></thead>
+          <thead><tr><th>User UID</th><th>Product</th><th>Files</th><th>Amount</th><th>Payment</th><th>Date</th><th>Expires</th><th>Actions</th></tr></thead>
           <tbody id="purchasesTableBody"></tbody>
         </table>
       </div>
@@ -370,32 +370,32 @@
     <section id="section-orders" class="admin-section hidden">
       <div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
         <div>
-          <h2>📋 訂單管理 Orders</h2>
-          <p class="text-muted">付款成功的實體商品訂單。可更新狀態或連結物流標籤。</p>
+          <h2>📋 Orders Orders</h2>
+          <p class="text-muted">Physical product orders from successful payments. Update status or link a logistics label.</p>
         </div>
         <button class="btn btn-ghost btn-sm" onclick="loadOrders()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          重新整理
+          Refresh
         </button>
       </div>
 
       <div id="ordersAlert" class="alert hidden" style="margin-bottom:1rem;"></div>
-      <div id="ordersLoading" class="empty-state"><div class="spinner"></div><p>載入中…</p></div>
-      <div id="ordersEmpty" class="empty-state hidden"><p>尚無訂單。</p></div>
+      <div id="ordersLoading" class="empty-state"><div class="spinner"></div><p>Loading…</p></div>
+      <div id="ordersEmpty" class="empty-state hidden"><p>No orders yet.</p></div>
 
       <div style="overflow-x:auto;">
         <table class="data-table hidden" id="ordersTable">
           <thead>
             <tr>
-              <th>訂單 Key</th>
-              <th>買家 UID</th>
-              <th>商品</th>
-              <th>配送方式 / 地址</th>
-              <th>收件人</th>
-              <th>狀態</th>
-              <th>取貨編號</th>
-              <th>建立時間</th>
-              <th>操作</th>
+              <th>Order Key</th>
+              <th>Buyer UID</th>
+              <th>Product</th>
+              <th>Delivery</th>
+              <th>Receiver</th>
+              <th>Status</th>
+              <th>CVS Payment No.</th>
+              <th>Created</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="ordersTbody"></tbody>
@@ -408,7 +408,7 @@
       <div class="modal-overlay" onclick="closeOrderStatusModal()"></div>
       <div class="modal-panel" style="max-width:480px;width:90%;">
         <div class="modal-header">
-          <h3>更新訂單狀態</h3>
+          <h3>Update Order Status</h3>
           <button class="btn btn-ghost" onclick="closeOrderStatusModal()">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
@@ -416,31 +416,31 @@
         <div style="padding:1.5rem;display:flex;flex-direction:column;gap:1rem;">
           <input type="hidden" id="orderStatusKey"/>
           <div class="form-group">
-            <label class="form-label">狀態 Status</label>
+            <label class="form-label">Status</label>
             <select id="orderStatusSelect" class="form-input">
-              <option value="pending">待處理 Pending</option>
-              <option value="processing">處理中 Processing</option>
-              <option value="shipped">已出貨 Shipped</option>
-              <option value="completed">已完成 Completed</option>
-              <option value="cancelled">已取消 Cancelled</option>
+              <option value="pending">Pending</option>
+              <option value="processing">Processing</option>
+              <option value="shipped">Shipped</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">連結物流標籤 ID（選填）</label>
+            <label class="form-label">Link Logistics Label ID (optional)</label>
             <input type="text" id="orderLabelId" class="form-input" placeholder="logistics_labels 中的 key"/>
-            <p class="text-muted text-sm" style="margin-top:0.3rem;">填入後，系統會將取貨編號同步顯示給買家。</p>
+            <p class="text-muted text-sm" style="margin-top:0.3rem;">Once linked, the CVS payment number will be shown to the buyer.</p>
           </div>
           <div class="form-group">
-            <label class="form-label">取貨／追蹤編號（選填）</label>
+            <label class="form-label">Pickup / Tracking No. (optional)</label>
             <input type="text" id="orderCvsPaymentNo" class="form-input" placeholder="CVS payment no. 或物流追蹤號"/>
           </div>
           <div class="form-group">
-            <label class="form-label">備註（選填）</label>
+            <label class="form-label">Tracking Note (optional)</label>
             <input type="text" id="orderTrackingNote" class="form-input" placeholder="e.g. 已寄出，預計 2-3 天到達"/>
           </div>
           <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
-            <button class="btn btn-ghost" onclick="closeOrderStatusModal()">取消</button>
-            <button class="btn btn-primary" onclick="saveOrderStatus()">儲存</button>
+            <button class="btn btn-ghost" onclick="closeOrderStatusModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveOrderStatus()">Save</button>
           </div>
         </div>
       </div>
@@ -450,12 +450,12 @@
     <section id="section-logistics" class="admin-section hidden">
       <div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
         <div>
-          <h2>🚚 物流標籤 Logistics</h2>
-          <p class="text-muted">手動向綠界建立出貨標籤，並可連結訂單讓買家追蹤。</p>
+          <h2>🚚 Logistics Logistics</h2>
+          <p class="text-muted">Manually create ECPay shipping labels and link them to orders.</p>
         </div>
         <button class="btn btn-ghost btn-sm" onclick="loadLogisticsLabels()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          重新整理
+          Refresh
         </button>
       </div>
 
@@ -463,87 +463,87 @@
 
       <!-- Create label form -->
       <div class="card" style="margin-bottom:1.5rem;">
-        <div class="card-header"><h3>建立出貨標籤 Create Label</h3></div>
+        <div class="card-header"><h3>Create Shipping Label</h3></div>
         <div class="card-body" style="display:grid;gap:1rem;padding:1.25rem;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
             <div class="form-group">
-              <label class="form-label">配送類型 <span class="text-error">*</span></label>
+              <label class="form-label">Delivery Type <span class="text-error">*</span></label>
               <select id="labelLogisticsType" class="form-input" onchange="onLabelTypeChange()">
-                <option value="CVS">超商取貨 CVS</option>
-                <option value="HOME">宅配 Home Delivery</option>
+                <option value="CVS">CVS Pickup</option>
+                <option value="HOME">Home Delivery</option>
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">配送商 Sub-type <span class="text-error">*</span></label>
+              <label class="form-label">Carrier <span class="text-error">*</span></label>
               <select id="labelLogisticsSubType" class="form-input" onchange="onLabelSubTypeChange()">
-                <option value="UNIMART">7-ELEVEN 統一超商</option>
-                <option value="FAMI">全家 FamilyMart</option>
+                <option value="UNIMART">7-ELEVEN</option>
+                <option value="FAMI">FamilyMart</option>
                 <option value="OKMART">OK mart</option>
-                <option value="HILIFE">萊爾富 Hi-Life</option>
-                <option value="TCAT">黑貓宅急便 Tcat</option>
-                <option value="POST">中華郵政</option>
+                <option value="HILIFE">Hi-Life</option>
+                <option value="TCAT">TCAT (Black Cat)</option>
+                <option value="POST">Chunghwa Post</option>
               </select>
             </div>
           </div>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
             <div class="form-group">
-              <label class="form-label">收件人姓名 <span class="text-error">*</span></label>
+              <label class="form-label">Receiver Name <span class="text-error">*</span></label>
               <input type="text" id="labelReceiverName" class="form-input" placeholder="真實姓名"/>
             </div>
             <div class="form-group">
-              <label class="form-label">收件人手機 <span class="text-error">*</span></label>
+              <label class="form-label">Receiver Phone <span class="text-error">*</span></label>
               <input type="text" id="labelReceiverPhone" class="form-input" placeholder="09xxxxxxxx"/>
             </div>
           </div>
 
           <div id="labelCvsStoreRow" class="form-group">
-            <label class="form-label">超商門市 ID（選填）</label>
+            <label class="form-label">CVS Store ID (optional)</label>
             <input type="text" id="labelCvsStoreId" class="form-input" placeholder="CVS Store ID"/>
-            <p class="text-muted text-sm" style="margin-top:0.3rem;">若不填，ECPay 會自動指派，或可先透過 CVS map 取得。</p>
+            <p class="text-muted text-sm" style="margin-top:0.3rem;">If left blank, ECPay will auto-assign a store, or use the CVS map to select one.</p>
           </div>
 
           <div id="labelAddressRow" class="form-group" style="display:none;">
-            <label class="form-label">收件地址 <span class="text-error">*</span></label>
+            <label class="form-label">Receiver Address <span class="text-error">*</span></label>
             <input type="text" id="labelReceiverAddress" class="form-input" placeholder="全址（含縣市鄉鎮）"/>
           </div>
 
           <div id="labelZipRow" class="form-group" style="display:none;">
-            <label class="form-label">郵遞區號（選填）</label>
+            <label class="form-label">Postal Code (optional)</label>
             <input type="text" id="labelReceiverZip" class="form-input" placeholder="e.g. 100" style="max-width:120px;"/>
           </div>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
             <div class="form-group">
-              <label class="form-label">商品名稱 <span class="text-error">*</span></label>
+              <label class="form-label">Goods Name <span class="text-error">*</span></label>
               <input type="text" id="labelGoodsName" class="form-input" placeholder="e.g. 精裝書"/>
             </div>
             <div class="form-group">
-              <label class="form-label">商品金額 (NTD) <span class="text-error">*</span></label>
+              <label class="form-label">Amount (NTD) <span class="text-error">*</span></label>
               <input type="number" id="labelGoodsAmount" class="form-input" placeholder="e.g. 299" min="1"/>
             </div>
           </div>
 
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
             <div class="form-group">
-              <label class="form-label">連結訂單 Key（選填）</label>
+              <label class="form-label">Link Order Key (optional)</label>
               <div style="display:flex;gap:0.5rem;align-items:center;">
                 <input type="text" id="labelOrderKey" class="form-input" placeholder="orders/ 中的訂單 key" style="flex:1;"/>
-                <button class="btn btn-ghost btn-sm" onclick="loadFromOrder()" title="從訂單帶入資料" style="white-space:nowrap;">📋 帶入訂單</button>
+                <button class="btn btn-ghost btn-sm" onclick="loadFromOrder()" title="Load from order" style="white-space:nowrap;">📋 Load from Order</button>
               </div>
-              <p class="text-muted text-sm" style="margin-top:0.3rem;">填入訂單 Key 後點「帶入訂單」可自動填入收件資訊。</p>
+              <p class="text-muted text-sm" style="margin-top:0.3rem;">Enter an order key and click Load to auto-fill receiver info.</p>
             </div>
             <div class="form-group">
               <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;margin-top:1.5rem;">
                 <input type="checkbox" id="labelUseSandbox" checked style="cursor:pointer;"/>
-                <span class="form-label" style="margin:0;">使用測試環境 Sandbox</span>
+                <span class="form-label" style="margin:0;">Use Sandbox</span>
               </label>
             </div>
           </div>
 
           <div style="display:flex;gap:0.75rem;">
-            <button class="btn btn-primary" onclick="createLogisticsLabel()">建立標籤 Create Label</button>
-            <button class="btn btn-ghost" onclick="resetLabelForm()">清除 Clear</button>
+            <button class="btn btn-primary" onclick="createLogisticsLabel()">Create Label</button>
+            <button class="btn btn-ghost" onclick="resetLabelForm()">Clear</button>
           </div>
         </div>
       </div>
@@ -551,23 +551,23 @@
       <!-- Labels table -->
       <div class="card">
         <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
-          <h3>標籤列表 Labels</h3>
+          <h3>Labels</h3>
           <span class="text-muted text-sm" id="labelsCount"></span>
         </div>
-        <div id="labelsLoading" class="empty-state"><div class="spinner"></div><p>載入中…</p></div>
-        <div id="labelsEmpty" class="empty-state hidden"><p>尚無標籤。</p></div>
+        <div id="labelsLoading" class="empty-state"><div class="spinner"></div><p>Loading…</p></div>
+        <div id="labelsEmpty" class="empty-state hidden"><p>No labels yet.</p></div>
         <div style="overflow-x:auto;">
           <table class="data-table hidden" id="labelsTable">
             <thead>
               <tr>
-                <th>物流單號</th>
-                <th>類型</th>
-                <th>收件人</th>
-                <th>取貨編號</th>
-                <th>連結訂單</th>
-                <th>狀態</th>
-                <th>建立時間</th>
-                <th>操作</th>
+                <th>Logistics ID</th>
+                <th>Type</th>
+                <th>Receiver</th>
+                <th>CVS Payment No.</th>
+                <th>Order</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="labelsTbody"></tbody>
@@ -618,7 +618,7 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
         <span class="text-muted text-sm" id="logCount"></span>
         <div style="display:flex;gap:0.5rem;">
-          <button class="btn btn-ghost btn-sm" onclick="clearOldLogs()" title="刪除 90 天以前的記錄">🗑 清除 90 天前</button>
+          <button class="btn btn-ghost btn-sm" onclick="clearOldLogs()" title="Delete logs older than 90 days">🗑 Clear 90-day-old</button>
           <button class="btn btn-danger-ghost btn-sm" onclick="confirmClearLog()">Clear all logs</button>
         </div>
       </div>
@@ -680,7 +680,7 @@
       <div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
         <div>
           <h2>🛡 Security Center</h2>
-          <p class="text-muted">即時安全性監控 · 每次進入自動刷新</p>
+          <p class="text-muted">Real-time security monitor · Refreshes on each visit</p>
         </div>
         <div style="display:flex;gap:0.5rem;align-items:center;">
           <span class="text-muted text-sm" id="secLastChecked"></span>
@@ -699,22 +699,22 @@
         <div class="sec-stat-card" id="scard-logins">
           <div class="sec-stat-icon">🔑</div>
           <div class="sec-stat-val" id="sval-logins">—</div>
-          <div class="sec-stat-label">24h 登入次數</div>
+          <div class="sec-stat-label">Logins (24h)</div>
         </div>
         <div class="sec-stat-card" id="scard-failures">
           <div class="sec-stat-icon">⚠️</div>
           <div class="sec-stat-val" id="sval-failures">—</div>
-          <div class="sec-stat-label">異常登入偵測</div>
+          <div class="sec-stat-label">Anomalies Detected</div>
         </div>
         <div class="sec-stat-card" id="scard-highRisk">
           <div class="sec-stat-icon">🔥</div>
           <div class="sec-stat-val" id="sval-highRisk">—</div>
-          <div class="sec-stat-label">24h 高風險操作</div>
+          <div class="sec-stat-label">High-risk actions (24h)</div>
         </div>
         <div class="sec-stat-card" id="scard-activeUsers">
           <div class="sec-stat-icon">👤</div>
           <div class="sec-stat-val" id="sval-activeUsers">—</div>
-          <div class="sec-stat-label">活躍用戶（1h）</div>
+          <div class="sec-stat-label">Active users (1h)</div>
         </div>
       </div>
 
@@ -724,7 +724,7 @@
         <!-- Login anomaly panel -->
         <div class="sec-panel">
           <div class="sec-panel-header">
-            <span>🔍 登入異常偵測</span>
+            <span>🔍 Login Anomaly Detection</span>
             <span class="badge" id="secAnomalyBadge"></span>
           </div>
           <div id="secAnomalyList" class="sec-panel-body">
@@ -735,7 +735,7 @@
         <!-- Active sessions panel -->
         <div class="sec-panel">
           <div class="sec-panel-header">
-            <span>👥 近期活躍 Sessions</span>
+            <span>👥 Recent Active Sessions</span>
             <span class="text-muted text-sm" id="secSessionCount"></span>
           </div>
           <div id="secSessionList" class="sec-panel-body">
@@ -748,8 +748,8 @@
       <!-- ── DB Rules status ── -->
       <div class="sec-panel" style="margin-bottom:1.25rem;">
         <div class="sec-panel-header">
-          <span>🗄 Firebase Database Rules 狀態</span>
-          <span class="badge badge-success" id="secRulesBadge">檢查中…</span>
+          <span>🗄 Firebase Database Rules</span>
+          <span class="badge badge-success" id="secRulesBadge">Checking…</span>
         </div>
         <div id="secRulesList" style="padding:0.75rem 1rem;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.5rem;"></div>
       </div>
@@ -757,8 +757,8 @@
       <!-- ── High-risk ops ── -->
       <div class="sec-panel">
         <div class="sec-panel-header">
-          <span>🔥 近期高風險操作記錄</span>
-          <span class="text-muted text-sm">最近 50 筆</span>
+          <span>🔥 Recent High-Risk Actions</span>
+          <span class="text-muted text-sm">Last 50</span>
         </div>
         <div id="secHighRiskList" class="sec-panel-body">
           <div class="spinner" style="margin:1.5rem auto;display:block;width:20px;height:20px;"></div>
@@ -902,14 +902,14 @@
   <div class="modal-overlay" onclick="closePurchaseDetail()"></div>
   <div class="modal-panel" style="max-width:520px;width:90%;">
     <div class="modal-header">
-      <h3>購買詳情 Purchase Detail</h3>
+      <h3>Purchase Detail</h3>
       <button class="btn btn-ghost" onclick="closePurchaseDetail()">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <div style="padding:1.5rem;" id="purchaseDetailBody"></div>
     <div style="padding:0 1.5rem 1.5rem;display:flex;justify-content:flex-end;gap:0.75rem;">
-      <button class="btn btn-ghost" onclick="closePurchaseDetail()">關閉</button>
+      <button class="btn btn-ghost" onclick="closePurchaseDetail()">Close</button>
       <button class="btn btn-sm" id="purchaseDetailRefundBtn" style="background:#FEE2E2;color:#DC2626;border:1px solid #FECACA;"></button>
     </div>
   </div>
@@ -1048,6 +1048,7 @@
     document.getElementById("userAvatar").textContent = (user.displayName || user.email || "A")[0].toUpperCase();
     initAdmin();
     startSessionTimeout();
+    termConnect(); // start streaming immediately so logs buffer even when tab is not open
   });
 
   document.getElementById("signOutBtn").addEventListener("click", async () => {
@@ -1074,9 +1075,9 @@
         background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;border-radius:8px;padding:1rem 1.5rem;
         z-index:99999;display:flex;align-items:center;gap:1rem;box-shadow:0 4px 20px rgba(0,0,0,0.15);
         font-size:0.875rem;font-family:Inter,sans-serif;`;
-      sessionToastEl.innerHTML = `⚠️ 您已閒置 1 小時 50 分鐘，10 分鐘後將自動登出。
+      sessionToastEl.innerHTML = `⚠️ You have been idle for 1h 50min. You will be signed out in 10 minutes.
         <button onclick="resetSessionTimers()" style="background:#F59E0B;color:white;border:none;
-        border-radius:6px;padding:0.35rem 0.85rem;cursor:pointer;font-size:0.8rem;">繼續使用</button>`;
+        border-radius:6px;padding:0.35rem 0.85rem;cursor:pointer;font-size:0.8rem;">Stay signed in</button>`;
       document.body.appendChild(sessionToastEl);
     }, SESSION_WARNING_MS);
 
@@ -1114,8 +1115,7 @@
     if (name === "storage")   loadStorage();
     if (name === "orders")    loadOrders();
     if (name === "logistics") loadLogisticsLabels();
-    if (name === "terminal")  termConnect();
-    else                      termDisconnect();
+    if (name === "terminal")  termRender(); // flush buffered lines into view
   };
 
   // ── Physical product form toggle ─────────────────────────────────────────
@@ -1129,11 +1129,11 @@
   // ════════════════════════════════════════════════════════════════════════
 
   const ORDER_STATUS_LABELS = {
-    pending:    { label: "待處理", color: "#F59E0B", bg: "#FFFBEB" },
-    processing: { label: "處理中", color: "#3B82F6", bg: "#EFF6FF" },
-    shipped:    { label: "已出貨", color: "#8B5CF6", bg: "#F5F3FF" },
-    completed:  { label: "已完成", color: "#10B981", bg: "#ECFDF5" },
-    cancelled:  { label: "已取消", color: "#6B7280", bg: "#F9FAFB" },
+    pending:    { label: "Pending",    color: "#F59E0B", bg: "#FFFBEB" },
+    processing: { label: "Processing", color: "#3B82F6", bg: "#EFF6FF" },
+    shipped:    { label: "Shipped",    color: "#8B5CF6", bg: "#F5F3FF" },
+    completed:  { label: "Completed",  color: "#10B981", bg: "#ECFDF5" },
+    cancelled:  { label: "Cancelled",  color: "#6B7280", bg: "#F9FAFB" },
   };
 
   let allOrdersCache = [];
@@ -1155,7 +1155,7 @@
     } catch (err) {
       document.getElementById("ordersLoading").classList.add("hidden");
       const alertEl = document.getElementById("ordersAlert");
-      alertEl.textContent = "載入失敗：" + err.message;
+      alertEl.textContent = "Failed to load: " + err.message;
       alertEl.className   = "alert alert-error";
       alertEl.classList.remove("hidden");
       return;
@@ -1182,8 +1182,8 @@
       // Delivery info summary
       const di = o.deliveryInfo || {};
       const deliveryLabel = {
-        UNIMART: "7-ELEVEN", FAMI: "全家", OKMART: "OK mart",
-        HILIFE: "萊爾富", TCAT: "黑貓宅配", POST: "中華郵政"
+        UNIMART: "7-ELEVEN", FAMI: "FamilyMart", OKMART: "OK mart",
+        HILIFE: "Hi-Life", TCAT: "TCAT", POST: "Chunghwa Post"
       }[di.deliveryType || o.deliveryType] || di.deliveryType || o.deliveryType || "—";
       const deliveryDetail = di.CVSStoreName
         ? `${di.CVSStoreName} <span style="color:#64748B;font-size:0.75rem;">${escHtml(di.CVSAddress || "")}</span>`
@@ -1202,7 +1202,7 @@
         <td style="font-family:monospace;font-size:0.82rem;font-weight:600;">${escHtml(o.cvsPaymentNo || "—")}</td>
         <td style="font-size:0.78rem;white-space:nowrap;">${date}</td>
         <td>
-          <button class="btn btn-ghost btn-xs" onclick="openOrderStatusModal('${escHtml(o.key)}')">✏️ 更新</button>
+          <button class="btn btn-ghost btn-xs" onclick="openOrderStatusModal('${escHtml(o.key)}')">✏️ Edit</button>
         </td>
       </tr>`;
     }).join("");
@@ -1247,7 +1247,7 @@
         renderOrdersTable(allOrdersCache);
       }
     } catch (err) {
-      alert("更新失敗：" + err.message);
+      alert("Update failed: " + err.message);
     }
   };
 
@@ -1307,11 +1307,11 @@
     const orderKey         = document.getElementById("labelOrderKey").value.trim() || null;
     const useSandbox       = document.getElementById("labelUseSandbox").checked;
 
-    if (!receiverName)  { showLogisticsAlert("請填寫收件人姓名。", "error"); return; }
-    if (!receiverPhone) { showLogisticsAlert("請填寫收件人手機。", "error"); return; }
-    if (!goodsName)     { showLogisticsAlert("請填寫商品名稱。", "error"); return; }
-    if (!goodsAmount)   { showLogisticsAlert("請填寫商品金額。", "error"); return; }
-    if (logisticsType === "HOME" && !receiverAddress) { showLogisticsAlert("宅配需填寫收件地址。", "error"); return; }
+    if (!receiverName)  { showLogisticsAlert("Please enter a receiver name.", "error"); return; }
+    if (!receiverPhone) { showLogisticsAlert("Please enter a receiver phone.", "error"); return; }
+    if (!goodsName)     { showLogisticsAlert("Please enter a goods name.", "error"); return; }
+    if (!goodsAmount)   { showLogisticsAlert("Please enter a goods amount.", "error"); return; }
+    if (logisticsType === "HOME" && !receiverAddress) { showLogisticsAlert("Home delivery requires a receiver address.", "error"); return; }
 
     const body = {
       logisticsType, logisticsSubType,
@@ -1331,24 +1331,24 @@
       });
       const data = await resp.json();
       if (!resp.ok) {
-        const rawDetail = data.raw ? `\n原始回應：${data.raw}` : "";
-        showLogisticsAlert(`建立失敗：${data.error || resp.statusText}${rawDetail}`, "error");
+        const rawDetail = data.raw ? `\nRaw response: ${data.raw}` : "";
+        showLogisticsAlert(`Failed to create: ${data.error || resp.statusText}${rawDetail}`, "error");
         return;
       }
-      showLogisticsAlert(`✓ 標籤建立成功！取貨編號：${data.cvsPaymentNo || data.allPayLogisticsID}`, "success");
+      showLogisticsAlert(`✓ Label created! CVS Payment No.: ${data.cvsPaymentNo || data.allPayLogisticsID}`, "success");
       resetLabelForm();
       loadLogisticsLabels();
     } catch (err) {
-      showLogisticsAlert("建立失敗：" + err.message, "error");
+      showLogisticsAlert("Failed to create: " + err.message, "error");
     }
   };
 
   window.loadFromOrder = () => {
     const orderKey = document.getElementById("labelOrderKey").value.trim();
-    if (!orderKey) { showLogisticsAlert("請先填入訂單 Key。", "error"); return; }
+    if (!orderKey) { showLogisticsAlert("Please enter an order key first.", "error"); return; }
 
     const o = (window.allOrdersCache || []).find(x => x.key === orderKey);
-    if (!o) { showLogisticsAlert("找不到該訂單，請先在「訂單」頁面載入訂單資料。", "error"); return; }
+    if (!o) { showLogisticsAlert("Order not found. Please load orders in the Orders tab first.", "error"); return; }
 
     const di = o.deliveryInfo || {};
 
@@ -1380,7 +1380,7 @@
     }
 
     onLabelTypeChange();
-    showLogisticsAlert(`✓ 已從訂單帶入資料（${o.receiverName || "—"}，${deliveryType || "—"}${di.CVSStoreName ? "，" + di.CVSStoreName : ""}）`, "success");
+    showLogisticsAlert(`✓ Loaded from order (${o.receiverName || "—"}, ${deliveryType || "—"}${di.CVSStoreName ? ", " + di.CVSStoreName : ""})`, "success");
   };
 
   window.resetLabelForm = () => {
@@ -1408,12 +1408,12 @@
       labels = await resp.json();
     } catch (err) {
       document.getElementById("labelsLoading").classList.add("hidden");
-      showLogisticsAlert("載入失敗：" + err.message, "error");
+      showLogisticsAlert("Failed to load: " + err.message, "error");
       return;
     }
 
     document.getElementById("labelsLoading").classList.add("hidden");
-    document.getElementById("labelsCount").textContent = `${(labels||[]).length} 個`;
+    document.getElementById("labelsCount").textContent = `${(labels||[]).length}`;
 
     if (!labels || labels.length === 0) {
       document.getElementById("labelsEmpty").classList.remove("hidden");
@@ -1422,8 +1422,8 @@
 
     const tbody = document.getElementById("labelsTbody");
     const subTypeLabels = {
-      UNIMART:"7-ELEVEN", FAMI:"全家", OKMART:"OK mart",
-      HILIFE:"萊爾富", TCAT:"黑貓宅配", POST:"中華郵政"
+      UNIMART:"7-ELEVEN", FAMI:"FamilyMart", OKMART:"OK mart",
+      HILIFE:"Hi-Life", TCAT:"TCAT", POST:"Chunghwa Post"
     };
 
     tbody.innerHTML = labels.map(l => {
@@ -1442,8 +1442,8 @@
         <td>
           <div style="display:flex;gap:0.3rem;flex-wrap:wrap;">
             ${l.allPayLogisticsID ? `
-              <button class="btn btn-ghost btn-xs" onclick="printLogisticsLabel('${escHtml(l.allPayLogisticsID)}', ${sandbox})" title="列印標籤">🖨 標籤</button>
-              <button class="btn btn-ghost btn-xs" onclick="trackLogistics('${escHtml(l.allPayLogisticsID)}', this)" title="查詢狀態">📦 狀態</button>
+              <button class="btn btn-ghost btn-xs" onclick="printLogisticsLabel('${escHtml(l.allPayLogisticsID)}', ${sandbox})" title="Print label">🖨 Label</button>
+              <button class="btn btn-ghost btn-xs" onclick="trackLogistics('${escHtml(l.allPayLogisticsID)}', this)" title="Track status">📦 Track</button>
             ` : ""}
           </div>
         </td>
@@ -1466,14 +1466,14 @@
       const { printUrl } = await resp.json();
       window.open(printUrl, "_blank");
     } catch (err) {
-      alert("無法列印標籤：" + err.message);
+      alert("Failed to print label: " + err.message);
     }
   };
 
   // ── Track logistics status ─────────────────────────────────────────────────
   window.trackLogistics = async (allPayLogisticsID, btn) => {
     const orig = btn.textContent;
-    btn.disabled = true; btn.textContent = "查詢中…";
+    btn.disabled = true; btn.textContent = "Checking…";
     try {
       const idToken = await auth.currentUser.getIdToken();
       const resp    = await fetch(`${RENDER_SERVER_URL}/logistics/track/${encodeURIComponent(allPayLogisticsID)}`, {
@@ -1487,11 +1487,11 @@
         const statusCell = row.cells[5];
         if (statusCell) statusCell.innerHTML = `<span class="badge badge-success">${escHtml(status)}</span>`;
       }
-      btn.textContent = "✓ 已更新";
+      btn.textContent = "✓ Updated";
       setTimeout(() => { btn.disabled = false; btn.textContent = orig; }, 2000);
     } catch (err) {
       btn.disabled = false; btn.textContent = orig;
-      alert("查詢失敗：" + err.message);
+      alert("Tracking failed: " + err.message);
     }
   };
 
@@ -1951,24 +1951,24 @@
     renderLog();
   };
 
-  // 清除 90 天以前的 log 記錄
+  // Delete logs older than 90 days
   window.clearOldLogs = async () => {
     const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
     const oldLogs = allLogs.filter(l => l.timestamp < cutoff);
     if (oldLogs.length === 0) {
-      alert("沒有 90 天以前的記錄。");
+      alert("No logs older than 90 days.");
       return;
     }
-    if (!confirm(`確定要刪除 ${oldLogs.length} 筆 90 天以前的記錄嗎？此操作無法還原。`)) return;
+    if (!confirm(`Delete ${oldLogs.length} log entries older than 90 days? This cannot be undone.`)) return;
     const updates = {};
     oldLogs.forEach(l => { updates[`logs/${l.id}`] = null; });
     try {
       await dbPatch(auth, "", updates);
       allLogs = allLogs.filter(l => l.timestamp >= cutoff);
       renderLog();
-      alert(`✓ 已刪除 ${oldLogs.length} 筆舊記錄。`);
+      alert(`✓ Deleted ${oldLogs.length} old log entries.`);
     } catch (err) {
-      alert("刪除失敗：" + err.message);
+      alert("Delete failed: " + err.message);
     }
   };
 
@@ -2027,7 +2027,7 @@
 
     // Timestamp
     document.getElementById("secLastChecked").textContent =
-      `最後更新：${new Date().toLocaleTimeString("zh-TW")}`;
+      `Last updated: ${new Date().toLocaleTimeString("zh-TW")}`;
     if (btn) { btn.disabled = false; }
   };
 
@@ -2049,7 +2049,7 @@
           level: "high",
           icon: "🚨",
           title: `Burst login: ${allUsers[uid]?.email || uid}`,
-          detail: `1 小時內登入 ${count} 次`
+          detail: `${count} logins in the last hour`
         });
       }
     });
@@ -2061,8 +2061,8 @@
         anomalies.push({
           level: "med",
           icon: "🌙",
-          title: `深夜登入：${l.email || l.uid || "未知"}`,
-          detail: `${new Date(l.timestamp).toLocaleString("zh-TW")}（台北時間 ${tHour}:xx）`
+          title: `Late-night login: ${l.email || l.uid || "unknown"}`,
+          detail: `${new Date(l.timestamp).toLocaleString()} at ${tHour}:xx`
         });
       }
     });
@@ -2073,8 +2073,8 @@
       anomalies.push({
         level: "med",
         icon: "⏱",
-        title: `Session timeout 強制登出`,
-        detail: `24 小時內發生 ${timeouts.length} 次`
+        title: "Session timeout force-logout",
+        detail: `${timeouts.length} occurrences in the last 24h`
       });
     }
 
@@ -2084,8 +2084,8 @@
       anomalies.push({
         level: "high",
         icon: "💸",
-        title: `大量退款操作`,
-        detail: `1 小時內退款 ${refunds1h.length} 次`
+        title: "High refund volume",
+        detail: `${refunds1h.length} refunds in the last hour`
       });
     }
 
@@ -2095,8 +2095,8 @@
       anomalies.push({
         level: "high",
         icon: "🗑",
-        title: `大量刪除檔案`,
-        detail: `1 小時內刪除 ${deletes1h.length} 個檔案`
+        title: "High file deletion volume",
+        detail: `${deletes1h.length} files deleted in the last hour`
       });
     }
 
@@ -2106,9 +2106,9 @@
   function renderOverallBadge(level) {
     const el = document.getElementById("secOverallBadge");
     const cfg = {
-      low:  { bg:"#ECFDF5", color:"#065F46", border:"#6EE7B7", icon:"✅", text:"整體安全性良好，未發現異常。" },
-      med:  { bg:"#FFFBEB", color:"#92400E", border:"#FCD34D", icon:"⚠️", text:"發現潛在風險，請檢查下方詳情。" },
-      high: { bg:"#FEF2F2", color:"#7F1D1D", border:"#FCA5A5", icon:"🚨", text:"偵測到高風險事件，建議立即處理！" },
+      low:  { bg:"#ECFDF5", color:"#065F46", border:"#6EE7B7", icon:"✅", text:"All systems look good. No anomalies detected." },
+      med:  { bg:"#FFFBEB", color:"#92400E", border:"#FCD34D", icon:"⚠️", text:"Potential risks detected. Check the details below." },
+      high: { bg:"#FEF2F2", color:"#7F1D1D", border:"#FCA5A5", icon:"🚨", text:"High-risk events detected. Immediate action recommended!" },
     };
     const c = cfg[level];
     el.style.cssText = `background:${c.bg};color:${c.color};border:1px solid ${c.border};border-radius:10px;padding:1rem 1.25rem;display:flex;align-items:center;gap:0.75rem;font-weight:600;font-size:0.95rem;margin-bottom:1.5rem;`;
@@ -2126,12 +2126,12 @@
     const list  = document.getElementById("secAnomalyList");
     if (anomalies.length === 0) {
       badge.className = "badge badge-success";
-      badge.textContent = "正常";
-      list.innerHTML = `<div class="sec-empty">✅ 未發現任何登入異常。</div>`;
+      badge.textContent = "Normal";
+      list.innerHTML = `<div class="sec-empty">✅ No login anomalies detected.</div>`;
       return;
     }
     badge.className = anomalies.some(a => a.level === "high") ? "badge badge-danger" : "badge badge-warning";
-    badge.textContent = `${anomalies.length} 項警告`;
+    badge.textContent = `${anomalies.length} warning${anomalies.length !== 1 ? "s" : ""}`;
     list.innerHTML = anomalies.map(a => `
       <div class="sec-row">
         <div class="sec-row-icon">${a.icon}</div>
@@ -2139,7 +2139,7 @@
           <div class="sec-row-title">${escHtml(a.title)}</div>
           <div class="sec-row-meta">${escHtml(a.detail)}</div>
         </div>
-        <span style="font-size:0.72rem;padding:0.2rem 0.5rem;border-radius:4px;font-weight:600;background:${a.level==="high"?"#FEE2E2":"#FEF3C7"};color:${a.level==="high"?"#DC2626":"#D97706"};">${a.level === "high" ? "高風險" : "注意"}</span>
+        <span style="font-size:0.72rem;padding:0.2rem 0.5rem;border-radius:4px;font-weight:600;background:${a.level==="high"?"#FEE2E2":"#FEF3C7"};color:${a.level==="high"?"#DC2626":"#D97706"};">${a.level === "high" ? "High Risk" : "Warning"}</span>
       </div>`).join("");
   }
 
@@ -2152,10 +2152,10 @@
       if (l.timestamp > byUid[l.uid].lastSeen) byUid[l.uid].lastSeen = l.timestamp;
     });
     const entries = Object.entries(byUid).sort((a,b) => b[1].lastSeen - a[1].lastSeen);
-    document.getElementById("secSessionCount").textContent = `${entries.length} 人在線`;
+    document.getElementById("secSessionCount").textContent = `${entries.length} active`;
     const list = document.getElementById("secSessionList");
     if (entries.length === 0) {
-      list.innerHTML = `<div class="sec-empty">過去 1 小時無用戶活動。</div>`;
+      list.innerHTML = `<div class="sec-empty">No user activity in the last hour.</div>`;
       return;
     }
     list.innerHTML = entries.map(([uid, s]) => {
@@ -2164,7 +2164,7 @@
         <div class="sec-row-icon">👤</div>
         <div class="sec-row-body">
           <div class="sec-row-title">${escHtml(s.email)}</div>
-          <div class="sec-row-meta">${ago < 1 ? "剛剛" : `${ago} 分鐘前`} · 登入 ${s.count} 次</div>
+          <div class="sec-row-meta">${ago < 1 ? "just now" : `${ago} min ago`} · ${s.count} login(s)</div>
         </div>
       </div>`;
     }).join("");
@@ -2172,9 +2172,9 @@
 
   function renderDbRules() {
     const rules = [
-      { node: "admins",   write: "false（僅後台）",  read: "auth != null",       ok: true  },
+      { node: "admins",   write: "false (backend only)",  read: "auth != null",       ok: true  },
       { node: "logs",     write: "admin only",        read: "admin only",          ok: true  },
-      { node: "tradeMap", write: "false（僅 server）",read: "false（僅 server）",  ok: true  },
+      { node: "tradeMap", write: "false (server only)",read: "false (server only)",  ok: true  },
       { node: "access",   write: "admin only",        read: "admin or owner",      ok: true  },
       { node: "files",    write: "admin only",        read: "auth != null",        ok: true  },
       { node: "products", write: "admin only",        read: "auth != null",        ok: true  },
@@ -2183,7 +2183,7 @@
     ];
     const allOk = rules.every(r => r.ok);
     document.getElementById("secRulesBadge").className = `badge ${allOk ? "badge-success" : "badge-danger"}`;
-    document.getElementById("secRulesBadge").textContent = allOk ? "全部正常 ✓" : "有問題！";
+    document.getElementById("secRulesBadge").textContent = allOk ? "All OK ✓" : "Issues detected!";
     document.getElementById("secRulesList").innerHTML = rules.map(r => `
       <div class="sec-rule-row">
         <div class="sec-rule-dot" style="background:${r.ok ? "#10B981" : "#EF4444"};"></div>
@@ -2195,7 +2195,7 @@
   function renderHighRiskPanel(logs) {
     const list = document.getElementById("secHighRiskList");
     if (logs.length === 0) {
-      list.innerHTML = `<div class="sec-empty">✅ 近期無高風險操作記錄。</div>`;
+      list.innerHTML = `<div class="sec-empty">✅ No high-risk actions recently.</div>`;
       return;
     }
     const iconMap = {
@@ -2203,8 +2203,8 @@
       access_revoke: "🔒", logout: "🚪", session_timeout: "⏱"
     };
     const labelMap = {
-      refund: "退款撤銷", file_delete: "刪除檔案", access_grant: "授予存取",
-      access_revoke: "撤銷存取", logout: "登出", session_timeout: "Session 超時"
+      refund: "Refund/Revoke", file_delete: "File Delete", access_grant: "Access Grant",
+      access_revoke: "Access Revoke", logout: "Logout", session_timeout: "Session Timeout"
     };
     list.innerHTML = logs.map(l => {
       const icon  = iconMap[l.action]  || "⚠️";
@@ -2219,7 +2219,7 @@
           <div class="sec-row-title">${escHtml(label)}${note ? ` · ${escHtml(note)}` : ""}</div>
           <div class="sec-row-meta">${escHtml(who)} · ${ago}</div>
         </div>
-        <span style="font-size:0.72rem;padding:0.2rem 0.5rem;border-radius:4px;font-weight:600;flex-shrink:0;background:${isHigh?"#FEE2E2":"#FEF3C7"};color:${isHigh?"#DC2626":"#D97706"};">${isHigh ? "高" : "中"}</span>
+        <span style="font-size:0.72rem;padding:0.2rem 0.5rem;border-radius:4px;font-weight:600;flex-shrink:0;background:${isHigh?"#FEE2E2":"#FEF3C7"};color:${isHigh?"#DC2626":"#D97706"};">${isHigh ? "High" : "Med"}</span>
       </div>`;
     }).join("");
   }
@@ -2229,10 +2229,10 @@
     const min  = Math.round(diff / 60000);
     const hr   = Math.round(diff / 3600000);
     const day  = Math.round(diff / 86400000);
-    if (min < 1)  return "剛剛";
-    if (min < 60) return `${min} 分鐘前`;
-    if (hr  < 24) return `${hr} 小時前`;
-    return `${day} 天前`;
+    if (min < 1)  return "just now";
+    if (min < 60) return `${min} min ago`;
+    if (hr  < 24) return `${hr}h ago`;
+    return `${day}d ago`;
   }
 
   function getLogMeta(action) {
@@ -2286,7 +2286,7 @@
 
   document.addEventListener("keydown", e => { if (e.key === "Escape") { document.getElementById("deleteModal").classList.add("hidden"); document.getElementById("clearLogModal").classList.add("hidden"); } });
 
-  // ── PRICING (ECPay 綠界金流) ──────────────────────────────────────────────
+  // ── PRICING ──────────────────────────────────────────────
   let allProducts  = {};  // keyed by product key
   let allPurchases = {};  // keyed by uid
 
@@ -2306,8 +2306,8 @@
     const previewSel = document.getElementById("productPreviewFileId");
     const files = Object.entries(allFiles);
     if (files.length === 0) {
-      container.innerHTML = `<p class="text-muted text-sm">尚無檔案，請先上傳檔案。</p>`;
-      previewSel.innerHTML = `<option value="">— 不設定預覽 —</option>`;
+      container.innerHTML = `<p class="text-muted text-sm">No files yet. Upload files first.</p>`;
+      previewSel.innerHTML = `<option value="">— No preview —</option>`;
       return;
     }
     container.innerHTML = files.map(([id, f]) =>
@@ -2319,7 +2319,7 @@
 
     // Populate preview file dropdown (only PDFs make sense for page-limited preview)
     const prevVal = previewSel.value;
-    previewSel.innerHTML = `<option value="">— 不設定預覽 —</option>` +
+    previewSel.innerHTML = `<option value="">— No preview —</option>` +
       files.map(([id, f]) =>
         `<option value="${id}">${escHtml(f.name)}</option>`
       ).join("");
@@ -2328,7 +2328,7 @@
 
   function renderProducts() {
     const entries = Object.entries(allProducts);
-    document.getElementById("productCount").textContent = `${entries.length} 個商品`;
+    document.getElementById("productCount").textContent = `${entries.length} products`;
     document.getElementById("productsLoading").classList.add("hidden");
 
     if (entries.length === 0) {
@@ -2341,9 +2341,9 @@
 
     document.getElementById("productsTableBody").innerHTML = entries.map(([key, p]) => {
       const fileNames = (p.fileIds || []).map(id => allFiles[id]?.name || id).join(", ");
-      const duration  = p.durationDays ? `${p.durationDays} 天` : "永久";
-      const env       = p.useSandbox ? `<span class="badge badge-warning">測試</span>` : `<span class="badge badge-success">正式</span>`;
-      const method    = p.paymentMethod === "Credit" ? "信用卡" : p.paymentMethod === "ATM" ? "ATM" : "全部";
+      const duration  = p.durationDays ? `${p.durationDays} days` : "Permanent";
+      const env       = p.useSandbox ? `<span class="badge badge-warning">Sandbox</span>` : `<span class="badge badge-success">正式</span>`;
+      const method    = p.paymentMethod === "Credit" ? "Credit Card" : p.paymentMethod === "ATM" ? "ATM" : "All";
       return `<tr>
         <td><strong>${escHtml(p.name)}</strong></td>
         <td class="text-sm">${escHtml(fileNames) || "—"}</td>
@@ -2352,8 +2352,8 @@
         <td>${method}</td>
         <td>${env}</td>
         <td>
-          <button class="btn btn-ghost btn-sm" onclick="editProduct('${key}')">編輯</button>
-          <button class="btn btn-ghost btn-sm text-error" onclick="deleteProduct('${key}')">刪除</button>
+          <button class="btn btn-ghost btn-sm" onclick="editProduct('${key}')">Edit</button>
+          <button class="btn btn-ghost btn-sm text-error" onclick="deleteProduct('${key}')">Delete</button>
         </td>
       </tr>`;
     }).join("");
@@ -2369,7 +2369,7 @@
     rows.sort((a, b) => (b.purchasedAt || 0) - (a.purchasedAt || 0));
 
     document.getElementById("purchasesLoading").classList.add("hidden");
-    document.getElementById("purchaseCount").textContent = `${rows.length} 筆`;
+    document.getElementById("purchaseCount").textContent = `${rows.length} records`;
 
     if (rows.length === 0) {
       document.getElementById("purchasesEmpty").classList.remove("hidden");
@@ -2383,15 +2383,15 @@
     document.getElementById("purchasesTableBody").innerHTML = rows.map(p => {
       const fileNames  = (p.fileIds || []).map(id => allFiles[id]?.name || id).join(", ");
       const amount     = p.amount ? `NT$${p.amount}` : "—";
-      const expires    = p.expiresAt ? formatDate(p.expiresAt) : "永久";
+      const expires    = p.expiresAt ? formatDate(p.expiresAt) : "Permanent";
       const method     = p.paymentType || "—";
       const isRefunded = p.refunded === true;
       const actionCell = isRefunded
-        ? `<span style="color:#6B7280;font-size:0.8rem;">已退款</span>`
+        ? `<span style="color:#6B7280;font-size:0.8rem;">Refunded</span>`
         : `<button class="btn btn-sm purchase-refund-btn" data-uid="${escHtml(p.uid)}" data-pkey="${escHtml(p.pKey)}"
-             style="background:#FEE2E2;color:#DC2626;border:1px solid #FECACA;">退款</button>`;
+             style="background:#FEE2E2;color:#DC2626;border:1px solid #FECACA;">Refund</button>`;
       return `<tr class="purchase-row" data-uid="${escHtml(p.uid)}" data-pkey="${escHtml(p.pKey)}"
-                  style="${isRefunded ? 'opacity:0.5;' : ''}cursor:pointer;" title="點擊查看詳情">
+                  style="${isRefunded ? 'opacity:0.5;' : ''}cursor:pointer;" title="Click for details">
         <td class="text-sm mono">${escHtml(p.uid)}</td>
         <td>${escHtml(p.productName || "—")}</td>
         <td class="text-sm">${escHtml(fileNames) || "—"}</td>
@@ -2412,17 +2412,17 @@
     const isRefunded = p.refunded === true;
 
     const rows = [
-      ["購買編號 Purchase Key", pKey, true],
-      ["使用者 UID", uid, true],
-      ["商品名稱", p.productName || "—", false],
-      ["解鎖檔案", fileNames.length ? fileNames.join("、") : "—", false],
-      ["金額", p.amount ? `NT$${p.amount}` : "—", false],
-      ["付款方式", p.paymentType || "—", false],
-      ["綠界交易編號", p.merchantTradeNo || "—", true],
-      ["付款日期", p.paymentDate || "—", false],
-      ["購買時間", p.purchasedAt ? new Date(p.purchasedAt).toLocaleString("zh-TW") : "—", false],
-      ["到期時間", p.expiresAt ? new Date(p.expiresAt).toLocaleString("zh-TW") : "永久", false],
-      ["狀態", isRefunded ? `<span style="color:#DC2626;font-weight:600;">已退款 (${p.refundedAt ? new Date(p.refundedAt).toLocaleString("zh-TW") : "—"})</span>` : `<span style="color:#16A34A;font-weight:600;">有效</span>`, false],
+      ["Purchase Key", pKey, true],
+      ["User UID", uid, true],
+      ["Goods Name", p.productName || "—", false],
+      ["Files Unlocked", fileNames.length ? fileNames.join(", ") : "—", false],
+      ["Amount", p.amount ? `NT$${p.amount}` : "—", false],
+      ["Payment Method", p.paymentType || "—", false],
+      ["ECPay Trade No.", p.merchantTradeNo || "—", true],
+      ["Payment Date", p.paymentDate || "—", false],
+      ["Purchased At", p.purchasedAt ? new Date(p.purchasedAt).toLocaleString() : "—", false],
+      ["Expires", p.expiresAt ? new Date(p.expiresAt).toLocaleString() : "Permanent", false],
+      ["Status", isRefunded ? `<span style="color:#DC2626;font-weight:600;">Refunded (${p.refundedAt ? new Date(p.refundedAt).toLocaleString() : "—"})</span>` : `<span style="color:#16A34A;font-weight:600;">Active</span>`, false],
     ];
 
     document.getElementById("purchaseDetailBody").innerHTML = `
@@ -2440,7 +2440,7 @@
       refundBtn.style.display = "none";
     } else {
       refundBtn.style.display = "";
-      refundBtn.textContent = "退款並撤銷存取";
+      refundBtn.textContent = "Refund & Revoke Access";
       refundBtn.onclick = () => {
         closePurchaseDetail();
         // Find the matching row button via data attributes and trigger refund
@@ -2478,10 +2478,10 @@
   });
 
   window.refundPurchase = async (uid, pKey, fileIds, btn) => {
-    if (!confirm(`確定要退款並撤銷此用戶的存取權嗎？\n\n注意：綠界金流的實際退款請另行在綠界後台操作，此處僅撤銷系統存取權。`)) return;
+    if (!confirm(`Revoke this user's access?\n\nNote: for actual ECPay refunds, do that separately in the ECPay merchant backend. This only removes system access.`)) return;
 
     btn.disabled = true;
-    btn.textContent = "處理中…";
+    btn.textContent = "Processing…";
 
     try {
       const updates = {};
@@ -2504,7 +2504,7 @@
         email:     currentUser.email || "",
         name:      currentUser.displayName || currentUser.email || "",
         timestamp: Date.now(),
-        note:      `退款撤銷：purchaseKey=${pKey}，共 ${fileIds.length} 個檔案`
+        note:      `Refund/revoke: purchaseKey=${pKey}, ${fileIds.length} file(s)`
       };
 
       await dbPatch(auth, "", updates);
@@ -2513,7 +2513,7 @@
       btn.closest("tr").style.opacity = "0.5";
       btn.replaceWith(Object.assign(document.createElement("span"), {
         style: "color:#6B7280;font-size:0.8rem;",
-        textContent: "已退款"
+        textContent: "Refunded"
       }));
 
       // Update local data
@@ -2523,8 +2523,8 @@
     } catch (err) {
       console.error(err);
       btn.disabled = false;
-      btn.textContent = "退款";
-      alert("退款失敗：" + err.message);
+      btn.textContent = "Refund";
+      alert("Refund failed: " + err.message);
     }
   };
 
@@ -2537,7 +2537,7 @@
     const files = [...input.files].filter(f => allowed.includes(f.type));
     const total = existingProductImages.length + pendingProductImages.length + files.length;
     if (total > 10) {
-      alert(`最多只能有 10 張圖片（目前已有 ${existingProductImages.length + pendingProductImages.length} 張）。`);
+      alert(`Maximum 10 images (currently ${existingProductImages.length + pendingProductImages.length}).`);
       input.value = "";
       return;
     }
@@ -2555,14 +2555,14 @@
     const existingHtml = existingProductImages.map((key, i) =>
       `<div style="position:relative;width:72px;height:72px;">
         <img src="" data-imgkey="${escHtml(key)}" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--color-border);" onerror="this.src=''"/>
-        <button onclick="removeExistingImage(${i})" title="移除" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#EF4444;color:#fff;cursor:pointer;font-size:11px;line-height:18px;padding:0;">✕</button>
+        <button onclick="removeExistingImage(${i})" title="Remove" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#EF4444;color:#fff;cursor:pointer;font-size:11px;line-height:18px;padding:0;">✕</button>
       </div>`
     ).join("");
 
     const pendingHtml = pendingProductImages.map((img, i) =>
       `<div style="position:relative;width:72px;height:72px;">
         <img src="${img.objectUrl}" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--color-border);"/>
-        <button onclick="removePendingImage(${i})" title="移除" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#EF4444;color:#fff;cursor:pointer;font-size:11px;line-height:18px;padding:0;">✕</button>
+        <button onclick="removePendingImage(${i})" title="Remove" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#EF4444;color:#fff;cursor:pointer;font-size:11px;line-height:18px;padding:0;">✕</button>
         <span style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.5);color:#fff;font-size:9px;text-align:center;border-radius:0 0 6px 6px;">待上傳</span>
       </div>`
     ).join("");
@@ -2622,17 +2622,17 @@
     const previewFileId = document.getElementById("productPreviewFileId").value || null;
     const previewPages  = parseInt(document.getElementById("productPreviewPages").value, 10) || null;
 
-    if (!name)              return showPricingAlert("商品名稱為必填。", "error");
-    if (!priceNTD || priceNTD < 1) return showPricingAlert("請輸入有效的新台幣金額。", "error");
-    if (!merchantId)        return showPricingAlert("請填入 ECPay 廠商代號。", "error");
-    if (fileIds.length === 0) return showPricingAlert("請選擇至少一個檔案。", "error");
+    if (!name)              return showPricingAlert("Product name is required.", "error");
+    if (!priceNTD || priceNTD < 1) return showPricingAlert("Please enter a valid NTD price.", "error");
+    if (!merchantId)        return showPricingAlert("Please enter an ECPay Merchant ID.", "error");
+    if (fileIds.length === 0) return showPricingAlert("Please select at least one file.", "error");
 
     // Upload pending images to S3 first
     let newImageKeys = [];
     try {
       newImageKeys = await uploadPendingImages();
     } catch(e) {
-      return showPricingAlert("圖片上傳失敗：" + e.message, "error");
+      return showPricingAlert("Image upload failed: " + e.message, "error");
     }
     const imageKeys = [...existingProductImages, ...newImageKeys];
 
@@ -2664,16 +2664,16 @@
     try {
       if (editKey) {
         await dbSet(auth, `products/${editKey}`, data);
-        showPricingAlert("商品已更新。", "success");
+        showPricingAlert("Product updated.", "success");
       } else {
         data.createdAt = Date.now();
         await dbPush(auth, "products", data);
-        showPricingAlert("商品已建立。", "success");
+        showPricingAlert("Product created.", "success");
       }
       resetProductForm();
       await loadPricing();
     } catch(e) {
-      showPricingAlert("儲存失敗：" + e.message, "error");
+      showPricingAlert("Save failed: " + e.message, "error");
     }
   };
 
@@ -2690,7 +2690,7 @@
     document.getElementById("productDuration").value        = p.durationDays || "";
     document.getElementById("productPreviewFileId").value   = p.previewFileId || "";
     document.getElementById("productPreviewPages").value    = p.previewPages || "";
-    document.getElementById("productFormTitle").textContent = "編輯商品 Edit Product";
+    document.getElementById("productFormTitle").textContent = "Edit Product";
     document.querySelectorAll(".product-file-cb").forEach(cb => {
       cb.checked = (p.fileIds || []).includes(cb.value);
     });
@@ -2721,7 +2721,7 @@
     document.getElementById("productDuration").value        = "";
     document.getElementById("productPreviewFileId").value   = "";
     document.getElementById("productPreviewPages").value    = "";
-    document.getElementById("productFormTitle").textContent = "新增商品 New Product";
+    document.getElementById("productFormTitle").textContent = "New Product";
     document.querySelectorAll(".product-file-cb").forEach(cb => cb.checked = false);
     pendingProductImages  = [];
     existingProductImages = [];
@@ -2734,12 +2734,12 @@
   };
 
   window.deleteProduct = async (key) => {
-    if (!confirm(`確定刪除此商品？現有使用者的存取權不受影響。`)) return;
+    if (!confirm(`Delete this product? Existing user access grants will not be affected.`)) return;
     try {
       await dbDelete(auth, `products/${key}`);
-      showPricingAlert("商品已刪除。", "success");
+      showPricingAlert("Product deleted.", "success");
       await loadPricing();
-    } catch(e) { showPricingAlert("錯誤：" + e.message, "error"); }
+    } catch(e) { showPricingAlert("Error: " + e.message, "error"); }
   };
 
   function showPricingAlert(msg, type) {
@@ -2902,9 +2902,11 @@
     if (termPaused) return;
     termLines.push(entry);
     if (termLines.length > TERM_MAX) termLines.shift();
+    // Only update DOM if terminal tab is currently visible
+    const termSection = document.getElementById("section-terminal");
+    if (!termSection || termSection.classList.contains("hidden")) return;
     const out = document.getElementById("termOutput");
     if (!out) return;
-    // Only show if passes filter
     if (termFilter !== "all" && entry.level !== termFilter) {
       document.getElementById("termLineCount").textContent =
         `${termLines.filter(l => termFilter === "all" || l.level === termFilter).length} lines`;
@@ -2913,10 +2915,8 @@
     const div = document.createElement("div");
     div.innerHTML = termLineHtml(entry);
     out.appendChild(div.firstChild);
-    // Trim DOM if too many nodes
     while (out.childNodes.length > TERM_MAX) out.removeChild(out.firstChild);
-    document.getElementById("termLineCount").textContent =
-      `${out.childNodes.length} lines`;
+    document.getElementById("termLineCount").textContent = `${out.childNodes.length} lines`;
     if (termAutoScroll) out.scrollTop = out.scrollHeight;
   }
 
