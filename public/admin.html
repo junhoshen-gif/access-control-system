@@ -79,6 +79,10 @@
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         Security
       </a>
+      <a href="#section-console" class="sidebar-item" onclick="showSection('console', this)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        Console
+      </a>
       <a href="#section-storage" class="sidebar-item" onclick="showSection('storage', this)">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
         Storage
@@ -902,6 +906,65 @@
         </div>
       </div>
 
+    </section>
+
+    <!-- COMMAND CONSOLE SECTION -->
+    <section id="section-console" class="admin-section hidden">
+      <div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;">
+        <div>
+          <h2>⌨️ Command Console</h2>
+          <p class="text-muted">Type commands to manage access by User ID or name, File ID or name.</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="consoleClear()">🗑 Clear</button>
+      </div>
+
+      <!-- Output log -->
+      <div id="consoleWrap" style="background:#0d1117;border:1px solid #21262d;border-radius:10px;overflow:hidden;margin-bottom:1rem;">
+        <div style="background:#161b22;border-bottom:1px solid #21262d;padding:0.5rem 1rem;display:flex;align-items:center;gap:0.5rem;">
+          <span style="width:12px;height:12px;border-radius:50%;background:#ff5f57;display:inline-block;"></span>
+          <span style="width:12px;height:12px;border-radius:50%;background:#febc2e;display:inline-block;"></span>
+          <span style="width:12px;height:12px;border-radius:50%;background:#28c840;display:inline-block;"></span>
+          <span style="margin-left:0.75rem;font-size:0.75rem;color:#8b949e;font-family:'JetBrains Mono',monospace;">admin console</span>
+        </div>
+        <div id="consoleOutput" style="height:380px;overflow-y:auto;padding:0.75rem 1rem;font-family:'JetBrains Mono',monospace;font-size:0.82rem;line-height:1.7;color:#c9d1d9;">
+          <div style="color:#58a6ff;">FileAccess Admin Console — type <span style="color:#3fb950;">help</span> for available commands.</div>
+        </div>
+      </div>
+
+      <!-- Input row -->
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <span style="font-family:'JetBrains Mono',monospace;color:#58a6ff;font-size:0.85rem;flex-shrink:0;">$</span>
+        <input id="consoleInput" type="text" autocomplete="off" spellcheck="false"
+          placeholder="e.g.  access grant alice report.pdf   or   access rm abc123 file456"
+          style="flex:1;font-family:'JetBrains Mono',monospace;font-size:0.82rem;background:#0d1117;border:1px solid #30363d;
+                 border-radius:6px;padding:0.55rem 0.8rem;color:#c9d1d9;outline:none;"
+          onkeydown="if(event.key==='Enter')consoleRun()"/>
+        <button class="btn btn-primary btn-sm" onclick="consoleRun()">Run</button>
+      </div>
+
+      <!-- Quick reference -->
+      <div style="margin-top:1.25rem;background:var(--color-surface);border:1px solid var(--color-border);border-radius:8px;padding:1rem 1.25rem;">
+        <div style="font-weight:600;font-size:0.82rem;margin-bottom:0.6rem;color:var(--color-text);">Quick reference</div>
+        <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+          <thead><tr style="color:var(--color-text-muted);">
+            <th style="text-align:left;padding:0.3rem 0.75rem 0.3rem 0;font-weight:500;">Command</th>
+            <th style="text-align:left;padding:0.3rem 0;font-weight:500;">Description</th>
+          </tr></thead>
+          <tbody>
+            <tr><td style="font-family:monospace;padding:0.25rem 0.75rem 0.25rem 0;color:#58a6ff;">access grant &lt;user&gt; &lt;file&gt; [YYYY-MM-DD]</td><td style="color:var(--color-text-muted);">Grant a user access to a file (optional expiry)</td></tr>
+            <tr><td style="font-family:monospace;padding:0.25rem 0.75rem 0.25rem 0;color:#58a6ff;">access rm &lt;user&gt; &lt;file&gt;</td><td style="color:var(--color-text-muted);">Revoke a user's access to a file</td></tr>
+            <tr><td style="font-family:monospace;padding:0.25rem 0.75rem 0.25rem 0;color:#58a6ff;">access list &lt;user&gt;</td><td style="color:var(--color-text-muted);">List all files a user can access</td></tr>
+            <tr><td style="font-family:monospace;padding:0.25rem 0.75rem 0.25rem 0;color:#58a6ff;">user lookup &lt;uid or name&gt;</td><td style="color:var(--color-text-muted);">Find a user by UID, email, or display name</td></tr>
+            <tr><td style="font-family:monospace;padding:0.25rem 0.75rem 0.25rem 0;color:#58a6ff;">file lookup &lt;fileid or name&gt;</td><td style="color:var(--color-text-muted);">Find a file by ID or name</td></tr>
+            <tr><td style="font-family:monospace;padding:0.25rem 0.75rem 0.25rem 0;color:#58a6ff;">users list</td><td style="color:var(--color-text-muted);">List all registered users with UIDs</td></tr>
+            <tr><td style="font-family:monospace;padding:0.25rem 0.75rem 0.25rem 0;color:#58a6ff;">files list</td><td style="color:var(--color-text-muted);">List all files with IDs</td></tr>
+            <tr><td style="font-family:monospace;padding:0.25rem 0.75rem 0.25rem 0;color:#58a6ff;">help</td><td style="color:var(--color-text-muted);">Show this reference</td></tr>
+          </tbody>
+        </table>
+        <p style="margin-top:0.6rem;font-size:0.76rem;color:var(--color-text-muted);">
+          &lt;user&gt; = display name, email, or Firebase UID &nbsp;·&nbsp; &lt;file&gt; = file name or file ID
+        </p>
+      </div>
     </section>
 
     <!-- STORAGE SECTION -->
@@ -3441,6 +3504,269 @@
   window.showSection = function(name, link) {
     _origShowSection?.(name, link);
     if (name === "promotions") loadPromotions();
+    if (name === "console") {
+      // Focus the input when opening the console
+      setTimeout(() => document.getElementById("consoleInput")?.focus(), 50);
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // COMMAND CONSOLE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Output helpers ──────────────────────────────────────────────────────────
+  function consolePrint(html) {
+    const out = document.getElementById("consoleOutput");
+    if (!out) return;
+    const line = document.createElement("div");
+    line.innerHTML = html;
+    out.appendChild(line);
+    out.scrollTop = out.scrollHeight;
+  }
+  function consoleInfo(msg)    { consolePrint(`<span style="color:#c9d1d9;">${escHtml(msg)}</span>`); }
+  function consoleOk(msg)      { consolePrint(`<span style="color:#3fb950;">✓ ${escHtml(msg)}</span>`); }
+  function consoleErr(msg)     { consolePrint(`<span style="color:#f85149;">✗ ${escHtml(msg)}</span>`); }
+  function consoleWarn(msg)    { consolePrint(`<span style="color:#d29922;">⚠ ${escHtml(msg)}</span>`); }
+  function consoleTable(rows)  {
+    // rows: [{col: val, ...}]
+    if (!rows.length) { consolePrint(`<span style="color:#8b949e;">(empty)</span>`); return; }
+    const keys = Object.keys(rows[0]);
+    const widths = keys.map(k => Math.max(k.length, ...rows.map(r => String(r[k] ?? "").length)));
+    const pad = (s, w) => String(s ?? "").padEnd(w);
+    const sep = widths.map(w => "─".repeat(w)).join("─┼─");
+    const header = keys.map((k, i) => pad(k, widths[i])).join(" │ ");
+    let html = `<span style="color:#8b949e;">${escHtml(header)}<br>${escHtml(sep)}</span>`;
+    rows.forEach(r => {
+      const row = keys.map((k, i) => pad(r[k], widths[i])).join(" │ ");
+      html += `<br><span style="color:#c9d1d9;">${escHtml(row)}</span>`;
+    });
+    consolePrint(html);
+  }
+
+  window.consoleClear = () => {
+    const out = document.getElementById("consoleOutput");
+    if (out) out.innerHTML = `<div style="color:#58a6ff;">FileAccess Admin Console — type <span style="color:#3fb950;">help</span> for available commands.</div>`;
+  };
+
+  // ── Resolver helpers ────────────────────────────────────────────────────────
+  // Resolve a user token → { uid, displayName, email } or null
+  function resolveUser(token) {
+    // Direct UID match
+    if (allUsers[token]) return { uid: token, ...allUsers[token] };
+    // Email or displayName match (case-insensitive)
+    const t = token.toLowerCase();
+    for (const [uid, u] of Object.entries(allUsers)) {
+      if ((u.email || "").toLowerCase() === t) return { uid, ...u };
+      if ((u.displayName || "").toLowerCase() === t) return { uid, ...u };
+    }
+    return null;
+  }
+
+  // Resolve a file token → { fileId, name, ... } or null
+  function resolveFile(token) {
+    // Direct file ID match
+    if (allFiles[token]) return { fileId: token, ...allFiles[token] };
+    // Name match (case-insensitive, first match)
+    const t = token.toLowerCase();
+    for (const [fileId, f] of Object.entries(allFiles)) {
+      if ((f.name || "").toLowerCase() === t) return { fileId, ...f };
+    }
+    return null;
+  }
+
+  function userLabel(u) { return u.displayName || u.email || u.uid; }
+  function fileLabel(f) { return f.name || f.fileId; }
+
+  // ── Command runner ──────────────────────────────────────────────────────────
+  window.consoleRun = async () => {
+    const input = document.getElementById("consoleInput");
+    const raw   = (input?.value || "").trim();
+    if (!raw) return;
+    input.value = "";
+
+    // Echo the command
+    consolePrint(`<span style="color:#58a6ff;">$ ${escHtml(raw)}</span>`);
+
+    const parts = raw.match(/(?:[^\s"]+|"[^"]*")+/g)?.map(p => p.replace(/^"|"$/g, "")) || [];
+    if (!parts.length) return;
+
+    const cmd = parts[0].toLowerCase();
+    const sub = parts[1]?.toLowerCase() || "";
+
+    try {
+      // ── help ──────────────────────────────────────────────────────────────
+      if (cmd === "help") {
+        consolePrint(`<span style="color:#c9d1d9;">
+  <span style="color:#58a6ff;">access grant</span> &lt;user&gt; &lt;file&gt; [YYYY-MM-DD]  — grant access (optional expiry)<br>
+  <span style="color:#58a6ff;">access rm</span>    &lt;user&gt; &lt;file&gt;             — revoke access<br>
+  <span style="color:#58a6ff;">access list</span>  &lt;user&gt;                    — list files user can access<br>
+  <span style="color:#58a6ff;">user lookup</span>  &lt;uid|email|name&gt;         — find a user<br>
+  <span style="color:#58a6ff;">file lookup</span>  &lt;fileid|name&gt;            — find a file<br>
+  <span style="color:#58a6ff;">users list</span>                           — all users + UIDs<br>
+  <span style="color:#58a6ff;">files list</span>                           — all files + IDs<br>
+  <span style="color:#58a6ff;">help</span>                                 — this message<br>
+  <span style="color:#8b949e;">&lt;user&gt; accepts: display name, email, or Firebase UID<br>
+  &lt;file&gt; accepts: file name or file ID<br>
+  Wrap multi-word names in quotes: access grant "John Doe" "my report.pdf"</span>
+</span>`);
+        return;
+      }
+
+      // ── users list ────────────────────────────────────────────────────────
+      if (cmd === "users" && sub === "list") {
+        const entries = Object.entries(allUsers);
+        if (!entries.length) { consoleWarn("No users found."); return; }
+        consoleTable(entries.map(([uid, u]) => ({
+          UID:   uid,
+          Name:  u.displayName || "—",
+          Email: u.email || "—",
+          Role:  u.isAdmin ? "Admin" : "User",
+        })));
+        consoleInfo(`${entries.length} user(s) total.`);
+        return;
+      }
+
+      // ── files list ────────────────────────────────────────────────────────
+      if (cmd === "files" && sub === "list") {
+        const entries = Object.entries(allFiles);
+        if (!entries.length) { consoleWarn("No files found."); return; }
+        consoleTable(entries.map(([id, f]) => ({
+          "File ID": id,
+          Name:      f.name || "—",
+          Type:      f.type || "—",
+          Size:      f.size ? formatSize(f.size) : "—",
+        })));
+        consoleInfo(`${entries.length} file(s) total.`);
+        return;
+      }
+
+      // ── user lookup ───────────────────────────────────────────────────────
+      if (cmd === "user" && sub === "lookup") {
+        const token = parts[2];
+        if (!token) { consoleErr("Usage: user lookup <uid|email|name>"); return; }
+        const u = resolveUser(token);
+        if (!u) { consoleErr(`No user found matching "${token}"`); return; }
+        consoleTable([{
+          UID:   u.uid,
+          Name:  u.displayName || "—",
+          Email: u.email || "—",
+          Role:  u.isAdmin ? "Admin" : "User",
+        }]);
+        return;
+      }
+
+      // ── file lookup ───────────────────────────────────────────────────────
+      if (cmd === "file" && sub === "lookup") {
+        const token = parts.slice(2).join(" ");
+        if (!token) { consoleErr("Usage: file lookup <fileid|name>"); return; }
+        const f = resolveFile(token);
+        if (!f) { consoleErr(`No file found matching "${token}"`); return; }
+        consoleTable([{
+          "File ID": f.fileId,
+          Name:      f.name || "—",
+          Type:      f.type || "—",
+          Size:      f.size ? formatSize(f.size) : "—",
+        }]);
+        return;
+      }
+
+      // ── access grant ──────────────────────────────────────────────────────
+      if (cmd === "access" && sub === "grant") {
+        if (parts.length < 4) { consoleErr("Usage: access grant <user> <file> [YYYY-MM-DD]"); return; }
+        const userToken = parts[2];
+        const fileToken = parts[3];
+        const expiryStr = parts[4] || "";
+
+        const u = resolveUser(userToken);
+        if (!u) { consoleErr(`User not found: "${userToken}". Try "users list" to see UIDs.`); return; }
+        const f = resolveFile(fileToken);
+        if (!f) { consoleErr(`File not found: "${fileToken}". Try "files list" to see file IDs.`); return; }
+
+        const accessData = { granted: true, grantedAt: Date.now(), grantedBy: currentUser.uid };
+        if (expiryStr) {
+          const expiryTs = new Date(expiryStr + "T23:59:59").getTime();
+          if (isNaN(expiryTs)) { consoleErr(`Invalid date format: "${expiryStr}". Use YYYY-MM-DD.`); return; }
+          accessData.expiresAt = expiryTs;
+        }
+
+        await dbSet(auth, `access/${u.uid}/${f.fileId}`, accessData);
+        writeLog("access_grant", {
+          targetUid:   u.uid,
+          targetEmail: u.email || "",
+          fileName:    f.name || f.fileId,
+          fileId:      f.fileId,
+          expiresAt:   accessData.expiresAt || null,
+          via:         "console",
+        });
+
+        const expMsg = expiryStr ? ` (expires ${expiryStr})` : " (permanent)";
+        consoleOk(`Access granted: ${userLabel(u)} → ${fileLabel(f)}${expMsg}`);
+        renderAccessTable(); // refresh Access Control tab
+        return;
+      }
+
+      // ── access rm ────────────────────────────────────────────────────────
+      if (cmd === "access" && (sub === "rm" || sub === "revoke" || sub === "remove")) {
+        if (parts.length < 4) { consoleErr("Usage: access rm <user> <file>"); return; }
+        const userToken = parts[2];
+        const fileToken = parts[3];
+
+        const u = resolveUser(userToken);
+        if (!u) { consoleErr(`User not found: "${userToken}". Try "users list" to see UIDs.`); return; }
+        const f = resolveFile(fileToken);
+        if (!f) { consoleErr(`File not found: "${fileToken}". Try "files list" to see file IDs.`); return; }
+
+        await dbDelete(auth, `access/${u.uid}/${f.fileId}`);
+        writeLog("access_revoke", {
+          targetUid:   u.uid,
+          targetEmail: u.email || "",
+          fileName:    f.name || f.fileId,
+          fileId:      f.fileId,
+          via:         "console",
+        });
+
+        consoleOk(`Access revoked: ${userLabel(u)} ← ${fileLabel(f)}`);
+        renderAccessTable();
+        return;
+      }
+
+      // ── access list ───────────────────────────────────────────────────────
+      if (cmd === "access" && sub === "list") {
+        const token = parts[2];
+        if (!token) { consoleErr("Usage: access list <user>"); return; }
+        const u = resolveUser(token);
+        if (!u) { consoleErr(`User not found: "${token}". Try "users list" to see UIDs.`); return; }
+
+        const accessVal = await dbGet(auth, `access/${u.uid}`);
+        if (!accessVal || Object.keys(accessVal).length === 0) {
+          consoleWarn(`${userLabel(u)} has no file access grants.`);
+          return;
+        }
+
+        const now = Date.now();
+        const rows = Object.entries(accessVal).map(([fileId, a]) => {
+          const f = allFiles[fileId];
+          const expired = a.expiresAt && a.expiresAt < now;
+          return {
+            "File ID":  fileId,
+            Name:       f?.name || "—",
+            Status:     expired ? "Expired" : "Active",
+            Expires:    a.expiresAt ? new Date(a.expiresAt).toLocaleDateString() : "Never",
+          };
+        });
+
+        consoleInfo(`Access grants for ${userLabel(u)} (UID: ${u.uid}):`);
+        consoleTable(rows);
+        consoleInfo(`${rows.length} grant(s).`);
+        return;
+      }
+
+      // ── unknown ───────────────────────────────────────────────────────────
+      consoleErr(`Unknown command: "${raw}". Type help for usage.`);
+
+    } catch (err) {
+      consoleErr("Error: " + err.message);
+    }
   };
 
 </script>
