@@ -3648,15 +3648,28 @@
   };
 
   // ── Resolver helpers ────────────────────────────────────────────────────────
-  // Resolve a user token → { uid, displayName, email } or null
-  function resolveUser(token) {
-    // Direct UID match
+  // Resolve a user token → { uid, displayName, email, _orphan? } or null
+  // _orphan=true means the UID exists in access/ but has no users/ record
+  async function resolveUser(token) {
+    // 1. Direct UID match in allUsers
     if (allUsers[token]) return { uid: token, ...allUsers[token] };
-    // Email or displayName match (case-insensitive)
+    // 2. Email or displayName match (case-insensitive)
     const t = token.toLowerCase();
     for (const [uid, u] of Object.entries(allUsers)) {
       if ((u.email || "").toLowerCase() === t) return { uid, ...u };
       if ((u.displayName || "").toLowerCase() === t) return { uid, ...u };
+    }
+    // 3. Orphaned UID — not in users/ but may exist in access/
+    //    Accept it if it looks like a Firebase UID (20-36 alphanum chars, no spaces)
+    //    OR if it exists as a key in access/
+    if (/^[A-Za-z0-9]{20,}$/.test(token)) {
+      try {
+        const accessVal = await dbGet(auth, `access/${token}`);
+        if (accessVal) {
+          // UID has grants — treat as valid but flag as orphan
+          return { uid: token, displayName: "", email: "", _orphan: true };
+        }
+      } catch { /* ignore */ }
     }
     return null;
   }
@@ -3673,7 +3686,10 @@
     return null;
   }
 
-  function userLabel(u) { return u.displayName || u.email || u.uid; }
+  function userLabel(u) {
+    if (u._orphan) return `[orphan UID] ${u.uid}`;
+    return u.displayName || u.email || u.uid;
+  }
   function fileLabel(f) { return f.name || f.fileId; }
 
   // ── Command runner ──────────────────────────────────────────────────────────
@@ -3743,14 +3759,17 @@
       if (cmd === "user" && sub === "lookup") {
         const token = parts[2];
         if (!token) { consoleErr("Usage: user lookup <uid|email|name>"); return; }
-        const u = resolveUser(token);
-        if (!u) { consoleErr(`No user found matching "${token}"`); return; }
+        const u = await resolveUser(token);
+        if (!u) { consoleErr(`No user found matching "${token}" — not in users/ and no access grants found for this UID.`); return; }
         consoleTable([{
           UID:   u.uid,
           Name:  u.displayName || "—",
           Email: u.email || "—",
-          Role:  u.isAdmin ? "Admin" : "User",
+          Role:  u._orphan ? "⚠ orphan (no users/ record)" : (u.isAdmin ? "Admin" : "User"),
         }]);
+        if (u._orphan) {
+          consoleWarn(`This UID has access grants in Firebase but no matching record in users/. The user may have been deleted from Auth or their registration failed. You can still use "access rm ${u.uid} <file>" to revoke their access.`);
+        }
         return;
       }
 
@@ -3776,8 +3795,8 @@
         const fileToken = parts[3];
         const expiryStr = parts[4] || "";
 
-        const u = resolveUser(userToken);
-        if (!u) { consoleErr(`User not found: "${userToken}". Try "users list" to see UIDs.`); return; }
+        const u = await resolveUser(userToken);
+        if (!u) { consoleErr(`User not found: "${userToken}". Try "users list" to see known UIDs, or paste the raw UID from Firebase.`); return; }
         const f = resolveFile(fileToken);
         if (!f) { consoleErr(`File not found: "${fileToken}". Try "files list" to see file IDs.`); return; }
 
@@ -3810,7 +3829,7 @@
         const userToken = parts[2];
         const fileToken = parts[3];
 
-        const u = resolveUser(userToken);
+        const u = await resolveUser(userToken);
         if (!u) { consoleErr(`User not found: "${userToken}". Try "users list" to see UIDs.`); return; }
         const f = resolveFile(fileToken);
         if (!f) { consoleErr(`File not found: "${fileToken}". Try "files list" to see file IDs.`); return; }
@@ -3833,7 +3852,7 @@
       if (cmd === "access" && sub === "list") {
         const token = parts[2];
         if (!token) { consoleErr("Usage: access list <user>"); return; }
-        const u = resolveUser(token);
+        const u = await resolveUser(token);
         if (!u) { consoleErr(`User not found: "${token}". Try "users list" to see UIDs.`); return; }
 
         const accessVal = await dbGet(auth, `access/${u.uid}`);
