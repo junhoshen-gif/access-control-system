@@ -973,6 +973,7 @@
             <tr><td style="font-family:monospace;padding:0.25rem 0.75rem 0.25rem 0;color:#58a6ff;">file lookup &lt;fileid or name&gt;</td><td style="color:var(--color-text-muted);">Find a file by ID or name</td></tr>
             <tr><td style="font-family:monospace;padding:0.25rem 0.75rem 0.25rem 0;color:#58a6ff;">users list</td><td style="color:var(--color-text-muted);">List all registered users with UIDs</td></tr>
             <tr><td style="font-family:monospace;padding:0.25rem 0.75rem 0.25rem 0;color:#58a6ff;">files list</td><td style="color:var(--color-text-muted);">List all files with IDs</td></tr>
+            <tr><td style="font-family:monospace;padding:0.25rem 0.75rem 0.25rem 0;color:#58a6ff;">register &lt;uid&gt; &lt;displayName&gt;</td><td style="color:var(--color-text-muted);">Create a users/ record for an orphaned UID (does not affect access)</td></tr>
             <tr><td style="font-family:monospace;padding:0.25rem 0.75rem 0.25rem 0;color:#58a6ff;">help</td><td style="color:var(--color-text-muted);">Show this reference</td></tr>
           </tbody>
         </table>
@@ -3719,6 +3720,7 @@
   <span style="color:#58a6ff;">file lookup</span>  &lt;fileid|name&gt;            — find a file<br>
   <span style="color:#58a6ff;">users list</span>                           — all users + UIDs<br>
   <span style="color:#58a6ff;">files list</span>                           — all files + IDs<br>
+  <span style="color:#58a6ff;">register</span>     &lt;uid&gt; &lt;displayName&gt;      — create a users/ record for an orphaned UID<br>
   <span style="color:#58a6ff;">help</span>                                 — this message<br>
   <span style="color:#8b949e;">&lt;user&gt; accepts: display name, email, or Firebase UID<br>
   &lt;file&gt; accepts: file name or file ID<br>
@@ -3768,7 +3770,7 @@
           Role:  u._orphan ? "⚠ orphan (no users/ record)" : (u.isAdmin ? "Admin" : "User"),
         }]);
         if (u._orphan) {
-          consoleWarn(`This UID has access grants in Firebase but no matching record in users/. The user may have been deleted from Auth or their registration failed. You can still use "access rm ${u.uid} <file>" to revoke their access.`);
+          consoleWarn(`This UID has access grants in Firebase but no matching record in users/. The user may have been deleted from Auth or their registration failed.\nTo add them to users/ without affecting their access: <span style="color:#3fb950;font-family:monospace;">register ${u.uid} &lt;displayName&gt;</span>\nTo revoke their access: <span style="color:#3fb950;font-family:monospace;">access rm ${u.uid} &lt;file&gt;</span>`);
         }
         return;
       }
@@ -3876,6 +3878,40 @@
         consoleInfo(`Access grants for ${userLabel(u)} (UID: ${u.uid}):`);
         consoleTable(rows);
         consoleInfo(`${rows.length} grant(s).`);
+        return;
+      }
+
+      // ── register ──────────────────────────────────────────────────────────
+      if (cmd === "register") {
+        const uid = parts[1];
+        const displayName = parts.slice(2).join(" ");
+        if (!uid || !displayName) { consoleErr("Usage: register <uid> <displayName>"); return; }
+
+        // Make sure UID looks valid
+        if (!/^[A-Za-z0-9]{20,}$/.test(uid)) { consoleErr(`"${uid}" doesn't look like a valid Firebase UID.`); return; }
+
+        // Refuse to overwrite an existing users/ record
+        const existing = await dbGet(auth, `users/${uid}`);
+        if (existing) {
+          consoleWarn(`UID ${uid} already has a users/ record (displayName: "${existing.displayName || "—"}"). Use Firebase console to edit it directly.`);
+          return;
+        }
+
+        // Write minimal users/ record — no email, role defaults to user
+        const record = {
+          displayName,
+          email: "",
+          isAdmin: false,
+          registeredAt: new Date().toISOString(),
+          _manuallyRegistered: true,
+        };
+        await dbSet(auth, `users/${uid}`, record);
+
+        // Refresh allUsers so the UID is now resolvable by name
+        allUsers[uid] = record;
+
+        consoleOk(`Registered UID ${uid} as "${displayName}".`);
+        consoleInfo(`The users/ record was created. Access grants are unchanged. You can now use "access list ${uid}" or refer to this user by name in future commands.`);
         return;
       }
 
