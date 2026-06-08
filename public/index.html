@@ -473,7 +473,10 @@
 
     document.getElementById("storeSection").classList.remove("hidden");
     const cards = availableProducts.map(([key, p]) => {
-      const price      = p.price || (p.priceNTD ? `NT$${p.priceNTD}` : "");
+      const hasOptions = Array.isArray(p.options) && p.options.length > 0;
+      const price      = hasOptions
+        ? `from NT$${Math.min(...p.options.map(o => o.priceNTD))}`
+        : (p.price || (p.priceNTD ? `NT$${p.priceNTD}` : ""));
       const method     = p.paymentMethod === "Credit" ? "💳 信用卡" : p.paymentMethod === "ATM" ? "🏧 ATM" : "💳 信用卡 / 🏧 ATM";
       const fileCount  = (p.fileIds || []).length;
       const hasImages  = Array.isArray(p.imageKeys) && p.imageKeys.length > 0;
@@ -493,6 +496,33 @@
         ? `<button class="btn btn-ghost btn-sm" onclick="openProductPreview('${escHtml(key)}')">預覽 Preview</button>`
         : "";
 
+      // Option picker (shown only if product has multiple tiers)
+      const optionPicker = hasOptions
+        ? `<div style="margin-bottom:0.75rem;">
+            <div style="font-size:0.78rem;color:var(--color-text-muted);margin-bottom:0.4rem;font-weight:500;">Choose a plan:</div>
+            <div style="display:flex;flex-direction:column;gap:0.35rem;" id="optPicker-${escHtml(key)}">
+              ${p.options.map((opt, i) => `
+                <label style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;
+                              border:1.5px solid var(--color-border);border-radius:8px;padding:0.5rem 0.75rem;
+                              cursor:pointer;font-size:0.85rem;transition:border-color 0.15s;
+                              ${i === 0 ? 'border-color:var(--color-primary);background:#EFF6FF;' : ''}"
+                      id="optLabel-${escHtml(key)}-${i}"
+                      onclick="selectProductOption('${escHtml(key)}',${i},${p.options.length})">
+                  <span style="display:flex;align-items:center;gap:0.5rem;">
+                    <input type="radio" name="opt-${escHtml(key)}" value="${i}" ${i===0?'checked':''} style="accent-color:var(--color-primary);"/>
+                    <span>${escHtml(opt.label)}</span>
+                    ${opt.durationDays ? `<span style="font-size:0.72rem;color:var(--color-text-muted);">(${opt.durationDays} days)</span>`
+                                       : `<span style="font-size:0.72rem;color:var(--color-text-muted);">(permanent)</span>`}
+                  </span>
+                  <span style="font-weight:600;color:var(--color-primary);white-space:nowrap;">NT$${opt.priceNTD}</span>
+                </label>`).join("")}
+            </div>
+          </div>`
+        : ``;
+
+      const durationMeta = hasOptions ? "" :
+        (p.durationDays ? `<div class="store-meta">有效期限：${p.durationDays} 天</div>` : `<div class="store-meta">永久存取</div>`);
+
       return `
         <div class="store-card" id="storecard-${escHtml(key)}">
           ${imageSection}
@@ -500,9 +530,10 @@
             <div class="store-info">
               <div class="store-name">${escHtml(p.name)}</div>
               <div class="store-meta">${fileCount} 個檔案 · ${method}</div>
-              ${p.durationDays ? `<div class="store-meta">有效期限：${p.durationDays} 天</div>` : `<div class="store-meta">永久存取</div>`}
+              ${durationMeta}
             </div>
           </div>
+          ${optionPicker}
           <!-- Promo code input -->
           <div style="padding:0 0 0.75rem;display:flex;gap:0.4rem;align-items:center;">
             <input type="text" id="promoInput-${escHtml(key)}"
@@ -955,13 +986,15 @@
   // ── Create a payment order and redirect to ECPay payment page ──────────────
   // storeInfo: legacy CVS map result (has CVSStoreID etc.)
   // deliveryInfo: new unified delivery object { deliveryType, receiverName, receiverPhone, receiverAddress?, CVSStoreID?, ... }
-  async function createPaymentOrder(productKey, storeInfo, deliveryInfo, receiverName, receiverPhone, promoId) {
+  async function createPaymentOrder(productKey, storeInfo, deliveryInfo, receiverName, receiverPhone, promoId, optionIndex) {
     const idToken = await currentUserObj.getIdToken(true);
     const body    = { productKey, idToken };
     if (storeInfo)    body.storeInfo    = storeInfo;
     if (deliveryInfo) body.deliveryInfo = deliveryInfo;
     if (receiverName) body.receiverName = receiverName;
     if (receiverPhone) body.receiverPhone = receiverPhone;
+    // Pass selected option index (for tiered products)
+    if (optionIndex != null) body.optionIndex = optionIndex;
     // Pass active promo so server can re-validate and apply discount
     const activePromoId = promoId || _promosByProduct[productKey]?.promoId || _globalPromo?.promoId;
     if (activePromoId) body.promoId = activePromoId;
@@ -981,6 +1014,7 @@
 
   // ── State for the delivery modal ───────────────────────────────────────────
   let _pendingProductKey    = null;
+  let _pendingOptionIndex   = null;
   let _selectedDeliveryType = null; // e.g. "UNIMART", "FAMI", "TCAT", "POST"
 
   // ── Promotion state ─────────────────────────────────────────────────────────
@@ -1004,6 +1038,7 @@
     document.getElementById("receiverModal").classList.add("hidden");
     document.body.style.overflow = "";
     _pendingProductKey    = null;
+    _pendingOptionIndex   = null;
     _selectedDeliveryType = null;
   };
 
@@ -1060,11 +1095,32 @@
         receiverAddress: address,
       };
       closeReceiverModal();
-      await createPaymentOrder(_pendingProductKey, null, deliveryInfo, name, phone);
+      await createPaymentOrder(_pendingProductKey, null, deliveryInfo, name, phone, undefined, _pendingOptionIndex);
     } catch (err) {
       if (btn) { btn.disabled = false; btn.textContent = "確認並付款 →"; }
       alert("無法建立訂單，請稍後再試。\n" + err.message);
     }
+  };
+
+  // ── Option picker helper ────────────────────────────────────────────────────
+  window.selectProductOption = (productKey, selectedIdx, total) => {
+    for (let i = 0; i < total; i++) {
+      const label = document.getElementById(`optLabel-${productKey}-${i}`);
+      if (!label) continue;
+      if (i === selectedIdx) {
+        label.style.borderColor = "var(--color-primary)";
+        label.style.background  = "#EFF6FF";
+      } else {
+        label.style.borderColor = "var(--color-border)";
+        label.style.background  = "";
+      }
+    }
+    // Update displayed price to reflect selected option
+    const product = allProducts[productKey];
+    if (!product?.options) return;
+    const opt      = product.options[selectedIdx];
+    const priceEl  = document.getElementById(`promoPrice-${productKey}`);
+    if (priceEl && opt) priceEl.textContent = `NT$${opt.priceNTD}`;
   };
 
   // ── Main buy handler ────────────────────────────────────────────────────────
@@ -1074,9 +1130,17 @@
 
     const product = allProducts[productKey];
 
+    // Resolve selected option index (if product has tiers)
+    let optionIndex = null;
+    if (Array.isArray(product?.options) && product.options.length > 0) {
+      const checked = document.querySelector(`input[name="opt-${productKey}"]:checked`);
+      optionIndex = checked ? parseInt(checked.value, 10) : 0;
+    }
+
     if (product && product.hasPhysical && Array.isArray(product.logisticsSubTypes) && product.logisticsSubTypes.length > 0) {
       // Physical product — show delivery selection modal
       _pendingProductKey = productKey;
+      _pendingOptionIndex = optionIndex;
       _selectedDeliveryType = null;
 
       // Build delivery options from product config
@@ -1105,7 +1169,7 @@
       btn.disabled    = true;
       btn.textContent = "跳轉中…";
       try {
-        await createPaymentOrder(productKey, null);
+        await createPaymentOrder(productKey, null, undefined, undefined, undefined, undefined, optionIndex);
       } catch (err) {
         btn.disabled    = false;
         btn.textContent = "立即購買";
@@ -1174,7 +1238,7 @@
       } : null;
 
       await createPaymentOrder(productKey, storeInfo, deliveryInfo,
-        storeInfo?.receiverName, storeInfo?.receiverPhone);
+        storeInfo?.receiverName, storeInfo?.receiverPhone, undefined, _pendingOptionIndex);
     } catch (err) {
       document.body.removeChild(notice);
       alert("無法建立訂單：" + err.message);

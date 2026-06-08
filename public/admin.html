@@ -256,11 +256,26 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label">Access Duration</label>
+            <label class="form-label">Access Duration <span class="text-muted text-sm">(used when no options are defined)</span></label>
             <div style="display:flex;align-items:center;gap:0.75rem;">
               <input type="number" id="productDuration" class="form-input" placeholder="空白 = 永久" min="1" style="max-width:180px;"/>
               <span class="text-muted">days (leave blank = permanent)</span>
             </div>
+          </div>
+
+          <!-- ── Tier options ──────────────────────────────────────────────── -->
+          <div class="form-group" style="border-top:1px solid var(--color-border);padding-top:1rem;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6rem;">
+              <div>
+                <label class="form-label" style="margin:0;">Pricing Options / Tiers</label>
+                <p class="text-muted text-sm" style="margin:0.2rem 0 0;">Add multiple options (e.g. 7-day, 30-day, Permanent) so buyers can choose. When options exist, the base Price and Duration above are ignored.</p>
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="addProductOption()" style="white-space:nowrap;flex-shrink:0;">+ Add Option</button>
+            </div>
+            <div id="productOptionsContainer" style="display:flex;flex-direction:column;gap:0.5rem;">
+              <!-- option rows injected here -->
+            </div>
+            <p id="productOptionsEmpty" class="text-muted text-sm" style="margin:0.5rem 0 0;">No options yet — product will use the single price &amp; duration above.</p>
           </div>
 
           <!-- ── Preview section ─────────────────────────────────────── -->
@@ -2541,14 +2556,24 @@
 
     document.getElementById("productsTableBody").innerHTML = entries.map(([key, p]) => {
       const fileNames = (p.fileIds || []).map(id => allFiles[id]?.name || id).join(", ");
-      const duration  = p.durationDays ? `${p.durationDays} days` : "Permanent";
       const env       = p.useSandbox ? `<span class="badge badge-warning">Sandbox</span>` : `<span class="badge badge-success">正式</span>`;
       const method    = p.paymentMethod === "Credit" ? "Credit Card" : p.paymentMethod === "ATM" ? "ATM" : "All";
+      let durationCell, priceCell;
+      if (p.options && p.options.length > 0) {
+        priceCell    = p.options.map(o => `<span style="font-size:0.78rem;display:block;">NT$${o.priceNTD} – ${escHtml(o.label)}</span>`).join("");
+        durationCell = p.options.map(o => `<span style="font-size:0.78rem;display:block;">${o.durationDays ? o.durationDays + "d" : "∞"} – ${escHtml(o.label)}</span>`).join("");
+      } else {
+        priceCell    = escHtml(p.price || (p.priceNTD ? `NT$${p.priceNTD}` : "—"));
+        durationCell = p.durationDays ? `${p.durationDays} days` : "Permanent";
+      }
       return `<tr>
-        <td><strong>${escHtml(p.name)}</strong></td>
+        <td>
+          <strong>${escHtml(p.name)}</strong>
+          ${p.options?.length ? `<span class="badge badge-neutral" style="margin-left:0.4rem;font-size:0.7rem;">${p.options.length} options</span>` : ""}
+        </td>
         <td class="text-sm">${escHtml(fileNames) || "—"}</td>
-        <td>${duration}</td>
-        <td>${escHtml(p.price || (p.priceNTD ? `NT$${p.priceNTD}` : "—"))}</td>
+        <td style="font-size:0.82rem;">${durationCell}</td>
+        <td style="font-size:0.82rem;">${priceCell}</td>
         <td>${method}</td>
         <td>${env}</td>
         <td>
@@ -2809,6 +2834,52 @@
     return uploaded;
   }
 
+  // ── Product Options (tiers) ───────────────────────────────────────────────
+  let _productOptions = []; // [{ label, priceNTD, price, durationDays }]
+
+  function renderProductOptions() {
+    const container = document.getElementById("productOptionsContainer");
+    const emptyMsg  = document.getElementById("productOptionsEmpty");
+    if (!container) return;
+    emptyMsg.style.display = _productOptions.length ? "none" : "";
+    container.innerHTML = _productOptions.map((opt, i) => `
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:0.5rem;align-items:center;
+                  background:var(--color-surface);border:1px solid var(--color-border);
+                  border-radius:8px;padding:0.6rem 0.75rem;" data-oidx="${i}">
+        <input type="text" placeholder="Label (e.g. 7-day access)" value="${escHtml(opt.label || "")}"
+          oninput="_productOptions[${i}].label=this.value"
+          class="form-input" style="font-size:0.85rem;"/>
+        <div style="display:flex;flex-direction:column;gap:0.15rem;">
+          <input type="number" placeholder="Price (NTD)" value="${opt.priceNTD || ""}" min="1"
+            oninput="_productOptions[${i}].priceNTD=parseInt(this.value)||0;_productOptions[${i}].price=this.value?'NT$'+this.value:''"
+            class="form-input" style="font-size:0.85rem;"/>
+          <span style="font-size:0.7rem;color:var(--color-text-muted);padding-left:2px;">NTD</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0.15rem;">
+          <input type="number" placeholder="Days (blank=∞)" value="${opt.durationDays || ""}" min="1"
+            oninput="_productOptions[${i}].durationDays=parseInt(this.value)||null"
+            class="form-input" style="font-size:0.85rem;"/>
+          <span style="font-size:0.7rem;color:var(--color-text-muted);padding-left:2px;">days access</span>
+        </div>
+        <button type="button" onclick="removeProductOption(${i})" title="Remove option"
+          style="background:#FEE2E2;color:#DC2626;border:1px solid #FECACA;border-radius:6px;
+                 padding:0.35rem 0.55rem;cursor:pointer;font-size:0.8rem;white-space:nowrap;">✕</button>
+      </div>`).join("");
+  }
+
+  window.addProductOption = () => {
+    _productOptions.push({ label: "", priceNTD: 0, price: "", durationDays: null });
+    renderProductOptions();
+    // Focus the new label input
+    const inputs = document.querySelectorAll("#productOptionsContainer input[type=text]");
+    inputs[inputs.length - 1]?.focus();
+  };
+
+  window.removeProductOption = (i) => {
+    _productOptions.splice(i, 1);
+    renderProductOptions();
+  };
+
   window.saveProduct = async () => {
     const name         = document.getElementById("productName").value.trim();
     const priceNTD     = parseInt(document.getElementById("productPriceNTD").value.trim(), 10);
@@ -2822,8 +2893,16 @@
     const previewFileId = document.getElementById("productPreviewFileId").value || null;
     const previewPages  = parseInt(document.getElementById("productPreviewPages").value, 10) || null;
 
+    const hasOptions = _productOptions.length > 0;
+
     if (!name)              return showPricingAlert("Product name is required.", "error");
-    if (!priceNTD || priceNTD < 1) return showPricingAlert("Please enter a valid NTD price.", "error");
+    if (!hasOptions && (!priceNTD || priceNTD < 1)) return showPricingAlert("Please enter a valid NTD price (or add pricing options).", "error");
+    if (hasOptions) {
+      for (const [i, opt] of _productOptions.entries()) {
+        if (!opt.label.trim())       return showPricingAlert(`Option ${i+1}: label is required.`, "error");
+        if (!opt.priceNTD || opt.priceNTD < 1) return showPricingAlert(`Option ${i+1}: price must be ≥ 1 NTD.`, "error");
+      }
+    }
     if (!merchantId)        return showPricingAlert("Please enter an ECPay Merchant ID.", "error");
     if (fileIds.length === 0) return showPricingAlert("Please select at least one file.", "error");
 
@@ -2843,15 +2922,27 @@
       ? [...document.querySelectorAll("input[name='logisticsSubType']:checked")].map(cb => cb.value)
       : [];
 
+    // Normalise options — trim labels, ensure price is stored
+    const cleanOptions = hasOptions
+      ? _productOptions.map(o => ({
+          label:       o.label.trim(),
+          priceNTD:    o.priceNTD,
+          price:       o.price || `NT$${o.priceNTD}`,
+          durationDays: o.durationDays || null,
+        }))
+      : null;
+
     const data = {
       name,
-      priceNTD,
-      price:              price || `NT$${priceNTD}`,
+      // When options exist, store the lowest option price as the display price
+      priceNTD:           hasOptions ? Math.min(...cleanOptions.map(o => o.priceNTD)) : priceNTD,
+      price:              hasOptions ? `from NT$${Math.min(...cleanOptions.map(o => o.priceNTD))}` : (price || `NT$${priceNTD}`),
       paymentMethod:      payMethod,
       merchantId,
       useSandbox,
       fileIds,
-      durationDays:       durationRaw ? parseInt(durationRaw, 10) : null,
+      durationDays:       hasOptions ? null : (durationRaw ? parseInt(durationRaw, 10) : null),
+      options:            cleanOptions,
       previewFileId:      previewFileId || null,
       previewPages:       (previewFileId && previewPages) ? previewPages : null,
       imageKeys:          imageKeys.length > 0 ? imageKeys : null,
@@ -2882,18 +2973,23 @@
     if (!p) return;
     document.getElementById("editProductKey").value         = key;
     document.getElementById("productName").value            = p.name || "";
-    document.getElementById("productPriceNTD").value        = p.priceNTD || "";
-    document.getElementById("productPrice").value           = p.price || "";
+    // If product has options, the base price fields show the raw stored values (may be "from NT$…")
+    // We show the original single price only if no options
+    document.getElementById("productPriceNTD").value        = (!p.options?.length && p.priceNTD) ? p.priceNTD : "";
+    document.getElementById("productPrice").value           = (!p.options?.length && p.price) ? p.price : "";
     document.getElementById("productPaymentMethod").value   = p.paymentMethod || "ALL";
     document.getElementById("productMerchantId").value      = p.merchantId || "";
     document.getElementById("productUseSandbox").checked    = !!p.useSandbox;
-    document.getElementById("productDuration").value        = p.durationDays || "";
+    document.getElementById("productDuration").value        = (!p.options?.length && p.durationDays) ? p.durationDays : "";
     document.getElementById("productPreviewFileId").value   = p.previewFileId || "";
     document.getElementById("productPreviewPages").value    = p.previewPages || "";
     document.getElementById("productFormTitle").textContent = "Edit Product";
     document.querySelectorAll(".product-file-cb").forEach(cb => {
       cb.checked = (p.fileIds || []).includes(cb.value);
     });
+    // Load options/tiers
+    _productOptions = p.options ? p.options.map(o => ({ ...o })) : [];
+    renderProductOptions();
     // Load existing images
     pendingProductImages  = [];
     existingProductImages = p.imageKeys ? [...p.imageKeys] : [];
@@ -2923,6 +3019,9 @@
     document.getElementById("productPreviewPages").value    = "";
     document.getElementById("productFormTitle").textContent = "New Product";
     document.querySelectorAll(".product-file-cb").forEach(cb => cb.checked = false);
+    // Reset options/tiers
+    _productOptions = [];
+    renderProductOptions();
     pendingProductImages  = [];
     existingProductImages = [];
     renderProductImagesPreviews();

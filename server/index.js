@@ -880,7 +880,12 @@ app.post("/ecpay/callback", async (req, res) => {
   }
 
   const fileIds      = product.fileIds || [];
-  const durationDays = product.durationDays || null;
+  // If the trade was created with an option selection, use that option's duration
+  let durationDays = product.durationDays || null;
+  if (tradeData.optionIndex != null && Array.isArray(product.options) && product.options.length > 0) {
+    const opt = product.options[tradeData.optionIndex] || product.options[0];
+    durationDays = opt.durationDays || null;
+  }
   const now          = Date.now();
   const expiresAt    = durationDays ? now + durationDays * 24 * 60 * 60 * 1000 : null;
 
@@ -990,7 +995,7 @@ app.post("/ecpay/create-order", async (req, res) => {
   // storeInfo: for CVS carriers (7-11, FamilyMart, OK, Hi-Life) — set after CVS map selection
   // deliveryInfo: full delivery object (includes deliveryType, plus store or home address info)
   // promoId: optional promotion to apply (validated server-side again before use)
-  const { productKey, idToken, storeInfo, deliveryInfo, receiverName, receiverPhone, promoId } = req.body;
+  const { productKey, idToken, storeInfo, deliveryInfo, receiverName, receiverPhone, promoId, optionIndex } = req.body;
   if (!productKey || !idToken) return res.status(400).json({ error: "Missing productKey or idToken" });
 
   let uid;
@@ -1018,6 +1023,22 @@ app.post("/ecpay/create-order", async (req, res) => {
   const shortPK         = productKey.replace(/[^A-Za-z0-9]/g, "").slice(0, 5).padEnd(5, "0");
   const shortUID        = uid.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).padEnd(10, "0");
   const merchantTradeNo = `${shortPK}${shortUID}${randSuffix}`;
+
+  // ── Apply selected option (tier) override ──────────────────────────────────
+  // If the product has options[], the client sends optionIndex to select a tier.
+  // We read priceNTD and durationDays from that option rather than the top-level product.
+  let selectedOption = null;
+  if (Array.isArray(product.options) && product.options.length > 0) {
+    const idx = typeof optionIndex === "number" ? optionIndex : 0;
+    selectedOption = product.options[idx] || product.options[0];
+    console.log(`[Options] productKey=${productKey} optionIndex=${idx} → label="${selectedOption.label}" price=${selectedOption.priceNTD} duration=${selectedOption.durationDays}`);
+    // Override product fields for this request
+    product = {
+      ...product,
+      priceNTD:    selectedOption.priceNTD,
+      durationDays: selectedOption.durationDays || null,
+    };
+  }
 
   // ── Apply promotion (server-side re-validation) ─────────────────────────────
   let finalPrice    = Math.round(product.priceNTD || 0);
@@ -1059,6 +1080,8 @@ app.post("/ecpay/create-order", async (req, res) => {
   try {
     const tradeEntry = { uid, productKey, createdAt: Date.now(), processed: false };
     if (appliedPromo) tradeEntry.promoId = promoId;
+    // Persist chosen option index so callback grants the right duration
+    if (optionIndex != null) tradeEntry.optionIndex = optionIndex;
     // Persist delivery selection so the payment callback can record the order
     if (product.hasPhysical) {
       if (deliveryInfo) {
