@@ -254,11 +254,15 @@ app.get("/db/*", async (req, res) => {
 });
 
 // PUT /db/*
+// Special case: a signed-in user may always write their own users/{uid}
+// profile record (mirrors database.rules.json: $uid === auth.uid), so that
+// registration/login can upsert displayName/email without needing admin.
 app.put("/db/*", async (req, res) => {
   const decoded = await verifyToken(req, res);
   if (!decoded) return;
-  if (!await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
   const refPath = req.params[0];
+  const isOwnProfile = refPath === `users/${decoded.uid}`;
+  if (!isOwnProfile && !await isAdmin(decoded.uid)) return res.status(403).json({ error: "Admin only" });
   try {
     await db.ref(refPath).set(req.body);
     res.json(req.body);

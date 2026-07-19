@@ -1,10 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Firebase Configuration  (used for Authentication only)
-// All database/storage operations now go through the Render server → Windows EXE.
+// Firebase Configuration
+// Auth is used everywhere. File/product operations go through the Render
+// server, but several pages (register/login profile writes, status/diag
+// health checks) still talk to the Realtime Database directly via the
+// client SDK — those calls need databaseURL to know which DB to hit.
 // ─────────────────────────────────────────────────────────────────────────────
 export const firebaseConfig = {
   apiKey:            "AIzaSyBmFB_qE4BYU3HA1bruC8nm0P1pnRFy7gM",
   authDomain:        "access-control-system-335f5.firebaseapp.com",
+  databaseURL:       "https://access-control-system-335f5-default-rtdb.firebaseio.com",
   projectId:         "access-control-system-335f5",
   storageBucket:     "access-control-system-335f5.appspot.com",
   messagingSenderId: "551173243790",
