@@ -145,6 +145,9 @@
       status_title: "System Status",
       status_checking: "Checking systems…",
       status_recheck: "Recheck Now",
+
+      // ── server wake banner ───────────────────────────────────────
+      banner_serverStarting: "Server starting, please wait about 30–50 seconds…",
     },
 
     zh: {
@@ -274,6 +277,9 @@
       status_title: "系統狀態",
       status_checking: "檢查系統中…",
       status_recheck: "立即重新檢查",
+
+      // ── server wake banner ───────────────────────────────────────
+      banner_serverStarting: "伺服器啟動中，請稍候約 30–50 秒…",
     },
   };
 
