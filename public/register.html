@@ -6,10 +6,13 @@
   <title>Create Account – FileAccess</title>
   <link rel="stylesheet" href="css/style.css" />
   <script src="js/protect.js"></script>
+  <script src="js/i18n.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body class="auth-body">
+
+  <div style="position:absolute;top:1rem;right:1.25rem;" id="langToggleWrap"></div>
 
   <div class="auth-card">
     <div class="auth-logo">
@@ -24,48 +27,48 @@
       <span class="auth-logo-text">FileAccess</span>
     </div>
 
-    <h1 class="auth-title">Create an account</h1>
-    <p class="auth-subtitle">Sign up to get started</p>
+    <h1 class="auth-title" data-i18n="register_title">Create an account</h1>
+    <p class="auth-subtitle" data-i18n="register_subtitle">Sign up to get started</p>
 
     <div id="authError" class="alert alert-error hidden"></div>
     <div id="authSuccess" class="alert alert-success hidden"></div>
 
     <form id="registerForm" class="auth-form">
       <div class="form-group">
-        <label for="displayName">Full Name</label>
-        <input type="text" id="displayName" placeholder="Jane Smith" required autocomplete="name"/>
+        <label for="displayName" data-i18n="register_fullName">Full Name</label>
+        <input type="text" id="displayName" placeholder="Jane Smith" data-i18n-placeholder="register_fullNamePlaceholder" required autocomplete="name"/>
       </div>
       <div class="form-group">
-        <label for="email">Email</label>
-        <input type="email" id="email" placeholder="you@example.com" required autocomplete="email"/>
+        <label for="email" data-i18n="register_email">Email</label>
+        <input type="email" id="email" placeholder="you@example.com" data-i18n-placeholder="register_emailPlaceholder" required autocomplete="email"/>
       </div>
       <div class="form-group">
-        <label for="password">Password</label>
+        <label for="password" data-i18n="register_password">Password</label>
         <div class="password-wrap">
-          <input type="password" id="password" placeholder="Min. 8 characters" required minlength="8" autocomplete="new-password"/>
-          <button type="button" class="pw-toggle" onclick="togglePw()">Show</button>
+          <input type="password" id="password" placeholder="Min. 8 characters" data-i18n-placeholder="register_passwordPlaceholder" required minlength="8" autocomplete="new-password"/>
+          <button type="button" class="pw-toggle" data-i18n="login_show" onclick="togglePw()">Show</button>
         </div>
       </div>
       <div class="form-group">
-        <label for="confirmPassword">Confirm Password</label>
-        <input type="password" id="confirmPassword" placeholder="••••••••" required autocomplete="new-password"/>
+        <label for="confirmPassword" data-i18n="register_confirmPassword">Confirm Password</label>
+        <input type="password" id="confirmPassword" placeholder="••••••••" data-i18n-placeholder="register_confirmPasswordPlaceholder" required autocomplete="new-password"/>
       </div>
       <button type="submit" class="btn btn-primary btn-full" id="registerBtn">
-        <span class="btn-label">Create Account</span>
+        <span class="btn-label" data-i18n="register_createAccountBtn">Create Account</span>
         <span class="btn-spinner hidden"></span>
       </button>
     </form>
 
-    <div class="divider"><span>or sign up with</span></div>
+    <div class="divider"><span data-i18n="register_or">or sign up with</span></div>
 
     <div class="social-grid">
       <button class="btn btn-social btn-full" onclick="signInGoogle()">
         <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18"/>
-        Continue with Google
+        <span data-i18n="register_google">Continue with Google</span>
       </button>
     </div>
 
-    <p class="auth-footer">Already have an account? <a href="login.html">Sign in</a></p>
+    <p class="auth-footer"><span data-i18n="register_haveAccount">Already have an account?</span> <a href="login.html" data-i18n="register_signIn">Sign in</a></p>
   </div>
 
   <script type="module">
@@ -123,7 +126,7 @@
       const pw = document.getElementById("password").value;
       const confirm = document.getElementById("confirmPassword").value;
 
-      if (pw !== confirm) { showError("Passwords do not match."); return; }
+      if (pw !== confirm) { showError(t("err_passwordsNoMatch")); return; }
 
       const btn = document.getElementById("registerBtn");
       btn.disabled = true;
@@ -183,17 +186,20 @@
     window.togglePw = () => {
       const pw = document.getElementById("password");
       const btn = document.querySelector(".pw-toggle");
-      if (pw.type === "password") { pw.type = "text"; btn.textContent = "Hide"; }
-      else { pw.type = "password"; btn.textContent = "Show"; }
+      if (pw.type === "password") { pw.type = "text"; btn.textContent = t("login_hide"); }
+      else { pw.type = "password"; btn.textContent = t("login_show"); }
     };
+
+    // Language toggle
+    if (window.i18n) i18n.injectToggle(document.getElementById("langToggleWrap"));
 
     function friendlyError(code) {
       const map = {
-        "auth/email-already-in-use": "An account with this email already exists.",
-        "auth/invalid-email": "Please enter a valid email address.",
-        "auth/weak-password": "Password must be at least 6 characters.",
+        "auth/email-already-in-use": t("err_emailInUse"),
+        "auth/invalid-email": t("err_invalidEmail"),
+        "auth/weak-password": t("err_weakPassword"),
       };
-      return map[code] || "Registration failed. Please try again.";
+      return map[code] || t("err_registrationFailed");
     }
   </script>
 </body>

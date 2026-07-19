@@ -6,6 +6,7 @@
   <title>My Files – FileAccess</title>
   <link rel="stylesheet" href="css/style.css"/>
   <script src="js/protect.js"></script>
+  <script src="js/i18n.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
@@ -17,13 +18,13 @@
     <svg width="28" height="28" viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#2563EB"/><path d="M10 10h10l6 6v10H10V10z" fill="white" opacity="0.9"/><circle cx="23" cy="13" r="4" fill="#BFDBFE" stroke="#2563EB" stroke-width="1.5"/><path d="M21.5 13l1 1 2-2" stroke="#2563EB" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     <span>FileAccess</span>
   </div>
-  <div class="nav-right">
-    <span id="adminLink" class="nav-link hidden"><a href="admin.html">Admin Console</a></span>
-    <span class="nav-link"><a href="status.html">Status</a></span>
+  <div class="nav-right" id="navRight">
+    <span id="adminLink" class="nav-link hidden"><a href="admin.html" data-i18n="navAdmin">Admin Console</a></span>
+    <span class="nav-link"><a href="status.html" data-i18n="navStatus">Status</a></span>
     <div class="nav-user" id="navUser">
       <div class="avatar" id="userAvatar">?</div>
-      <span id="userName">Loading…</span>
-      <button class="btn btn-ghost btn-sm" id="signOutBtn">Sign out</button>
+      <span id="userName" data-i18n="loading">Loading…</span>
+      <button class="btn btn-ghost btn-sm" id="signOutBtn" data-i18n="navSignOut">Sign out</button>
     </div>
   </div>
 </nav>
@@ -31,7 +32,7 @@
 <!-- MAIN -->
 <main class="main-content">
   <div class="page-header">
-    <h2>My Files</h2>
+    <h2 data-i18n="idx_myFiles">My Files</h2>
     <p class="text-muted" id="fileCount"></p>
   </div>
 
@@ -39,26 +40,26 @@
   <div class="toolbar">
     <div class="search-box">
       <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-      <input type="search" id="searchInput" placeholder="Search files…" oninput="filterFiles()"/>
+      <input type="search" id="searchInput" placeholder="Search files…" data-i18n-placeholder="idx_searchPlaceholder" oninput="filterFiles()"/>
     </div>
     <div class="filter-tabs">
-      <button class="filter-tab active" onclick="setFilter('all', this)">All</button>
-      <button class="filter-tab" onclick="setFilter('doc', this)">Docs</button>
-      <button class="filter-tab" onclick="setFilter('image', this)">Images</button>
-      <button class="filter-tab" onclick="setFilter('media', this)">Media</button>
-      <button class="filter-tab" onclick="setFilter('other', this)">Other</button>
+      <button class="filter-tab active" data-i18n="idx_filterAll" onclick="setFilter('all', this)">All</button>
+      <button class="filter-tab" data-i18n="idx_filterDocs" onclick="setFilter('doc', this)">Docs</button>
+      <button class="filter-tab" data-i18n="idx_filterImages" onclick="setFilter('image', this)">Images</button>
+      <button class="filter-tab" data-i18n="idx_filterMedia" onclick="setFilter('media', this)">Media</button>
+      <button class="filter-tab" data-i18n="idx_filterOther" onclick="setFilter('other', this)">Other</button>
     </div>
   </div>
 
   <!-- File Grid -->
   <div id="loadingState" class="empty-state">
     <div class="spinner"></div>
-    <p>Loading your files…</p>
+    <p data-i18n="idx_loadingFiles">Loading your files…</p>
   </div>
   <div id="emptyState" class="empty-state hidden">
     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
-    <p>No files available yet</p>
-    <span class="text-muted">Contact an admin to get access to files.</span>
+    <p data-i18n="idx_noFiles">No files available yet</p>
+    <span class="text-muted" data-i18n="idx_noFilesHint">Contact an admin to get access to files.</span>
   </div>
   <div id="fileGrid" class="file-grid hidden"></div>
 
@@ -158,12 +159,12 @@
 <!-- COOKIE CONSENT BANNER -->
 <div id="cookieBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#1e293b;border-top:1px solid #334155;padding:1rem 1.5rem;display:none;align-items:center;gap:1rem;flex-wrap:wrap;">
   <div style="flex:1;min-width:200px;">
-    <span style="font-size:0.875rem;color:#f1f5f9;font-weight:500;">💾 Enable offline caching?</span>
-    <span style="font-size:0.8rem;color:#94a3b8;margin-left:0.5rem;">Files you open will be stored locally so you don't need to re-download them each visit.</span>
+    <span style="font-size:0.875rem;color:#f1f5f9;font-weight:500;" data-i18n="idx_cookieTitle">💾 Enable offline caching?</span>
+    <span style="font-size:0.8rem;color:#94a3b8;margin-left:0.5rem;" data-i18n="idx_cookieBody">Files you open will be stored locally so you don't need to re-download them each visit.</span>
   </div>
   <div style="display:flex;gap:0.5rem;flex-shrink:0;">
-    <button onclick="setCacheConsent(true)"  style="background:#2563eb;color:#fff;border:none;padding:0.4rem 1rem;border-radius:6px;cursor:pointer;font-size:0.85rem;font-weight:500;">Accept</button>
-    <button onclick="setCacheConsent(false)" style="background:transparent;color:#94a3b8;border:1px solid #334155;padding:0.4rem 1rem;border-radius:6px;cursor:pointer;font-size:0.85rem;">Decline</button>
+    <button onclick="setCacheConsent(true)"  style="background:#2563eb;color:#fff;border:none;padding:0.4rem 1rem;border-radius:6px;cursor:pointer;font-size:0.85rem;font-weight:500;" data-i18n="idx_cookieAccept">Accept</button>
+    <button onclick="setCacheConsent(false)" style="background:transparent;color:#94a3b8;border:1px solid #334155;padding:0.4rem 1rem;border-radius:6px;cursor:pointer;font-size:0.85rem;" data-i18n="idx_cookieDecline">Decline</button>
   </div>
 </div>
 
@@ -173,7 +174,7 @@
   <div class="modal-panel">
     <div class="modal-header">
       <div>
-        <h3 id="viewerTitle">File Name</h3>
+        <h3 id="viewerTitle" data-i18n="idx_fileNameFallback">File Name</h3>
         <span id="viewerMeta" class="text-muted text-sm"></span>
       </div>
       <button class="btn btn-ghost" onclick="closeViewer()">
@@ -388,6 +389,9 @@
     window.location.href = "login.html";
   });
 
+  // Language toggle
+  if (window.i18n) i18n.injectToggle(document.getElementById("navRight"));
+
   async function loadFiles(uid) {
     try {
       // Use REST API — bypasses Safari WebSocket auth block completely.
@@ -434,7 +438,7 @@
       }
     } catch (err) {
       console.error(err);
-      document.getElementById("loadingState").innerHTML = `<p class="text-error">Failed to load files. Please refresh.</p>`;
+      document.getElementById("loadingState").innerHTML = `<p class="text-error">${escHtml(t("idx_loadFailed"))}</p>`;
     }
   }
 

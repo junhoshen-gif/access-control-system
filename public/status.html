@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="js/protect.js"></script>
+  <script src="js/i18n.js"></script>
 </head>
 <body>
 
@@ -18,14 +19,14 @@
     <svg width="28" height="28" viewBox="0 0 36 36" fill="none"><rect width="36" height="36" rx="8" fill="#2563EB"/><path d="M10 10h10l6 6v10H10V10z" fill="white" opacity="0.9"/><circle cx="23" cy="13" r="4" fill="#BFDBFE" stroke="#2563EB" stroke-width="1.5"/><path d="M21.5 13l1 1 2-2" stroke="#2563EB" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
     <span>FileAccess</span>
   </div>
-  <div class="nav-right">
-    <span id="navAdminLink" class="nav-link hidden"><a href="admin.html">Admin Console</a></span>
-    <span id="navFilesLink" class="nav-link hidden"><a href="index.html">My Files</a></span>
-    <span id="navLoginLink" class="nav-link"><a href="login.html">Sign in</a></span>
+  <div class="nav-right" id="navRight">
+    <span id="navAdminLink" class="nav-link hidden"><a href="admin.html" data-i18n="navAdmin">Admin Console</a></span>
+    <span id="navFilesLink" class="nav-link hidden"><a href="index.html" data-i18n="navMyFiles">My Files</a></span>
+    <span id="navLoginLink" class="nav-link"><a href="login.html" data-i18n="navSignIn">Sign in</a></span>
     <div class="nav-user hidden" id="navUser">
       <div class="avatar" id="userAvatar">?</div>
       <span id="userName"></span>
-      <button class="btn btn-ghost btn-sm" id="signOutBtn">Sign out</button>
+      <button class="btn btn-ghost btn-sm" id="signOutBtn" data-i18n="navSignOut">Sign out</button>
     </div>
   </div>
 </nav>
@@ -35,14 +36,14 @@
   <!-- Header -->
   <div class="status-header">
     <div>
-      <h1 class="status-title">System Status</h1>
-      <p class="text-muted" id="lastChecked">Checking systems…</p>
+      <h1 class="status-title" data-i18n="status_title">System Status</h1>
+      <p class="text-muted" id="lastChecked" data-i18n="status_checking">Checking systems…</p>
     </div>
     <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
       <!-- Recheck button (all users) -->
       <button class="btn btn-sm" id="recheckBtn" onclick="manualRecheck()" style="display:flex;align-items:center;gap:0.4rem;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-        Recheck Now
+        <span data-i18n="status_recheck">Recheck Now</span>
       </button>
       <!-- Interval selector (admin only) -->
       <div id="intervalControl" class="hidden" style="display:none;align-items:center;gap:0.5rem;">
@@ -342,6 +343,9 @@
     await signOut(auth);
     window.location.href = "login.html";
   });
+
+  // Language toggle
+  if (window.i18n) i18n.injectToggle(document.getElementById("navRight"));
 
   // ── Ping helpers ───────────────────────────────────────────────────────────
   async function pingFirebaseAuth() {

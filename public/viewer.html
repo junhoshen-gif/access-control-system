@@ -4,6 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>File Viewer – FileAccess</title>
+  <script src="js/i18n.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
@@ -367,15 +368,16 @@
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
       <polyline points="15 18 9 12 15 6"/>
     </svg>
-    Back
+    <span data-i18n="v_back">Back</span>
   </button>
   <span id="fileTitle">Loading…</span>
   <span id="pageInfo"></span>
+  <div id="langToggleWrap" style="display:flex;align-items:center;"></div>
   <div id="pdfControls">
-    <button onclick="zoomOut()" title="Zoom out">−</button>
+    <button onclick="zoomOut()" title="Zoom out" data-i18n-title="v_zoomOut">−</button>
     <span id="zoomLabel">100%</span>
-    <button onclick="zoomIn()"  title="Zoom in">+</button>
-    <button onclick="zoomReset()" title="Reset zoom" style="width:auto;padding:0 8px;font-size:0.75rem;">Reset</button>
+    <button onclick="zoomIn()"  title="Zoom in" data-i18n-title="v_zoomIn">+</button>
+    <button onclick="zoomReset()" title="Reset zoom" data-i18n-title="v_resetZoom" style="width:auto;padding:0 8px;font-size:0.75rem;" data-i18n="v_reset">Reset</button>
   </div>
 </div>
 
@@ -385,7 +387,7 @@
   <!-- Loading screen with step-by-step progress -->
   <div id="loadingScreen">
     <div id="loadingIcon">📄</div>
-    <div id="loadingTitle">Opening file…</div>
+    <div id="loadingTitle" data-i18n="v_openingFile">Opening file…</div>
 
     <div id="progressWrap">
 
@@ -393,8 +395,8 @@
       <div class="progress-step pending" id="step1">
         <div class="step-icon" id="step1Icon">1</div>
         <div class="step-text">
-          <div class="step-label">Authenticating</div>
-          <div class="step-sublabel" id="step1Sub">Verifying your session…</div>
+          <div class="step-label" data-i18n="v_step1Label">Authenticating</div>
+          <div class="step-sublabel" id="step1Sub" data-i18n="v_step1Sub">Verifying your session…</div>
         </div>
       </div>
       <div class="step-track" id="track1"><div class="fill"></div></div>
@@ -403,8 +405,8 @@
       <div class="progress-step pending" id="step2">
         <div class="step-icon" id="step2Icon">2</div>
         <div class="step-text">
-          <div class="step-label">Fetching secure link</div>
-          <div class="step-sublabel" id="step2Sub">Requesting access from server…</div>
+          <div class="step-label" data-i18n="v_step2Label">Fetching secure link</div>
+          <div class="step-sublabel" id="step2Sub" data-i18n="v_step2Sub">Requesting access from server…</div>
         </div>
       </div>
       <div class="step-track" id="track2"><div class="fill"></div></div>
@@ -413,8 +415,8 @@
       <div class="progress-step pending" id="step3">
         <div class="step-icon" id="step3Icon">3</div>
         <div class="step-text">
-          <div class="step-label">Downloading file</div>
-          <div class="step-sublabel" id="step3Sub">Waiting…</div>
+          <div class="step-label" data-i18n="v_step3Label">Downloading file</div>
+          <div class="step-sublabel" id="step3Sub" data-i18n="v_waiting">Waiting…</div>
           <div id="downloadBar" style="display:none;">
             <div id="downloadBarFill"></div>
           </div>
@@ -426,8 +428,8 @@
       <div class="progress-step pending" id="step4">
         <div class="step-icon" id="step4Icon">4</div>
         <div class="step-text">
-          <div class="step-label">Rendering</div>
-          <div class="step-sublabel" id="step4Sub">Waiting…</div>
+          <div class="step-label" data-i18n="v_step4Label">Rendering</div>
+          <div class="step-sublabel" id="step4Sub" data-i18n="v_waiting">Waiting…</div>
         </div>
       </div>
 
@@ -441,9 +443,9 @@
       <line x1="12" y1="8" x2="12" y2="12"/>
       <line x1="12" y1="16" x2="12.01" y2="16"/>
     </svg>
-    <div id="errorTitle">Failed to load file</div>
+    <div id="errorTitle" data-i18n="v_failedToLoad">Failed to load file</div>
     <pre id="errorDetail"></pre>
-    <button id="errorBackBtn" onclick="goBack()">← Go back</button>
+    <button id="errorBackBtn" onclick="goBack()" data-i18n="v_goBack">← Go back</button>
   </div>
 
 </div><!-- /viewerArea -->
@@ -600,22 +602,25 @@ const cacheConsent = localStorage.getItem("cacheConsent") === "true";
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
-stepActive(1, "Checking login…");
+stepActive(1, t("v_checkingLogin"));
 
 onAuthStateChanged(auth, async user => {
   if (!user) {
-    stepError(1, "Not logged in");
+    stepError(1, t("v_notLoggedIn"));
     setTimeout(() => { window.location.href = "login.html"; }, 800);
     return;
   }
   if (!fileId) {
-    stepError(1, "No file specified");
-    showError("No file ID was provided in the URL.");
+    stepError(1, t("v_noFileSpecified"));
+    showError(t("v_noFileIdMsg"));
     return;
   }
-  stepDone(1, `Signed in as ${user.email || user.displayName}`);
+  stepDone(1, `${t("v_signedInAs")} ${user.email || user.displayName}`);
   await loadFile(user);
 });
+
+// Language toggle
+if (window.i18n) i18n.injectToggle(document.getElementById("langToggleWrap"));
 
 // ── Main load flow ────────────────────────────────────────────────────────────
 async function loadFile(user) {
@@ -624,16 +629,16 @@ async function loadFile(user) {
   let blob = null;
 
   if (cacheConsent && fileId) {
-    stepActive(2, "Checking local cache…");
+    stepActive(2, t("v_checkingCache"));
     blob = await getCachedBlob(fileId);
     if (blob) {
-      stepDone(2, "Loaded from cache");
-      stepDone(3, `${formatBytes(blob.size)} (cached)`);
+      stepDone(2, t("v_loadedFromCache"));
+      stepDone(3, `${formatBytes(blob.size)} (${t("v_cached")})`);
     }
   }
 
   if (!blob) {
-    stepActive(2, "Contacting server…");
+    stepActive(2, t("v_contactingServer"));
     let signedUrl;
     try {
       const idToken = await user.getIdToken(true);
@@ -646,15 +651,15 @@ async function loadFile(user) {
         throw new Error(body.error || `Server error ${resp.status}`);
       }
       ({ signedUrl } = await resp.json());
-      stepDone(2, "Secure link received");
+      stepDone(2, t("v_secureLinkReceived"));
     } catch (err) {
       stepError(2, err.message);
-      showError(`Could not get file link:\n${err.message}`);
+      showError(`${t("v_couldNotGetLink")}\n${err.message}`);
       return;
     }
 
     // Step 3 — download file with progress tracking
-    stepActive(3, "Connecting to storage…");
+    stepActive(3, t("v_connectingToStorage"));
     try {
       const dlController = new AbortController();
 
@@ -673,7 +678,7 @@ async function loadFile(user) {
         resetStall();
       } catch (fetchErr) {
         clearTimeout(stallTimer);
-        if (fetchErr.name === "AbortError") throw new Error("Download stalled (no data for 30s). Please try again.");
+        if (fetchErr.name === "AbortError") throw new Error(t("v_downloadStalled"));
         throw fetchErr;
       }
       if (!resp.ok) { clearTimeout(stallTimer); throw new Error(`Storage error ${resp.status}`); }
@@ -712,7 +717,7 @@ async function loadFile(user) {
       }
 
       setDownloadProgress(100);
-      stepDone(3, `${formatBytes(blob.size)} downloaded`);
+      stepDone(3, `${formatBytes(blob.size)} ${t("v_downloaded")}`);
 
       // Save to cache if user consented
       if (cacheConsent && fileId) {
@@ -720,13 +725,13 @@ async function loadFile(user) {
       }
     } catch (err) {
       stepError(3, err.message);
-      showError(`Could not download file:\n${err.message}`);
+      showError(`${t("v_couldNotDownload")}\n${err.message}`);
       return;
     }
   }
 
   // Step 4 — render
-  stepActive(4, "Preparing viewer…");
+  stepActive(4, t("v_preparingViewer"));
   const type = fileType || blob.type;
 
   try {
@@ -742,7 +747,7 @@ async function loadFile(user) {
     } else if (type.startsWith("text/")) {
       await renderText(blob);
     } else {
-      throw new Error(`Cannot preview this file type (${type || "unknown"}).\nAsk an admin to share a viewable format.`);
+      throw new Error(`${t("v_cannotPreview")} (${type || "unknown"}).\n${t("v_askAdminFormat")}`);
     }
   } catch (err) {
     stepError(4, err.message.split("\n")[0]);
@@ -750,7 +755,7 @@ async function loadFile(user) {
     return;
   }
 
-  stepDone(4, "Ready");
+  stepDone(4, t("v_ready"));
   hideLoading();
   document.title = `${fileName} – FileAccess`;
 }
@@ -778,7 +783,7 @@ async function renderPdf(blob, email) {
   const area = ensureContentArea();
   pdfArea = area;
 
-  document.getElementById("step4Sub").textContent = "Loading PDF engine…";
+  document.getElementById("step4Sub").textContent = t("v_loadingPdfEngine");
 
   let pdfjsLib;
   try {
@@ -788,7 +793,7 @@ async function renderPdf(blob, email) {
     throw new Error(`Could not load PDF engine: ${err.message}`);
   }
 
-  document.getElementById("step4Sub").textContent = "Parsing document…";
+  document.getElementById("step4Sub").textContent = t("v_parsingDocument");
   const arrayBuffer = await blob.arrayBuffer();
   try {
     pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -797,12 +802,12 @@ async function renderPdf(blob, email) {
   }
 
   const total = pdfDoc.numPages;
-  document.getElementById("pageInfo").textContent = `${total} page${total !== 1 ? "s" : ""}`;
-  document.getElementById("step4Sub").textContent = `Rendering ${total} page${total !== 1 ? "s" : ""}…`;
+  document.getElementById("pageInfo").textContent = i18n.getLang() === "zh" ? `共 ${total} ${t("v_pages")}` : `${total} page${total !== 1 ? "s" : ""}`;
+  document.getElementById("step4Sub").textContent = `${t("v_rendering")} ${total} ${t("v_pages")}…`;
 
   for (let i = 1; i <= total; i++) {
     await renderPdfPage(pdfjsLib, pdfDoc, i, area, email);
-    document.getElementById("step4Sub").textContent = `Page ${i} / ${total}`;
+    document.getElementById("step4Sub").textContent = `${t("v_pageOf")} ${i} / ${total}`;
   }
 }
 
@@ -964,7 +969,7 @@ window.goBack = () => history.length > 1 ? history.back() : (location.href = "in
 document.addEventListener("contextmenu", e => {
   e.preventDefault();
   e.stopPropagation();
-  showToast("Right-click is disabled on this page.");
+  showToast(t("toast_rightClickDisabled"));
   return false;
 });
 
@@ -973,16 +978,16 @@ document.addEventListener("keydown", e => {
   const ctrl = e.ctrlKey || e.metaKey;
 
   const rules = [
-    { test: e.key === "F12",                                     msg: "Developer tools are disabled." },
-    { test: ctrl && e.shiftKey && e.key === "I",                 msg: "Developer tools are disabled." },
-    { test: ctrl && e.shiftKey && e.key === "J",                 msg: "Developer tools are disabled." },
-    { test: ctrl && e.shiftKey && e.key === "C",                 msg: "Developer tools are disabled." },
-    { test: ctrl && e.key === "p",                               msg: "Printing is not allowed." },
-    { test: ctrl && e.key === "P",                               msg: "Printing is not allowed." },
-    { test: ctrl && (e.key === "s" || e.key === "S"),            msg: "Saving is not allowed." },
-    { test: ctrl && e.key === "u",                               msg: "Viewing source is not allowed." },
-    { test: ctrl && (e.key === "c" || e.key === "C"),            msg: "Copying is not allowed." },
-    { test: ctrl && (e.key === "a" || e.key === "A"),            msg: "Select all is not allowed." },
+    { test: e.key === "F12",                                     msg: t("toast_devtoolsDisabled") },
+    { test: ctrl && e.shiftKey && e.key === "I",                 msg: t("toast_devtoolsDisabled") },
+    { test: ctrl && e.shiftKey && e.key === "J",                 msg: t("toast_devtoolsDisabled") },
+    { test: ctrl && e.shiftKey && e.key === "C",                 msg: t("toast_devtoolsDisabled") },
+    { test: ctrl && e.key === "p",                               msg: t("toast_printingNotAllowed") },
+    { test: ctrl && e.key === "P",                               msg: t("toast_printingNotAllowed") },
+    { test: ctrl && (e.key === "s" || e.key === "S"),            msg: t("toast_savingNotAllowed") },
+    { test: ctrl && e.key === "u",                               msg: t("toast_viewSourceNotAllowed") },
+    { test: ctrl && (e.key === "c" || e.key === "C"),            msg: t("toast_copyingNotAllowed") },
+    { test: ctrl && (e.key === "a" || e.key === "A"),            msg: t("toast_selectAllNotAllowed") },
   ];
 
   for (const rule of rules) {
@@ -998,7 +1003,7 @@ document.addEventListener("keydown", e => {
 // 3. Block drag-to-save
 document.addEventListener("dragstart", e => {
   e.preventDefault();
-  showToast("Dragging content off this page is not allowed.");
+  showToast(t("toast_dragNotAllowed"));
   return false;
 });
 
@@ -1011,7 +1016,7 @@ document.addEventListener("selectstart", e => {
 // 5. Block print via system dialog
 window.addEventListener("beforeprint", e => {
   document.body.style.visibility = "hidden";
-  showToast("Printing is not allowed.");
+  showToast(t("toast_printingNotAllowed"));
 });
 window.addEventListener("afterprint", () => {
   document.body.style.visibility = "";
@@ -1027,7 +1032,7 @@ window.addEventListener("afterprint", () => {
       (window.outerHeight - window.innerHeight > threshold);
     if (devOpen && !warned) {
       warned = true;
-      showToast("Developer tools are not allowed.");
+      showToast(t("toast_devtoolsNotAllowed"));
     }
     if (!devOpen) warned = false;
   }, 1000);
