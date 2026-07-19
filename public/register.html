@@ -105,11 +105,15 @@
     }
 
     async function saveUserProfile(user, displayName) {
-      await set(ref(db, `users/${user.uid}`), {
-        email: user.email,
-        displayName: displayName || user.displayName || "",
-        createdAt: Date.now()
-      });
+      try {
+        await set(ref(db, `users/${user.uid}`), {
+          email: user.email,
+          displayName: displayName || user.displayName || "",
+          createdAt: Date.now()
+        });
+      } catch (e) {
+        console.warn("saveUserProfile failed:", e);
+      }
     }
 
     document.getElementById("registerForm").addEventListener("submit", async (e) => {
@@ -129,7 +133,7 @@
       try {
         const cred = await createUserWithEmailAndPassword(auth, email, pw);
         await updateProfile(cred.user, { displayName: name });
-        await saveUserProfile(cred.user, name);
+        saveUserProfile(cred.user, name); // fire-and-forget — don't block redirect
         window.location.href = "index.html";
       } catch (err) {
         showError(friendlyError(err.code));
