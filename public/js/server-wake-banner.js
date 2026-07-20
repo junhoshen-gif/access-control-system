@@ -1,38 +1,24 @@
 /**
  * FileAccess – Render "cold start" banner
  * -----------------------------------------------------------------------
- * The Render server is only kept warm by an external cron ping (cron-job.org)
- * every 5 minutes between 08:00–20:00 Taipei time. Outside that window the
- * free-tier instance may have spun down, so the first request can take
- * ~30-50 seconds to wake it back up. This shows a small heads-up banner in
- * that case so users don't think the app is broken while it wakes up.
+ * The Render server free-tier instance can spin down when idle and takes
+ * ~30-50 seconds to wake back up on the next request. This probes the
+ * server's health endpoint (GET /) and shows a heads-up banner for as long
+ * as it's unreachable/slow, then automatically hides it the moment the
+ * server responds — no guessing based on time of day.
  *
  * Usage: <script src="js/server-wake-banner.js"></script>
  * (load after js/i18n.js if you want it translated; falls back to English)
  */
 (function () {
-  const ACTIVE_START_HOUR = 8;  // 08:00 Taipei
-  const ACTIVE_END_HOUR    = 20; // 20:00 Taipei
+  const PROBE_TIMEOUT_MS = 3000;   // fast initial check — don't delay warm-server pageloads
+  const POLL_TIMEOUT_MS  = 6000;   // each retry while waking gets a bit more slack
+  const POLL_INTERVAL_MS = 3000;   // gap between retries while waking
 
-  function taipeiHour() {
-    try {
-      const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone: "Asia/Taipei",
-        hour: "numeric",
-        hourCycle: "h23",
-      }).formatToParts(new Date());
-      const h = parts.find(p => p.type === "hour");
-      return h ? parseInt(h.value, 10) : null;
-    } catch {
-      return null;
-    }
-  }
-
-  function isOutsideActiveWindow() {
-    const hour = taipeiHour();
-    if (hour === null) return false; // fail safe: don't show if we can't tell
-    return !(hour >= ACTIVE_START_HOUR && hour < ACTIVE_END_HOUR);
-  }
+  let bannerEl   = null;
+  let shifted    = false;
+  let pollTimer  = null;
+  let dismissed  = false;
 
   function message() {
     if (window.t) return t("banner_serverStarting");
@@ -58,7 +44,7 @@
   }
 
   function showBanner() {
-    if (document.getElementById("serverWakeBanner")) return;
+    if (bannerEl || dismissed) return;
 
     const bar = document.createElement("div");
     bar.id = "serverWakeBanner";
@@ -82,24 +68,81 @@
         font-size:1rem;line-height:1;padding:0 0.25rem;margin-left:0.5rem;">×</button>
     `;
 
-    const style = document.createElement("style");
-    style.textContent = "@keyframes serverWakeSpin { to { transform: rotate(360deg); } }";
-    document.head.appendChild(style);
+    if (!document.getElementById("serverWakeBannerStyle")) {
+      const style = document.createElement("style");
+      style.id = "serverWakeBannerStyle";
+      style.textContent = "@keyframes serverWakeSpin { to { transform: rotate(360deg); } }";
+      document.head.appendChild(style);
+    }
 
     document.body.insertBefore(bar, document.body.firstChild);
     document.getElementById("serverWakeBannerText").textContent = message();
 
+    bannerEl = bar;
     const bannerHeight = bar.offsetHeight;
     shiftFixedLayout(bannerHeight);
+    shifted = true;
 
     document.getElementById("serverWakeBannerClose").addEventListener("click", () => {
-      bar.remove();
-      shiftFixedLayout(-bannerHeight);
+      dismissed = true;
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      hideBanner();
     });
   }
 
-  function init() {
-    if (isOutsideActiveWindow()) showBanner();
+  function hideBanner() {
+    if (!bannerEl) return;
+    const h = bannerEl.offsetHeight;
+    bannerEl.remove();
+    bannerEl = null;
+    if (shifted) { shiftFixedLayout(-h); shifted = false; }
+  }
+
+  // Resolves true if the server answered within timeoutMs, false otherwise
+  // (covers both network/CORS errors and our own abort-on-timeout).
+  async function pingHealth(url, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { signal: controller.signal, cache: "no-store", mode: "cors" });
+      return res.ok;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function startPolling(url) {
+    if (pollTimer || dismissed) return;
+    pollTimer = setInterval(async () => {
+      const healthy = await pingHealth(url, POLL_TIMEOUT_MS);
+      if (healthy) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+        hideBanner();
+      }
+    }, POLL_INTERVAL_MS);
+  }
+
+  async function init() {
+    let RENDER_SERVER_URL;
+    try {
+      const cfg = await import("./js/config.js");
+      RENDER_SERVER_URL = cfg.RENDER_SERVER_URL;
+    } catch {
+      return; // can't resolve config — skip the feature rather than guess
+    }
+    if (!RENDER_SERVER_URL) return;
+
+    const healthUrl = RENDER_SERVER_URL.replace(/\/+$/, "") + "/";
+
+    // Fast initial probe: if the server answers quickly, never show anything.
+    const healthy = await pingHealth(healthUrl, PROBE_TIMEOUT_MS);
+    if (healthy) return;
+
+    showBanner();
+    startPolling(healthUrl);
   }
 
   if (document.readyState === "loading") {
