@@ -988,7 +988,7 @@
 
   // ── State for the delivery modal ───────────────────────────────────────────
   let _pendingProductKey    = null;
-  let _selectedDeliveryType = null; // e.g. "UNIMART", "FAMI", "TCAT", "POST"
+  let _selectedDeliveryType = null; // e.g. "UNIMARTC2C", "FAMIC2C", "TCAT", "POST"
 
   // ── Promotion state ─────────────────────────────────────────────────────────
   // _globalPromo: a promotion that applies to all products (scope=all or magic-link)
@@ -996,15 +996,14 @@
   let _globalPromo      = null;  // { promoId, name, discountType, discountValue, originalPrice, discountedPrice }
   let _promosByProduct  = {};    // { [productKey]: same shape }
 
-  const CVS_CARRIERS  = new Set(["UNIMART","FAMI","OKMART","HILIFE"]);
+  const CVS_CARRIERS  = new Set(["UNIMARTC2C","FAMIC2C","HILIFEC2C"]);
   const HOME_CARRIERS = new Set(["TCAT","POST"]);
   const CARRIER_LABELS = {
-    UNIMART: "7-ELEVEN 統一超商",
-    FAMI:    "全家 FamilyMart",
-    OKMART:  "OK mart",
-    HILIFE:  "萊爾富 Hi-Life",
-    TCAT:    "黑貓宅急便 Tcat",
-    POST:    "中華郵政",
+    UNIMARTC2C: "7-ELEVEN 統一超商",
+    FAMIC2C:    "全家 FamilyMart",
+    HILIFEC2C:  "萊爾富 Hi-Life",
+    TCAT:       "黑貓宅急便 Tcat",
+    POST:       "中華郵政",
   };
 
   window.closeReceiverModal = () => {
@@ -1172,7 +1171,7 @@
 
       // Build unified deliveryInfo from storeInfo
       const deliveryInfo = storeInfo ? {
-        deliveryType:  storeInfo.LogisticsSubType || "UNIMART",
+        deliveryType:  storeInfo.LogisticsSubType || "UNIMARTC2C",
         CVSStoreID:    storeInfo.CVSStoreID    || "",
         CVSStoreName:  storeInfo.CVSStoreName  || "",
         CVSAddress:    storeInfo.CVSAddress    || "",
@@ -1222,8 +1221,8 @@
         cancelled:  { label:"已取消",  color:"#6B7280" },
       };
       const CARRIER_LABELS_USER = {
-        UNIMART:"7-ELEVEN", FAMI:"全家", OKMART:"OK mart",
-        HILIFE:"萊爾富", TCAT:"黑貓宅配", POST:"中華郵政"
+        UNIMARTC2C:"7-ELEVEN", FAMIC2C:"全家",
+        HILIFEC2C:"萊爾富", TCAT:"黑貓宅配", POST:"中華郵政"
       };
 
       const html = orders.map(o => {

@@ -1072,7 +1072,7 @@ app.post("/ecpay/create-order", async (req, res) => {
       } else if (storeInfo) {
         // Legacy CVS-map flow fallback
         tradeEntry.storeInfo      = storeInfo;
-        tradeEntry.deliveryInfo   = { deliveryType: storeInfo.LogisticsSubType || "UNIMART", ...storeInfo };
+        tradeEntry.deliveryInfo   = { deliveryType: storeInfo.LogisticsSubType || "UNIMARTC2C", ...storeInfo };
         tradeEntry.receiverName   = storeInfo.receiverName  || "";
         tradeEntry.receiverPhone  = storeInfo.receiverPhone || "";
       }
@@ -1323,7 +1323,7 @@ app.post("/logistics/cvs-map", async (req, res) => {
 
   // ECPay CVSMap only supports one LogisticsSubType per redirect
   // Use caller's choice if provided, else fall back to first in product config
-  const subTypes         = product.logisticsSubTypes || ["UNIMART"];
+  const subTypes         = product.logisticsSubTypes || ["UNIMARTC2C"];
   const logisticsSubType = reqSubType || subTypes[0];
 
   // Save to trade_map so /cvs-map-return and later /ecpay/create-order can find it
@@ -1537,7 +1537,9 @@ app.post("/logistics/print-label", async (req, res) => {
 // Manually creates an ECPay logistics label. Admin fills in all details.
 // Body: {
 //   logisticsType: "CVS" | "HOME",
-//   logisticsSubType: "UNIMART"|"FAMI"|"OKMART"|"HILIFE"|"TCAT"|"POST",
+//   logisticsSubType: "UNIMARTC2C"|"FAMIC2C"|"HILIFEC2C"|"TCAT"|"POST",
+//   (C2C codes required for 店到店 accounts — see https://developers.ecpay.com.tw/7442/ for the full list,
+//    including the B2C-only variants UNIMART/FAMI/HILIFE/UNIMARTFREEZE for accounts approved for B2C instead.)
 //   receiverName, receiverPhone, receiverAddress, receiverZipCode?,
 //   cvsStoreId?,      // for CVS only
 //   goodsName, goodsAmount,

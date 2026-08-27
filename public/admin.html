@@ -310,16 +310,13 @@
               <label class="form-label text-sm">Available Delivery Options</label>
               <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:0.35rem;">
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="UNIMART" checked/> 7-ELEVEN
+                  <input type="checkbox" name="logisticsSubType" value="UNIMARTC2C" checked/> 7-ELEVEN
                 </label>
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="FAMI"/> FamilyMart
+                  <input type="checkbox" name="logisticsSubType" value="FAMIC2C"/> FamilyMart
                 </label>
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="OKMART"/> OK mart
-                </label>
-                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="HILIFE"/> Hi-Life
+                  <input type="checkbox" name="logisticsSubType" value="HILIFEC2C"/> Hi-Life
                 </label>
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
                   <input type="checkbox" name="logisticsSubType" value="TCAT"/> TCAT (Black Cat)
@@ -618,10 +615,9 @@
             <div class="form-group">
               <label class="form-label">Carrier <span class="text-error">*</span></label>
               <select id="labelLogisticsSubType" class="form-input" onchange="onLabelSubTypeChange()">
-                <option value="UNIMART">7-ELEVEN</option>
-                <option value="FAMI">FamilyMart</option>
-                <option value="OKMART">OK mart</option>
-                <option value="HILIFE">Hi-Life</option>
+                <option value="UNIMARTC2C">7-ELEVEN</option>
+                <option value="FAMIC2C">FamilyMart</option>
+                <option value="HILIFEC2C">Hi-Life</option>
                 <option value="TCAT">TCAT (Black Cat)</option>
                 <option value="POST">Chunghwa Post</option>
               </select>
@@ -1384,8 +1380,8 @@
       // Delivery info summary
       const di = o.deliveryInfo || {};
       const deliveryLabel = {
-        UNIMART: "7-ELEVEN", FAMI: "FamilyMart", OKMART: "OK mart",
-        HILIFE: "Hi-Life", TCAT: "TCAT", POST: "Chunghwa Post"
+        UNIMARTC2C: "7-ELEVEN", FAMIC2C: "FamilyMart",
+        HILIFEC2C: "Hi-Life", TCAT: "TCAT", POST: "Chunghwa Post"
       }[di.deliveryType || o.deliveryType] || di.deliveryType || o.deliveryType || "—";
       const deliveryDetail = di.CVSStoreName
         ? `${di.CVSStoreName} <span style="color:#64748B;font-size:0.75rem;">${escHtml(di.CVSAddress || "")}</span>`
@@ -1468,7 +1464,7 @@
       // Keep only CVS-compatible options
       [...subSel.options].forEach(opt => {
         opt.disabled = ["TCAT","POST"].includes(opt.value);
-        if (opt.disabled && opt.selected) subSel.value = "UNIMART";
+        if (opt.disabled && opt.selected) subSel.value = "UNIMARTC2C";
       });
       cvsRow.style.display  = "";
       addrRow.style.display = "none";
@@ -1564,7 +1560,7 @@
 
     const deliveryType = di.deliveryType || o.deliveryType || "";
 
-    const cvsTypes = ["UNIMART","FAMI","OKMART","HILIFE","UNIMARTFREEZE"];
+    const cvsTypes = ["UNIMARTC2C","FAMIC2C","HILIFEC2C"];
     const homeTypes = ["TCAT","POST"];
 
     if (homeTypes.includes(deliveryType)) {
@@ -1575,7 +1571,7 @@
       document.getElementById("labelCvsStoreId").value       = "";
     } else {
       document.getElementById("labelLogisticsType").value    = "CVS";
-      document.getElementById("labelLogisticsSubType").value = deliveryType || "UNIMART";
+      document.getElementById("labelLogisticsSubType").value = deliveryType || "UNIMARTC2C";
       document.getElementById("labelCvsStoreId").value       = di.CVSStoreID || di.storeId || "";
       document.getElementById("labelReceiverAddress").value  = "";
       document.getElementById("labelReceiverZip").value      = "";
@@ -1590,7 +1586,7 @@
      "labelReceiverZip","labelGoodsName","labelGoodsAmount","labelOrderKey"]
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
     document.getElementById("labelLogisticsType").value    = "CVS";
-    document.getElementById("labelLogisticsSubType").value = "UNIMART";
+    document.getElementById("labelLogisticsSubType").value = "UNIMARTC2C";
     document.getElementById("labelUseSandbox").checked     = true;
     onLabelTypeChange();
   };
@@ -1624,8 +1620,8 @@
 
     const tbody = document.getElementById("labelsTbody");
     const subTypeLabels = {
-      UNIMART:"7-ELEVEN", FAMI:"FamilyMart", OKMART:"OK mart",
-      HILIFE:"Hi-Life", TCAT:"TCAT", POST:"Chunghwa Post"
+      UNIMARTC2C:"7-ELEVEN", FAMIC2C:"FamilyMart",
+      HILIFEC2C:"Hi-Life", TCAT:"TCAT", POST:"Chunghwa Post"
     };
 
     tbody.innerHTML = labels.map(l => {
@@ -2935,7 +2931,7 @@
     document.getElementById("productHasPhysical").checked    = false;
     document.getElementById("productLogisticsSandbox").checked = true;
     togglePhysicalFields(false);
-    document.querySelectorAll("input[name='logisticsSubType']").forEach(cb => { cb.checked = cb.value === "UNIMART"; });
+    document.querySelectorAll("input[name='logisticsSubType']").forEach(cb => { cb.checked = cb.value === "UNIMARTC2C"; });
   };
 
   window.deleteProduct = async (key) => {
