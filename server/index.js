@@ -1321,6 +1321,11 @@ app.post("/logistics/cvs-map", async (req, res) => {
   const shortUID        = decoded.uid.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).padEnd(10, "0");
   const merchantTradeNo = `${shortPK}${shortUID}${randSuffix}`;
 
+  // ECPay CVSMap only supports one LogisticsSubType per redirect
+  // Use caller's choice if provided, else fall back to first in product config
+  const subTypes         = product.logisticsSubTypes || ["UNIMART"];
+  const logisticsSubType = reqSubType || subTypes[0];
+
   // Save to trade_map so /cvs-map-return and later /ecpay/create-order can find it
   try {
     await db.ref(`trade_map/${merchantTradeNo}`).set({
@@ -1341,10 +1346,6 @@ app.post("/logistics/cvs-map", async (req, res) => {
   const serverUrl = process.env.SERVER_URL || `https://${req.headers.host}`;
   const siteUrl   = process.env.SITE_URL   || allowedOrigin;
 
-  // ECPay CVSMap only supports one LogisticsSubType per redirect
-  // Use caller's choice if provided, else fall back to first in product config
-  const subTypes         = product.logisticsSubTypes || ["UNIMART"];
-  const logisticsSubType = reqSubType || subTypes[0];
   const useSandbox       = product.logisticsSandbox !== false; // default sandbox for safety
   const base             = useSandbox
     ? "https://logistics-stage.ecpay.com.tw"
