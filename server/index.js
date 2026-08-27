@@ -1005,8 +1005,10 @@ app.post("/ecpay/create-order", async (req, res) => {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const hashKey = process.env.ECPAY_HASH_KEY;
-  const hashIV  = process.env.ECPAY_HASH_IV;
+  // .trim() guards against invisible leading/trailing whitespace from copy-paste
+  // into Render's env var fields — a common cause of CheckMacValue mismatches.
+  const hashKey = (process.env.ECPAY_HASH_KEY || "").trim();
+  const hashIV  = (process.env.ECPAY_HASH_IV  || "").trim();
   if (!hashKey || !hashIV) return res.status(500).json({ error: "Server not configured" });
 
   let product;
@@ -1017,6 +1019,13 @@ app.post("/ecpay/create-order", async (req, res) => {
   } catch {
     return res.status(500).json({ error: "Database error" });
   }
+
+  // Diagnostic log (no secrets exposed) — check Admin → Console after a payment
+  // attempt to confirm MerchantID/useSandbox/host match what you expect, and that
+  // key lengths look right (an unexpected length usually means stray whitespace
+  // or a copy-paste truncation in the Render env var value).
+  const diagMerchantId = (product.merchantId || process.env.ECPAY_MERCHANT_ID || "").trim();
+  console.log(`[Payment] productKey=${productKey} merchantId="${diagMerchantId}" useSandbox=${product.useSandbox} hashKeyLen=${hashKey.length} hashIVLen=${hashIV.length}`);
 
   const randSuffix      = crypto.randomBytes(3).toString("hex").slice(0, 5);
   const shortPK         = productKey.replace(/[^A-Za-z0-9]/g, "").slice(0, 5).padEnd(5, "0");
@@ -1090,7 +1099,7 @@ app.post("/ecpay/create-order", async (req, res) => {
   const safeName = (product.name || "File Access").replace(/[#%&+]/g, "").slice(0, 200);
 
   const ecpayParams = {
-    MerchantID:        product.merchantId || process.env.ECPAY_MERCHANT_ID || "",
+    MerchantID:        diagMerchantId,
     MerchantTradeNo:   merchantTradeNo,
     MerchantTradeDate: tradeDate,
     PaymentType:       "aio",
