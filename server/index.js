@@ -817,6 +817,27 @@ app.delete("/files/:fileId", async (req, res) => {
 // ECPAY ENDPOINTS
 // ════════════════════════════════════════════════════════════════════════════
 
+// ── ECPay-compatible URL encoding for CheckMacValue ─────────────────────────
+// JS's encodeURIComponent treats ' and ~ as "unreserved" and leaves them as
+// literal characters, but ECPay's .NET backend always percent-encodes them
+// (%27 and %7e) — see the official URLEncode conversion table:
+// https://developers.ecpay.com.tw/2904/ . Without correcting for this, any
+// value containing an apostrophe (e.g. a product name like "Danny's Diary")
+// produces a CheckMacValue that never matches what ECPay recomputes, causing
+// "CheckMacValue Error" on payment, and the equivalent failure on logistics
+// calls or on verifying ECPay's own callbacks if a param includes one.
+function ecpayEncode(raw) {
+  return encodeURIComponent(raw)
+    .replace(/'/g, "%27")
+    .replace(/~/g, "%7e")
+    .toLowerCase()
+    .replace(/%20/g, "+")
+    .replace(/%21/g, "!")
+    .replace(/%28/g, "(")
+    .replace(/%29/g, ")")
+    .replace(/%2a/g, "*");
+}
+
 function verifyCheckMacValue(params) {
   const hashKey = process.env.ECPAY_HASH_KEY;
   const hashIV  = process.env.ECPAY_HASH_IV;
@@ -830,9 +851,7 @@ function verifyCheckMacValue(params) {
     .map(k => `${k}=${params[k]}`).join("&");
 
   const raw     = `HashKey=${hashKey}&${sorted}&HashIV=${hashIV}`;
-  const encoded = encodeURIComponent(raw).toLowerCase()
-    .replace(/%20/g, "+").replace(/%21/g, "!").replace(/%27/g, "'")
-    .replace(/%28/g, "(").replace(/%29/g, ")").replace(/%2a/g, "*");
+  const encoded = ecpayEncode(raw);
 
   return crypto.createHash("sha256").update(encoded).digest("hex").toUpperCase() === received;
 }
@@ -1116,9 +1135,7 @@ app.post("/ecpay/create-order", async (req, res) => {
     .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
     .map(k => `${k}=${ecpayParams[k]}`).join("&");
   const raw = `HashKey=${hashKey}&${sorted}&HashIV=${hashIV}`;
-  const encoded = encodeURIComponent(raw).toLowerCase()
-    .replace(/%20/g, "+").replace(/%21/g, "!").replace(/%27/g, "'")
-    .replace(/%28/g, "(").replace(/%29/g, ")").replace(/%2a/g, "*");
+  const encoded = ecpayEncode(raw);
   ecpayParams.CheckMacValue = crypto.createHash("sha256").update(encoded).digest("hex").toUpperCase();
 
   const ecpayUrl = product.useSandbox
@@ -1212,9 +1229,10 @@ app.use("/logistics/", logisticsLimiter);
 // 1. Sort all params (except CheckMacValue) by key, case-insensitive A→Z
 // 2. Join as key=value&key=value
 // 3. Prepend HashKey=...& and append &HashIV=...
-// 4. encodeURIComponent the ENTIRE string (= and & become %3d and %26)
+// 4. encodeURIComponent the ENTIRE string (= and & become %3d and %26),
+//    then fix up ' and ~ (see ecpayEncode — JS leaves these unescaped, ECPay doesn't)
 // 5. Lowercase
-// 6. Replace %20→+ %21→! %27→' %28→( %29→) %2a→*
+// 6. Replace %20→+ %21→! %28→( %29→) %2a→*
 // 7. MD5 → uppercase hex
 function buildLogisticsCheckMacValue(params, hashKey, hashIV) {
   const sorted = Object.keys(params)
@@ -1223,9 +1241,7 @@ function buildLogisticsCheckMacValue(params, hashKey, hashIV) {
     .map(k => `${k}=${params[k]}`).join("&");
 
   const raw     = `HashKey=${hashKey}&${sorted}&HashIV=${hashIV}`;
-  const encoded = encodeURIComponent(raw).toLowerCase()
-    .replace(/%20/g, "+").replace(/%21/g, "!").replace(/%27/g, "'")
-    .replace(/%28/g, "(").replace(/%29/g, ")").replace(/%2a/g, "*");
+  const encoded = ecpayEncode(raw);
 
   console.log("[CheckMac] raw:", raw);
   console.log("[CheckMac] encoded:", encoded);
