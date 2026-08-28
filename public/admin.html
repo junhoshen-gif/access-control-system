@@ -324,8 +324,11 @@
                 <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
                   <input type="checkbox" name="logisticsSubType" value="POST"/> Chunghwa Post
                 </label>
+                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
+                  <input type="checkbox" name="logisticsSubType" value="MEETUP"/> 🤝 Meet in Person
+                </label>
               </div>
-              <p class="text-muted text-sm" style="margin-top:0.35rem;">CVS pickup: buyer selects a store. TCAT/POST: buyer enters a home delivery address.</p>
+              <p class="text-muted text-sm" style="margin-top:0.35rem;">CVS pickup: buyer selects a store. TCAT/POST: buyer enters a home delivery address. Meet in Person: no address or store needed — buyer just gives their name and pays; arrange handoff yourself.</p>
             </div>
             <div class="form-group" style="margin:0;">
               <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
@@ -1379,13 +1382,17 @@
 
       // Delivery info summary
       const di = o.deliveryInfo || {};
+      const deliveryType = di.deliveryType || o.deliveryType;
       const deliveryLabel = {
         UNIMARTC2C: "7-ELEVEN", FAMIC2C: "FamilyMart",
-        HILIFEC2C: "Hi-Life", TCAT: "TCAT", POST: "Chunghwa Post"
-      }[di.deliveryType || o.deliveryType] || di.deliveryType || o.deliveryType || "—";
-      const deliveryDetail = di.CVSStoreName
-        ? `${di.CVSStoreName} <span style="color:#64748B;font-size:0.75rem;">${escHtml(di.CVSAddress || "")}</span>`
-        : escHtml(di.receiverAddress || "");
+        HILIFEC2C: "Hi-Life", TCAT: "TCAT", POST: "Chunghwa Post",
+        MEETUP: "🤝 Meet in Person"
+      }[deliveryType] || deliveryType || "—";
+      const deliveryDetail = deliveryType === "MEETUP"
+        ? `<span style="color:#64748B;font-size:0.75rem;">No address — arrange handoff directly</span>`
+        : di.CVSStoreName
+          ? `${di.CVSStoreName} <span style="color:#64748B;font-size:0.75rem;">${escHtml(di.CVSAddress || "")}</span>`
+          : escHtml(di.receiverAddress || "");
 
       return `<tr data-okey="${escHtml(o.key)}">
         <td style="font-family:monospace;font-size:0.75rem;max-width:100px;word-break:break-all;">${escHtml(o.key || "—")}</td>
@@ -1549,6 +1556,11 @@
     if (!o) { showLogisticsAlert("Order not found. Please load orders in the Orders tab first.", "error"); return; }
 
     const di = o.deliveryInfo || {};
+
+    if ((di.deliveryType || o.deliveryType) === "MEETUP") {
+      showLogisticsAlert("This order is Meet in Person — no shipping label needed. Just update its status directly in the Orders tab once you've handed the book over.", "error");
+      return;
+    }
 
     // Receiver name & phone
     document.getElementById("labelReceiverName").value  = o.receiverName  || di.receiverName  || "";
