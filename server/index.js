@@ -1870,8 +1870,13 @@ app.post("/promotions", async (req, res) => {
 
   // Check code uniqueness if provided
   if (normalizedCode) {
-    const snap = await db.ref("promotions").orderByChild("code").equalTo(normalizedCode).get();
-    if (snap.val()) return res.status(409).json({ error: "Promo code already exists" });
+    try {
+      const snap = await db.ref("promotions").orderByChild("code").equalTo(normalizedCode).get();
+      if (snap.val()) return res.status(409).json({ error: "Promo code already exists" });
+    } catch (err) {
+      console.error("/promotions POST code-lookup error:", err);
+      return res.status(500).json({ error: "Database error" });
+    }
   }
 
   const promoId = newId();

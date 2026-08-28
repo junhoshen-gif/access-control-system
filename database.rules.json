@@ -42,6 +42,11 @@
       ".read": "auth != null",
       ".write": "root.child('admins').child(auth.uid).exists()"
     },
+    "promotions": {
+      ".read": "root.child('admins').child(auth.uid).exists()",
+      ".write": "root.child('admins').child(auth.uid).exists()",
+      ".indexOn": ["code"]
+    },
     "logs": {
       ".read": "root.child('admins').child(auth.uid).exists()",
       ".write": "root.child('admins').child(auth.uid).exists()",
