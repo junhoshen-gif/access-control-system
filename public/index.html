@@ -21,7 +21,7 @@
   </div>
   <div class="nav-right" id="navRight">
     <span id="adminLink" class="nav-link hidden"><a href="admin.html" data-i18n="navAdmin">Admin Console</a></span>
-    <span class="nav-link"><a href="status.html" data-i18n="navStatus">Status</a></span>
+    <span id="statusLink" class="nav-link hidden"><a href="status.html" data-i18n="navStatus">Status</a></span>
     <div class="nav-user" id="navUser">
       <div class="avatar" id="userAvatar">?</div>
       <span id="userName" data-i18n="loading">Loading…</span>
@@ -386,6 +386,7 @@
       const adminVal = await dbGet(auth, `admins/${user.uid}`);
       if (adminVal !== null) {
         document.getElementById("adminLink").classList.remove("hidden");
+        document.getElementById("statusLink").classList.remove("hidden");
       }
     } catch (err) {
       console.warn("Admin check failed:", err.message);

@@ -316,28 +316,32 @@
 
   // ── Auth state ─────────────────────────────────────────────────────────────
   onAuthStateChanged(auth, async (user) => {
-    currentUser = user;
-    if (user) {
-      document.getElementById("navUser").classList.remove("hidden");
-      document.getElementById("navFilesLink").classList.remove("hidden");
-      document.getElementById("navLoginLink").classList.remove("hidden");
-      document.getElementById("navLoginLink").classList.add("hidden");
-      document.getElementById("userName").textContent = user.displayName || user.email;
-      document.getElementById("userAvatar").textContent = (user.displayName || user.email || "?")[0].toUpperCase();
+    // This page is admin-only — everyone else gets redirected.
+    if (!user) { window.location.href = "login.html"; return; }
+    const adminVal = await dbGet(auth, `admins/${user.uid}`);
+    if (adminVal === null) { window.location.href = "index.html"; return; }
 
-      const adminVal = await dbGet(auth, `admins/${user.uid}`);
-      isAdmin = adminVal !== null;
-      if (isAdmin) {
-        document.getElementById("navAdminLink").classList.remove("hidden");
-        // Show admin interval control immediately, now that we know the user is admin
-        const ctrl = document.getElementById("intervalControl");
-        ctrl.style.display = "flex";
-        ctrl.classList.remove("hidden");
-        loadIntervalSetting();
-      }
-    }
+    currentUser = user;
+    document.getElementById("navUser").classList.remove("hidden");
+    document.getElementById("navFilesLink").classList.remove("hidden");
+    document.getElementById("navLoginLink").classList.remove("hidden");
+    document.getElementById("navLoginLink").classList.add("hidden");
+    document.getElementById("userName").textContent = user.displayName || user.email;
+    document.getElementById("userAvatar").textContent = (user.displayName || user.email || "?")[0].toUpperCase();
+
+    isAdmin = true;
+    document.getElementById("navAdminLink").classList.remove("hidden");
+    // Show admin interval control immediately, now that we know the user is admin
+    const ctrl = document.getElementById("intervalControl");
+    ctrl.style.display = "flex";
+    ctrl.classList.remove("hidden");
+    loadIntervalSetting();
+
     renderSessionInfo();
-    if (isAdmin) loadDbStats();
+    loadDbStats();
+
+    // Rest of the page (checks, charts, etc.) only starts once admin is confirmed.
+    boot();
   });
 
   document.getElementById("signOutBtn")?.addEventListener("click", async () => {
@@ -923,15 +927,20 @@
     }
   }
 
-  // Start auto refresh and boot
-  // Note: loadIntervalSetting() is called inside onAuthStateChanged for admins
-  renderClientInfo();
-  renderNetworkInfo();
-  renderDisplayInfo();
-  renderPerfInfo();
-  renderSessionInfo();
-  runChecks();
-  startAutoRefresh(30); // default 30s until admin setting loads
+  // Page content only starts once admin access is confirmed (see onAuthStateChanged above).
+  // Note: loadIntervalSetting() is called separately, right after admin is confirmed.
+  let booted = false;
+  function boot() {
+    if (booted) return; // guard against double calls
+    booted = true;
+    renderClientInfo();
+    renderNetworkInfo();
+    renderDisplayInfo();
+    renderPerfInfo();
+    renderSessionInfo();
+    runChecks();
+    startAutoRefresh(30); // default 30s until admin setting loads
+  }
 
   // Redraw chart on resize
   window.addEventListener("resize", drawChart);
