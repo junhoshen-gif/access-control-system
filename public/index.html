@@ -481,9 +481,12 @@
       allProducts = val;
     } catch(e) { return; }
 
-    // Filter to products that contain at least one file the user doesn't have
+    // Filter to products that contain at least one file the user doesn't have.
+    // Physical-only products (no files attached) have nothing to "already own",
+    // so they always stay listed — buyers can order more than one copy.
     const availableProducts = Object.entries(allProducts).filter(([, p]) => {
-      if (!p.fileIds || p.fileIds.length === 0) return false;
+      const hasFiles = Array.isArray(p.fileIds) && p.fileIds.length > 0;
+      if (!hasFiles) return !!p.hasPhysical;
       return p.fileIds.some(fid => !grantedFileIds.has(fid));
     });
 
@@ -511,7 +514,12 @@
         ? `<button class="btn btn-ghost btn-sm" onclick="openProductPreview('${escHtml(key)}')">預覽 Preview</button>`
         : "";
 
-      const durationMeta = p.durationDays ? `<div class="store-meta">有效期限：${p.durationDays} 天</div>` : `<div class="store-meta">永久存取</div>`;
+      // A physical-only product (no files attached) has no digital access grant,
+      // so file count / access duration don't apply — show it as a physical item instead.
+      const isPhysicalOnly = fileCount === 0 && !!p.hasPhysical;
+      const durationMeta = isPhysicalOnly ? "" :
+        (p.durationDays ? `<div class="store-meta">有效期限：${p.durationDays} 天</div>` : `<div class="store-meta">永久存取</div>`);
+      const fileCountMeta = isPhysicalOnly ? "🚚 實體商品" : `${fileCount} 個檔案`;
 
       return `
         <div class="store-card" id="storecard-${escHtml(key)}">
@@ -519,7 +527,7 @@
           <div class="store-card-body">
             <div class="store-info">
               <div class="store-name">${escHtml(p.name)}</div>
-              <div class="store-meta">${fileCount} 個檔案 · ${method}</div>
+              <div class="store-meta">${fileCountMeta} · ${method}</div>
               ${durationMeta}
             </div>
           </div>

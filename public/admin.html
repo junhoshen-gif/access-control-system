@@ -250,7 +250,7 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label">Files Unlocked <span class="text-error">*</span></label>
+            <label class="form-label">Files Unlocked <span class="text-muted text-sm">(required unless "Includes physical shipment" below is checked)</span></label>
             <div id="productFileCheckboxes" class="checkbox-list">
               <p class="text-muted text-sm">Loading files…</p>
             </div>
@@ -2578,7 +2578,7 @@
         <td>
           <strong>${escHtml(p.name)}</strong>
         </td>
-        <td class="text-sm">${escHtml(fileNames) || "—"}</td>
+        <td class="text-sm">${escHtml(fileNames) || (p.hasPhysical ? "🚚 Physical only" : "—")}</td>
         <td style="font-size:0.82rem;">${durationCell}</td>
         <td style="font-size:0.82rem;">${priceCell}</td>
         <td>${method}</td>
@@ -2857,7 +2857,12 @@
     if (!name)              return showPricingAlert("Product name is required.", "error");
     if (!priceNTD || priceNTD < 1) return showPricingAlert("Please enter a valid NTD price.", "error");
     if (!merchantId)        return showPricingAlert("Please enter an ECPay Merchant ID.", "error");
-    if (fileIds.length === 0) return showPricingAlert("Please select at least one file.", "error");
+    // Files are only required for a digital product. A physical-only product
+    // (Includes physical shipment checked) can be sold with no file attached.
+    const isPhysicalProduct = document.getElementById("productHasPhysical").checked;
+    if (fileIds.length === 0 && !isPhysicalProduct) {
+      return showPricingAlert("Please select at least one file, or check \"Includes physical shipment\" for a physical-only product.", "error");
+    }
 
     // Upload pending images to S3 first
     let newImageKeys = [];
