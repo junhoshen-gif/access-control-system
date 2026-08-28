@@ -307,26 +307,45 @@
 
           <div id="physicalFields" style="display:none;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;padding:1rem;flex-direction:column;gap:0.85rem;">
             <div class="form-group" style="margin:0;">
-              <label class="form-label text-sm">Available Delivery Options</label>
-              <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:0.35rem;">
-                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="UNIMARTC2C" checked/> 7-ELEVEN
-                </label>
-                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="FAMIC2C"/> FamilyMart
-                </label>
-                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="HILIFEC2C"/> Hi-Life
-                </label>
-                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="TCAT"/> TCAT (Black Cat)
-                </label>
-                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="POST"/> Chunghwa Post
-                </label>
-                <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;">
-                  <input type="checkbox" name="logisticsSubType" value="MEETUP"/> 🤝 Meet in Person
-                </label>
+              <label class="form-label text-sm">Available Delivery Options &amp; Fees</label>
+              <p class="text-muted text-sm" style="margin:0.2rem 0 0.5rem;">Check the carriers you offer. Fee (NTD) is added to the buyer's total at checkout — leave blank or 0 for free.</p>
+              <div style="display:flex;flex-direction:column;gap:0.5rem;">
+                <div style="display:flex;align-items:center;gap:0.6rem;">
+                  <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;flex:1;min-width:140px;">
+                    <input type="checkbox" name="logisticsSubType" value="UNIMARTC2C" checked/> 7-ELEVEN
+                  </label>
+                  <input type="number" class="form-input logistics-fee-input" data-carrier="UNIMARTC2C" placeholder="運費 NTD" min="0" style="max-width:110px;font-size:0.82rem;"/>
+                </div>
+                <div style="display:flex;align-items:center;gap:0.6rem;">
+                  <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;flex:1;min-width:140px;">
+                    <input type="checkbox" name="logisticsSubType" value="FAMIC2C"/> FamilyMart
+                  </label>
+                  <input type="number" class="form-input logistics-fee-input" data-carrier="FAMIC2C" placeholder="運費 NTD" min="0" style="max-width:110px;font-size:0.82rem;"/>
+                </div>
+                <div style="display:flex;align-items:center;gap:0.6rem;">
+                  <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;flex:1;min-width:140px;">
+                    <input type="checkbox" name="logisticsSubType" value="HILIFEC2C"/> Hi-Life
+                  </label>
+                  <input type="number" class="form-input logistics-fee-input" data-carrier="HILIFEC2C" placeholder="運費 NTD" min="0" style="max-width:110px;font-size:0.82rem;"/>
+                </div>
+                <div style="display:flex;align-items:center;gap:0.6rem;">
+                  <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;flex:1;min-width:140px;">
+                    <input type="checkbox" name="logisticsSubType" value="TCAT"/> TCAT (Black Cat)
+                  </label>
+                  <input type="number" class="form-input logistics-fee-input" data-carrier="TCAT" placeholder="運費 NTD" min="0" style="max-width:110px;font-size:0.82rem;"/>
+                </div>
+                <div style="display:flex;align-items:center;gap:0.6rem;">
+                  <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;flex:1;min-width:140px;">
+                    <input type="checkbox" name="logisticsSubType" value="POST"/> Chunghwa Post
+                  </label>
+                  <input type="number" class="form-input logistics-fee-input" data-carrier="POST" placeholder="運費 NTD" min="0" style="max-width:110px;font-size:0.82rem;"/>
+                </div>
+                <div style="display:flex;align-items:center;gap:0.6rem;">
+                  <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;font-size:0.85rem;flex:1;min-width:140px;">
+                    <input type="checkbox" name="logisticsSubType" value="MEETUP"/> 🤝 Meet in Person
+                  </label>
+                  <input type="number" class="form-input logistics-fee-input" data-carrier="MEETUP" placeholder="運費 NTD" min="0" style="max-width:110px;font-size:0.82rem;"/>
+                </div>
               </div>
               <p class="text-muted text-sm" style="margin-top:0.35rem;">CVS pickup: buyer selects a store. TCAT/POST: buyer enters a home delivery address. Meet in Person: no address or store needed — buyer just gives their name and pays; arrange handoff yourself.</p>
             </div>
@@ -1383,11 +1402,11 @@
       // Delivery info summary
       const di = o.deliveryInfo || {};
       const deliveryType = di.deliveryType || o.deliveryType;
-      const deliveryLabel = {
+      const deliveryLabel = ({
         UNIMARTC2C: "7-ELEVEN", FAMIC2C: "FamilyMart",
         HILIFEC2C: "Hi-Life", TCAT: "TCAT", POST: "Chunghwa Post",
         MEETUP: "🤝 Meet in Person"
-      }[deliveryType] || deliveryType || "—";
+      }[deliveryType] || deliveryType || "—") + (o.deliveryFee ? ` <span style="color:#64748B;font-weight:400;">(+NT$${o.deliveryFee})</span>` : "");
       const deliveryDetail = deliveryType === "MEETUP"
         ? `<span style="color:#64748B;font-size:0.75rem;">No address — arrange handoff directly</span>`
         : di.CVSStoreName
@@ -2856,6 +2875,16 @@
       ? [...document.querySelectorAll("input[name='logisticsSubType']:checked")].map(cb => cb.value)
       : [];
 
+    // Per-carrier delivery fee (NTD), only kept for carriers that are checked
+    const logisticsFees = {};
+    if (hasPhysical) {
+      document.querySelectorAll(".logistics-fee-input").forEach(inp => {
+        const carrier = inp.dataset.carrier;
+        const fee     = parseInt(inp.value, 10);
+        if (logisticsSubTypes.includes(carrier) && fee > 0) logisticsFees[carrier] = fee;
+      });
+    }
+
     const data = {
       name,
       priceNTD,
@@ -2870,6 +2899,7 @@
       imageKeys:          imageKeys.length > 0 ? imageKeys : null,
       hasPhysical:        hasPhysical,
       logisticsSubTypes:  logisticsSubTypes.length > 0 ? logisticsSubTypes : null,
+      logisticsFees:      Object.keys(logisticsFees).length > 0 ? logisticsFees : null,
       logisticsSandbox:   hasPhysical ? logisticsSandbox : null,
       updatedAt:          Date.now()
     };
@@ -2920,6 +2950,10 @@
     document.querySelectorAll("input[name='logisticsSubType']").forEach(cb => {
       cb.checked = subTypes.includes(cb.value);
     });
+    const fees = p.logisticsFees || {};
+    document.querySelectorAll(".logistics-fee-input").forEach(inp => {
+      inp.value = fees[inp.dataset.carrier] || "";
+    });
     document.getElementById("productFormTitle").scrollIntoView({ behavior: "smooth" });
   };
 
@@ -2944,6 +2978,7 @@
     document.getElementById("productLogisticsSandbox").checked = true;
     togglePhysicalFields(false);
     document.querySelectorAll("input[name='logisticsSubType']").forEach(cb => { cb.checked = cb.value === "UNIMARTC2C"; });
+    document.querySelectorAll(".logistics-fee-input").forEach(inp => { inp.value = ""; });
   };
 
   window.deleteProduct = async (key) => {

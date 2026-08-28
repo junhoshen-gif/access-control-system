@@ -1132,19 +1132,21 @@
       _selectedDeliveryType = null;
 
       // Build delivery options from product config
+      const feeMap = product.logisticsFees || {};
       const optionsEl = document.getElementById("deliveryOptions");
-      optionsEl.innerHTML = product.logisticsSubTypes.map((type, i) =>
-        `<label style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border:1px solid var(--color-border);border-radius:8px;cursor:pointer;font-size:0.9rem;transition:border-color .2s;"
+      optionsEl.innerHTML = product.logisticsSubTypes.map((type, i) => {
+        const fee = parseInt(feeMap[type], 10) || 0;
+        return `<label style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border:1px solid var(--color-border);border-radius:8px;cursor:pointer;font-size:0.9rem;transition:border-color .2s;"
           onmouseover="this.style.borderColor='#2563EB'" onmouseout="this.querySelector('input').checked || (this.style.borderColor='var(--color-border)')">
           <input type="radio" name="deliveryChoice" value="${escHtml(type)}" ${i===0?'checked':''} style="cursor:pointer;accent-color:#2563EB;" onchange="this.closest('#deliveryOptions').querySelectorAll('label').forEach(l=>l.style.borderColor='var(--color-border)');this.closest('label').style.borderColor='#2563EB';"/>
-          <span>${escHtml(CARRIER_LABELS[type] || type)}</span>
+          <span>${escHtml(CARRIER_LABELS[type] || type)}${fee > 0 ? ` <span style="color:#2563EB;font-weight:600;">+NT$${fee}</span>` : ' <span style="color:#10B981;">免運</span>'}</span>
           ${CVS_CARRIERS.has(type)
             ? '<span style="font-size:0.72rem;color:#64748B;margin-left:auto;">需選擇門市</span>'
             : MEETUP_CARRIERS.has(type)
               ? '<span style="font-size:0.72rem;color:#64748B;margin-left:auto;">免地址・面交</span>'
               : '<span style="font-size:0.72rem;color:#64748B;margin-left:auto;">填寫宅配地址</span>'}
-        </label>`
-      ).join("");
+        </label>`;
+      }).join("");
       // Highlight first option
       const firstLabel = optionsEl.querySelector("label");
       if (firstLabel) firstLabel.style.borderColor = "#2563EB";

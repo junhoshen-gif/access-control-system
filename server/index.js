@@ -972,6 +972,7 @@ app.post("/ecpay/callback", async (req, res) => {
       merchantTradeNo: tradeNo,
       deliveryType:   deliveryInfo.deliveryType || "",        // CVS carrier or TCAT or POST
       deliveryInfo,                                           // full delivery details
+      deliveryFee:    tradeData.deliveryFee || 0,             // NTD, added to the charged total at checkout
       receiverName:   tradeData.receiverName  || "",
       receiverPhone:  tradeData.receiverPhone || "",
       status:         "pending",
@@ -1088,9 +1089,23 @@ app.post("/ecpay/create-order", async (req, res) => {
     }
   }
 
+  // ── Add delivery fee for the selected carrier (server-authoritative — never
+  // trust a fee from the client, only the carrier code) ───────────────────────
+  // Added after the promo discount so delivery fees aren't discounted by coupons.
+  let deliveryFee = 0;
+  const selectedCarrier = deliveryInfo?.deliveryType || storeInfo?.LogisticsSubType || null;
+  if (selectedCarrier && product.logisticsFees && typeof product.logisticsFees[selectedCarrier] === "number") {
+    deliveryFee = Math.max(0, Math.round(product.logisticsFees[selectedCarrier]));
+    if (deliveryFee > 0) {
+      finalPrice = Math.max(1, finalPrice + deliveryFee);
+      console.log(`[DeliveryFee] carrier=${selectedCarrier} fee=${deliveryFee} → finalPrice=${finalPrice}`);
+    }
+  }
+
   try {
     const tradeEntry = { uid, productKey, createdAt: Date.now(), processed: false };
     if (appliedPromo) tradeEntry.promoId = promoId;
+    if (deliveryFee > 0) tradeEntry.deliveryFee = deliveryFee;
     // Persist delivery selection so the payment callback can record the order
     if (product.hasPhysical) {
       if (deliveryInfo) {
