@@ -202,6 +202,21 @@
         ECPay payment callbacks (ReturnURL) will point to that server.
       </div>
 
+      <!-- Store-wide free shipping rule -->
+      <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card-header">
+          <h3>🚚 Store-wide Shipping Rule</h3>
+        </div>
+        <div class="card-body" style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap;">
+          <div class="form-group" style="margin:0;">
+            <label class="form-label text-sm">Free shipping when order total reaches (NTD)</label>
+            <input type="number" id="freeShippingThreshold" class="form-input" placeholder="留空 = 不啟用 (disabled)" min="0" style="max-width:220px;"/>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="saveFreeShippingThreshold()">Save</button>
+          <p class="text-muted text-sm" style="margin:0;width:100%;">Applies to all products. Waives the per-carrier delivery fee once a physical order's price (after any promo) reaches this amount. Leave blank to disable.</p>
+        </div>
+      </div>
+
       <!-- Create / Edit product form -->
       <div class="card" style="margin-bottom:1.5rem;">
         <div class="card-header">
@@ -2528,7 +2543,26 @@
     try { allPurchases = await dbGet(auth, "purchases").then(v => v || {}); }
     catch(e) { allPurchases = {}; }
     renderPurchases();
+
+    try {
+      const threshold = await dbGet(auth, "settings/freeShippingThresholdNTD");
+      document.getElementById("freeShippingThreshold").value = threshold || "";
+    } catch(e) { /* non-fatal — leave field blank */ }
   }
+
+  window.saveFreeShippingThreshold = async () => {
+    const raw   = document.getElementById("freeShippingThreshold").value.trim();
+    const value = raw ? parseInt(raw, 10) : null;
+    if (raw && (!value || value < 1)) {
+      return showPricingAlert("Please enter a valid NTD amount, or leave blank to disable.", "error");
+    }
+    try {
+      await dbSet(auth, "settings/freeShippingThresholdNTD", value);
+      showPricingAlert(value ? `Free shipping enabled at NT$${value}+.` : "Free shipping rule disabled.", "success");
+    } catch(e) {
+      showPricingAlert("Save failed: " + e.message, "error");
+    }
+  };
 
   function populateProductFileCheckboxes() {
     const container = document.getElementById("productFileCheckboxes");

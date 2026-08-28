@@ -1096,10 +1096,29 @@ app.post("/ecpay/create-order", async (req, res) => {
   const selectedCarrier = deliveryInfo?.deliveryType || storeInfo?.LogisticsSubType || null;
   if (selectedCarrier && product.logisticsFees && typeof product.logisticsFees[selectedCarrier] === "number") {
     deliveryFee = Math.max(0, Math.round(product.logisticsFees[selectedCarrier]));
-    if (deliveryFee > 0) {
-      finalPrice = Math.max(1, finalPrice + deliveryFee);
-      console.log(`[DeliveryFee] carrier=${selectedCarrier} fee=${deliveryFee} → finalPrice=${finalPrice}`);
+  }
+
+  // ── Store-wide free shipping threshold ───────────────────────────────────────
+  // Admin-configured in Admin → Pricing. Waives the carrier fee once this order's
+  // price (after promo, before the fee) reaches the threshold. Looked up fresh on
+  // every order so it always reflects the current setting.
+  if (deliveryFee > 0) {
+    try {
+      const thresholdSnap = await db.ref("settings/freeShippingThresholdNTD").get();
+      const threshold = thresholdSnap.val();
+      if (typeof threshold === "number" && threshold > 0 && finalPrice >= threshold) {
+        console.log(`[FreeShipping] finalPrice=${finalPrice} >= threshold=${threshold} → waiving fee of ${deliveryFee}`);
+        deliveryFee = 0;
+      }
+    } catch (err) {
+      console.error("[FreeShipping] threshold lookup failed:", err.message);
+      // Fall through — fee stays as configured (safe default: charge, don't under-charge)
     }
+  }
+
+  if (deliveryFee > 0) {
+    finalPrice = Math.max(1, finalPrice + deliveryFee);
+    console.log(`[DeliveryFee] carrier=${selectedCarrier} fee=${deliveryFee} → finalPrice=${finalPrice}`);
   }
 
   try {

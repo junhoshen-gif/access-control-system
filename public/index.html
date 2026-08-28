@@ -70,6 +70,7 @@
       <h2>購買存取權 Buy Access</h2>
       <p class="text-muted">付款後系統將自動解鎖檔案，無需等待管理員審核。</p>
     </div>
+    <div id="freeShippingBanner" class="hidden" style="margin-bottom:1rem;padding:0.6rem 1rem;background:#ECFDF5;border:1px solid #A7F3D0;border-radius:8px;color:#065F46;font-size:0.85rem;font-weight:600;"></div>
     <div id="storeGrid" class="store-grid"></div>
   </div>
 
@@ -272,6 +273,7 @@
 
   let allFiles = [];        // files the user has access to
   let allProducts = {};     // published products (for "Buy Access" section)
+  let freeShippingThreshold = null; // NTD — admin-configured, waives delivery fee at this order price (display only; server re-checks authoritatively)
   let grantedFileIds = new Set(); // file IDs the user currently has access to
   let currentFilter = "all";
   let currentUserEmail = "";
@@ -481,6 +483,10 @@
       allProducts = val;
     } catch(e) { return; }
 
+    try {
+      freeShippingThreshold = await dbGet(auth, "settings/freeShippingThresholdNTD");
+    } catch(e) { freeShippingThreshold = null; /* non-fatal — just skip the free-shipping hint */ }
+
     // Filter to products that contain at least one file the user doesn't have.
     // Physical-only products (no files attached) have nothing to "already own",
     // so they always stay listed — buyers can order more than one copy.
@@ -493,6 +499,14 @@
     if (availableProducts.length === 0) return;
 
     document.getElementById("storeSection").classList.remove("hidden");
+
+    const hasAnyPhysical = availableProducts.some(([, p]) => p.hasPhysical);
+    if (freeShippingThreshold > 0 && hasAnyPhysical) {
+      const banner = document.getElementById("freeShippingBanner");
+      banner.textContent = `🎉 訂單滿 NT$${freeShippingThreshold} 即享免運費！`;
+      banner.classList.remove("hidden");
+    }
+
     const cards = availableProducts.map(([key, p]) => {
       const price      = p.price || (p.priceNTD ? `NT$${p.priceNTD}` : "");
       const method     = p.paymentMethod === "Credit" ? "💳 信用卡" : p.paymentMethod === "ATM" ? "🏧 ATM" : "💳 信用卡 / 🏧 ATM";
@@ -1141,9 +1155,12 @@
 
       // Build delivery options from product config
       const feeMap = product.logisticsFees || {};
+      // Display-only hint — the server independently re-checks this threshold
+      // and is the actual source of truth for what gets charged.
+      const meetsFreeShipping = freeShippingThreshold > 0 && (product.priceNTD || 0) >= freeShippingThreshold;
       const optionsEl = document.getElementById("deliveryOptions");
       optionsEl.innerHTML = product.logisticsSubTypes.map((type, i) => {
-        const fee = parseInt(feeMap[type], 10) || 0;
+        const fee = meetsFreeShipping ? 0 : (parseInt(feeMap[type], 10) || 0);
         return `<label style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border:1px solid var(--color-border);border-radius:8px;cursor:pointer;font-size:0.9rem;transition:border-color .2s;"
           onmouseover="this.style.borderColor='#2563EB'" onmouseout="this.querySelector('input').checked || (this.style.borderColor='var(--color-border)')">
           <input type="radio" name="deliveryChoice" value="${escHtml(type)}" ${i===0?'checked':''} style="cursor:pointer;accent-color:#2563EB;" onchange="this.closest('#deliveryOptions').querySelectorAll('label').forEach(l=>l.style.borderColor='var(--color-border)');this.closest('label').style.borderColor='#2563EB';"/>
