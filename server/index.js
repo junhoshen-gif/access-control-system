@@ -95,7 +95,10 @@ app.use(cors({
 }));
 
 app.use(express.urlencoded({ extended: true, limit: "10kb" }));
-app.use(express.json({ limit: "10kb" }));
+// strict:false lets the /db/* proxy PUT a bare scalar (number/string/null) as the
+// whole body — e.g. settings/freeShippingThresholdNTD — not just objects/arrays,
+// which is all express.json()'s default "strict" mode accepts.
+app.use(express.json({ limit: "10kb", strict: false }));
 
 // ── Multer (small files → memory) ──────────────────────────────────────────
 const upload = multer({ storage: multer.memoryStorage() });
