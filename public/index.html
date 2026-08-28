@@ -1083,8 +1083,10 @@
         receiverPhone:   phone,
         receiverAddress: address,
       };
+      // Capture productKey before closeReceiverModal() resets _pendingProductKey to null
+      const productKey = _pendingProductKey;
       closeReceiverModal();
-      await createPaymentOrder(_pendingProductKey, null, deliveryInfo, name, phone);
+      await createPaymentOrder(productKey, null, deliveryInfo, name, phone);
     } catch (err) {
       if (btn) { btn.disabled = false; btn.textContent = "確認並付款 →"; }
       alert("無法建立訂單，請稍後再試。\n" + err.message);
@@ -1107,8 +1109,10 @@
         deliveryType: _selectedDeliveryType,
         receiverName: name,
       };
+      // Capture productKey before closeReceiverModal() resets _pendingProductKey to null
+      const productKey = _pendingProductKey;
       closeReceiverModal();
-      await createPaymentOrder(_pendingProductKey, null, deliveryInfo, name, "");
+      await createPaymentOrder(productKey, null, deliveryInfo, name, "");
     } catch (err) {
       if (btn) { btn.disabled = false; btn.textContent = "確認並付款 →"; }
       alert("無法建立訂單，請稍後再試。\n" + err.message);
